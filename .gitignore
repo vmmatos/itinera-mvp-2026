@@ -145,8 +145,11 @@ vite.config.ts.timestamp-*
 .vscode
 
 .env
-.env.example
-
+# dev/.secrets.env is gitignored (contains real secrets)
 /dev/.secrets.env
+# dev/.dev.env is tracked (non-secret local settings)
+
+# Kong sentinel (written by configure.sh, not source)
+infrastructure/kong/.kong-configured
 
 CLAUDE.md
