@@ -1,0 +1,9 @@
+{
+  "name": "itinera",
+  "private": true,
+  "workspaces": [
+    "services/*",
+    "apps/*"
+  ],
+  "packageManager": "yarn@1.22.22"
+}
