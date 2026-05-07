@@ -24,6 +24,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro
+      - ../infrastructure/postgres/init.sql:/docker-entrypoint-initdb.d/schema.sql:ro
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     healthcheck:
@@ -123,38 +124,39 @@ services:
   # Microservices (uncomment as each service is implemented)
   # -------------------------------------------------------------------------
 
-  # orchestrator:
-  #   build: ../services/orchestrator
-  #   restart: unless-stopped
-  #   profiles: [services]
-  #   environment:
-  #     PORT: ${ORCHESTRATOR_PORT}
-  #     NODE_ENV: ${NODE_ENV}
-  #     LOG_LEVEL: ${LOG_LEVEL}
-  #     POSTGRES_HOST: ${POSTGRES_HOST}
-  #     POSTGRES_PORT: ${POSTGRES_PORT}
-  #     POSTGRES_DB: ${POSTGRES_DB}
-  #     POSTGRES_USER: ${POSTGRES_USER}
-  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-  #     REDIS_HOST: ${REDIS_HOST}
-  #     REDIS_PORT: ${REDIS_PORT}
-  #     RABBITMQ_HOST: ${RABBITMQ_HOST}
-  #     RABBITMQ_PORT: ${RABBITMQ_PORT}
-  #     RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
-  #     RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
-  #     JWT_SECRET: ${JWT_SECRET}
-  #     JWT_ISSUER: ${JWT_ISSUER}
-  #   ports:
-  #     - "${ORCHESTRATOR_PORT:-3001}:${ORCHESTRATOR_PORT:-3001}"
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-  #     redis:
-  #       condition: service_healthy
-  #     rabbitmq:
-  #       condition: service_healthy
-  #     kong:
-  #       condition: service_healthy
+  orchestrator:
+    build: ../services/orchestrator
+    container_name: itinera-orchestrator
+    restart: unless-stopped
+    profiles: [services]
+    environment:
+      PORT: ${ORCHESTRATOR_PORT}
+      NODE_ENV: ${NODE_ENV}
+      LOG_LEVEL: ${LOG_LEVEL}
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      RABBITMQ_HOST: ${RABBITMQ_HOST}
+      RABBITMQ_PORT: ${RABBITMQ_PORT}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ISSUER: ${JWT_ISSUER}
+    ports:
+      - "${ORCHESTRATOR_PORT:-3001}:${ORCHESTRATOR_PORT:-3001}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      kong:
+        condition: service_healthy
 
   # preference-agent:
   #   build: ../services/preference-agent
