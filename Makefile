@@ -44,27 +44,27 @@ kong-config:
 
 ## Run TypeORM migrations (spins up a temporary orchestrator container)
 db-migrate:
-	$(DC) run --rm orchestrator npm run migration:run
+	$(DC) run --rm orchestrator yarn migration:run
 
 ## Seed test data (spins up a temporary orchestrator container)
 db-seed:
-	$(DC) run --rm orchestrator npm run seed
+	$(DC) run --rm orchestrator yarn seed
 
 ## Run tests — all or one service:  make test s=validator
 test:
 ifdef s
-	$(DC) exec $(s) npm test
+	$(DC) exec $(s) yarn test
 else
 	@for svc in orchestrator preference-agent orchestrator-agent \
 		finance-agent logistics-agent validator notification sharing ws-relay; do \
 		echo "==> Testing $$svc"; \
-		$(DC) exec $$svc npm test 2>/dev/null || echo "  (service not running, skip)"; \
+		$(DC) exec $$svc yarn test 2>/dev/null || echo "  (service not running, skip)"; \
 	done
 endif
 
 ## Unit tests only
 test-unit:
-	$(DC) run --rm orchestrator npm run test:unit
+	$(DC) run --rm orchestrator yarn test:unit
 
 ## Tear down all containers and volumes (destructive)
 down:
