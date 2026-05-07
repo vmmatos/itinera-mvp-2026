@@ -141,3 +141,12 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+.vscode
+
+.env
+.env.example
+
+/dev/.secrets.env
+
+CLAUDE.md
