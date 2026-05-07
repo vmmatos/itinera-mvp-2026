@@ -69,8 +69,13 @@ ensure_plugin() {
   esac
 
   local existing
-  existing=$(curl -sf "${list_url}?name=${plugin_name}" | \
-    python3 -c "import sys,json; d=json.load(sys.stdin); print(d['data'][0]['id'] if d['data'] else '')" 2>/dev/null || echo "")
+  existing=$(curl -sf "${list_url}" | \
+    python3 -c "
+import sys,json
+d=json.load(sys.stdin)
+matched=[x for x in d['data'] if x['name']=='${plugin_name}']
+print(matched[0]['id'] if matched else '')
+" 2>/dev/null || echo "")
 
   local body="{\"name\":\"${plugin_name}\",\"config\":${config_json}}"
 
@@ -163,10 +168,10 @@ register_service() {
   upsert_service "$name" "$url"
 
   if [ -n "$is_ws" ]; then
+    # WebSocket proxied transparently on http/https — no ws/wss protocol override needed in Kong 3.x OSS
     upsert_route "${name}-api" "$name" \
       "paths=[\"${path}\"]" \
-      "strip_path=false" \
-      "protocols=[\"http\",\"https\",\"ws\",\"wss\"]"
+      "strip_path=false"
   else
     upsert_route "${name}-api" "$name" \
       "paths=[\"${path}\"]" \
@@ -199,9 +204,9 @@ echo "==> Configuring global plugins..."
 ensure_plugin global "" correlation-id \
   '{"header_name":"X-Request-ID","generator":"uuid#counter","echo_downstream":true}'
 
-# Rate limiting — 100 req/min per consumer, redis-backed with local fallback
+# Rate limiting — 100 req/min per consumer, local policy (per-node, sufficient for dev)
 ensure_plugin global "" rate-limiting \
-  "{\"minute\":100,\"policy\":\"redis\",\"redis_host\":\"redis\",\"redis_port\":6379,\"limit_by\":\"consumer\",\"fault_tolerant\":true,\"hide_client_headers\":false}"
+  '{"minute":100,"policy":"local","limit_by":"consumer","fault_tolerant":true,"hide_client_headers":false}'
 
 # CORS — allow frontend origin
 ensure_plugin global "" cors \
@@ -219,7 +224,7 @@ for svc in \
   notification sharing ws-relay; do
 
   ensure_plugin route "${svc}-api" jwt \
-    '{"algorithms":["HS256"],"key_claim_name":"iss"}'
+    '{"key_claim_name":"iss"}'
 
   ensure_plugin route "${svc}-api" acl \
     '{"allow":["user","admin","service"],"hide_groups_header":true}'
@@ -254,9 +259,9 @@ ensure_acl "dev-service" "service"
 
 # Higher rate limit tier for admin + service consumers
 ensure_plugin consumer "dev-admin" rate-limiting \
-  '{"minute":1000,"policy":"redis","redis_host":"redis","redis_port":6379,"fault_tolerant":true}'
+  '{"minute":1000,"policy":"local","fault_tolerant":true}'
 ensure_plugin consumer "dev-service" rate-limiting \
-  '{"minute":1000,"policy":"redis","redis_host":"redis","redis_port":6379,"fault_tolerant":true}'
+  '{"minute":1000,"policy":"local","fault_tolerant":true}'
 
 # ---------------------------------------------------------------------------
 echo ""

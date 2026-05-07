@@ -35,7 +35,7 @@ shell:
 
 ## Apply / reapply Kong routes and plugins (idempotent)
 kong-config:
-	@source dev/.dev.env && source dev/.secrets.env && \
+	@set -a && source dev/.dev.env && source dev/.secrets.env && set +a && \
 		./infrastructure/kong/configure.sh
 
 ## Run TypeORM migrations
