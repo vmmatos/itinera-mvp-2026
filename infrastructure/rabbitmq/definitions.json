@@ -135,5 +135,21 @@
       "arguments": {}
     }
   ],
-  "permissions": []
+  "users": [
+    {
+      "name": "itinera",
+      "password_hash": "BN3EkBP440YeHOPjMsQaITzbvZDg/1U6PLRk+kPtqo69RLhx",
+      "hashing_algorithm": "rabbit_password_hashing_sha256",
+      "tags": "administrator"
+    }
+  ],
+  "permissions": [
+    {
+      "user": "itinera",
+      "vhost": "/",
+      "configure": ".*",
+      "write": ".*",
+      "read": ".*"
+    }
+  ]
 }
