@@ -8,9 +8,13 @@ DC := docker compose \
 # Default target
 .DEFAULT_GOAL := help
 
-## Start all infrastructure + apply Kong config
+## Start all infrastructure, run DB migrations + seed, apply Kong config
 dev:
 	$(DC) up -d
+	@echo "Waiting for PostgreSQL to be ready..."
+	@until $(DC) exec -T postgres pg_isready -q 2>/dev/null; do sleep 1; done
+	@$(MAKE) db-migrate
+	@$(MAKE) db-seed
 	@$(MAKE) kong-config
 
 ## Start postgres + redis + rabbitmq only (no Kong)
@@ -38,13 +42,13 @@ kong-config:
 	@set -a && source dev/.dev.env && source dev/.secrets.env && set +a && \
 		./infrastructure/kong/configure.sh
 
-## Run TypeORM migrations
+## Run TypeORM migrations (spins up a temporary orchestrator container)
 db-migrate:
-	$(DC) exec orchestrator npm run migration:run
+	$(DC) run --rm orchestrator npm run migration:run
 
-## Seed test data
+## Seed test data (spins up a temporary orchestrator container)
 db-seed:
-	$(DC) exec orchestrator npm run seed
+	$(DC) run --rm orchestrator npm run seed
 
 ## Run tests — all or one service:  make test s=validator
 test:
