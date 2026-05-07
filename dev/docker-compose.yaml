@@ -1,0 +1,217 @@
+name: itinera
+
+# ---------------------------------------------------------------------------
+# Load order: .dev.env first, .secrets.env overrides on conflict.
+# Run: docker compose --env-file dev/.dev.env --env-file dev/.secrets.env ...
+# Or use: make dev / make infra (Makefile handles flags)
+# ---------------------------------------------------------------------------
+
+services:
+
+  # -------------------------------------------------------------------------
+  # Core infrastructure
+  # -------------------------------------------------------------------------
+
+  postgres:
+    image: postgres:15-alpine
+    container_name: itinera-postgres-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      KONG_PG_PASSWORD: ${KONG_PG_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-databases.sh:/docker-entrypoint-initdb.d/init-databases.sh:ro
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    container_name: itinera-redis-cache
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    container_name: itinera-rabbitmq-bus
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+      - ../infrastructure/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+    ports:
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MGMT_PORT:-15672}:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+
+  # -------------------------------------------------------------------------
+  # Kong API Gateway
+  # -------------------------------------------------------------------------
+
+  kong-migrations:
+    image: kong:3.6
+    command: kong migrations bootstrap
+    restart: on-failure
+    environment:
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: ${KONG_PG_HOST}
+      KONG_PG_DATABASE: ${KONG_PG_DATABASE}
+      KONG_PG_USER: ${KONG_PG_USER}
+      KONG_PG_PASSWORD: ${KONG_PG_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  kong:
+    image: kong:3.6
+    container_name: itinera-kong-gateway
+    restart: unless-stopped
+    environment:
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: ${KONG_PG_HOST}
+      KONG_PG_DATABASE: ${KONG_PG_DATABASE}
+      KONG_PG_USER: ${KONG_PG_USER}
+      KONG_PG_PASSWORD: ${KONG_PG_PASSWORD}
+      KONG_PROXY_LISTEN: "0.0.0.0:8000"
+      KONG_ADMIN_LISTEN: "0.0.0.0:8001"
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_LOG_LEVEL: notice
+      KONG_PLUGINS: bundled
+    ports:
+      - "${KONG_PROXY_PORT:-8000}:8000"
+      - "${KONG_ADMIN_PORT:-8001}:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kong-migrations:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "kong", "health"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 20s
+
+  # -------------------------------------------------------------------------
+  # Microservices (uncomment as each service is implemented)
+  # -------------------------------------------------------------------------
+
+  # orchestrator:
+  #   build: ../services/orchestrator
+  #   restart: unless-stopped
+  #   profiles: [services]
+  #   environment:
+  #     PORT: ${ORCHESTRATOR_PORT}
+  #     NODE_ENV: ${NODE_ENV}
+  #     LOG_LEVEL: ${LOG_LEVEL}
+  #     POSTGRES_HOST: ${POSTGRES_HOST}
+  #     POSTGRES_PORT: ${POSTGRES_PORT}
+  #     POSTGRES_DB: ${POSTGRES_DB}
+  #     POSTGRES_USER: ${POSTGRES_USER}
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+  #     REDIS_HOST: ${REDIS_HOST}
+  #     REDIS_PORT: ${REDIS_PORT}
+  #     RABBITMQ_HOST: ${RABBITMQ_HOST}
+  #     RABBITMQ_PORT: ${RABBITMQ_PORT}
+  #     RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+  #     RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+  #     JWT_SECRET: ${JWT_SECRET}
+  #     JWT_ISSUER: ${JWT_ISSUER}
+  #   ports:
+  #     - "${ORCHESTRATOR_PORT:-3001}:${ORCHESTRATOR_PORT:-3001}"
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #     rabbitmq:
+  #       condition: service_healthy
+  #     kong:
+  #       condition: service_healthy
+
+  # preference-agent:
+  #   build: ../services/preference-agent
+  #   profiles: [services]
+  #   environment:
+  #     PORT: ${PREFERENCE_AGENT_PORT}
+  #     ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+  #   ports:
+  #     - "${PREFERENCE_AGENT_PORT:-3002}:${PREFERENCE_AGENT_PORT:-3002}"
+
+  # orchestrator-agent:
+  #   build: ../services/orchestrator-agent
+  #   profiles: [services]
+  #   ports:
+  #     - "${ORCHESTRATOR_AGENT_PORT:-3003}:${ORCHESTRATOR_AGENT_PORT:-3003}"
+
+  # finance-agent:
+  #   build: ../services/finance-agent
+  #   profiles: [services]
+  #   ports:
+  #     - "${FINANCE_AGENT_PORT:-3004}:${FINANCE_AGENT_PORT:-3004}"
+
+  # logistics-agent:
+  #   build: ../services/logistics-agent
+  #   profiles: [services]
+  #   ports:
+  #     - "${LOGISTICS_AGENT_PORT:-3005}:${LOGISTICS_AGENT_PORT:-3005}"
+
+  # validator:
+  #   build: ../services/validator
+  #   profiles: [services]
+  #   ports:
+  #     - "${VALIDATOR_PORT:-3006}:${VALIDATOR_PORT:-3006}"
+
+  # notification:
+  #   build: ../services/notification
+  #   profiles: [services]
+  #   ports:
+  #     - "${NOTIFICATION_PORT:-3007}:${NOTIFICATION_PORT:-3007}"
+
+  # sharing:
+  #   build: ../services/sharing
+  #   profiles: [services]
+  #   ports:
+  #     - "${SHARING_PORT:-3008}:${SHARING_PORT:-3008}"
+
+  # ws-relay:
+  #   build: ../services/ws-relay
+  #   profiles: [services]
+  #   ports:
+  #     - "${WS_RELAY_PORT:-3009}:${WS_RELAY_PORT:-3009}"
+
+# ---------------------------------------------------------------------------
+# Volumes
+# ---------------------------------------------------------------------------
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:

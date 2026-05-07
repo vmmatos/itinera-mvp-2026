@@ -141,3 +141,15 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+.vscode
+
+.env
+# dev/.secrets.env is gitignored (contains real secrets)
+/dev/.secrets.env
+# dev/.dev.env is tracked (non-secret local settings)
+
+# Kong sentinel (written by configure.sh, not source)
+infrastructure/kong/.kong-configured
+
+CLAUDE.md

@@ -1,0 +1,53 @@
+{
+  "rabbit_version": "3.12.0",
+  "rabbitmq_version": "3.12.0",
+  "vhosts": [
+    { "name": "/" }
+  ],
+  "exchanges": [
+    {
+      "name": "agent.events",
+      "vhost": "/",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    }
+  ],
+  "queues": [
+    {
+      "name": "agent.proposals",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": { "x-message-ttl": 86400000 }
+    },
+    {
+      "name": "agent.notifications",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": { "x-message-ttl": 3600000 }
+    }
+  ],
+  "bindings": [
+    {
+      "source": "agent.events",
+      "vhost": "/",
+      "destination": "agent.proposals",
+      "destination_type": "queue",
+      "routing_key": "agent.*.propose",
+      "arguments": {}
+    },
+    {
+      "source": "agent.events",
+      "vhost": "/",
+      "destination": "agent.notifications",
+      "destination_type": "queue",
+      "routing_key": "agent.notification.*",
+      "arguments": {}
+    }
+  ],
+  "permissions": []
+}
