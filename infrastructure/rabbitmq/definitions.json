@@ -13,6 +13,24 @@
       "auto_delete": false,
       "internal": false,
       "arguments": {}
+    },
+    {
+      "name": "trip.events",
+      "vhost": "/",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "notifications",
+      "vhost": "/",
+      "type": "topic",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
     }
   ],
   "queues": [
@@ -25,6 +43,34 @@
     },
     {
       "name": "agent.notifications",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": { "x-message-ttl": 3600000 }
+    },
+    {
+      "name": "trip.updates",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": { "x-message-ttl": 86400000 }
+    },
+    {
+      "name": "admin.realtime",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": { "x-message-ttl": 300000 }
+    },
+    {
+      "name": "notification.push",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": { "x-message-ttl": 3600000 }
+    },
+    {
+      "name": "notification.sms",
       "vhost": "/",
       "durable": true,
       "auto_delete": false,
@@ -46,6 +92,46 @@
       "destination": "agent.notifications",
       "destination_type": "queue",
       "routing_key": "agent.notification.*",
+      "arguments": {}
+    },
+    {
+      "source": "trip.events",
+      "vhost": "/",
+      "destination": "trip.updates",
+      "destination_type": "queue",
+      "routing_key": "trip.#",
+      "arguments": {}
+    },
+    {
+      "source": "trip.events",
+      "vhost": "/",
+      "destination": "admin.realtime",
+      "destination_type": "queue",
+      "routing_key": "trip.#",
+      "arguments": {}
+    },
+    {
+      "source": "agent.events",
+      "vhost": "/",
+      "destination": "admin.realtime",
+      "destination_type": "queue",
+      "routing_key": "agent.#",
+      "arguments": {}
+    },
+    {
+      "source": "notifications",
+      "vhost": "/",
+      "destination": "notification.push",
+      "destination_type": "queue",
+      "routing_key": "notification.push.#",
+      "arguments": {}
+    },
+    {
+      "source": "notifications",
+      "vhost": "/",
+      "destination": "notification.sms",
+      "destination_type": "queue",
+      "routing_key": "notification.sms.#",
       "arguments": {}
     }
   ],

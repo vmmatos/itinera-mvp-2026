@@ -58,6 +58,7 @@ services:
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
+      - ../infrastructure/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
       - ../infrastructure/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
     ports:
       - "${RABBITMQ_PORT:-5672}:5672"
