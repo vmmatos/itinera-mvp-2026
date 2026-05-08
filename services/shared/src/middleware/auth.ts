@@ -7,6 +7,7 @@ import { UnauthorizedError, ForbiddenError } from '@/errors';
 function getSecret(): string {
   const secret = process.env['JWT_SECRET'];
   if (!secret) throw new Error('JWT_SECRET env var is not set');
+
   return secret;
 }
 
@@ -34,6 +35,7 @@ export function requireRole(role: UserRole): RequestHandler {
       next(new UnauthorizedError());
       return;
     }
+    
     if (authedReq.user.role !== role) {
       next(new ForbiddenError(`Role '${role}' required`));
       return;
