@@ -1,9 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { RabbitMQConsumer } from '@/services/RabbitMQConsumer'
 
-vi.mock('@itinera/shared', () => ({
-  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
-}))
+vi.mock('@itinera/shared', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@itinera/shared')>()
+  return {
+    ...actual,
+    createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+  }
+})
 
 const { mockChannel, mockConnection } = vi.hoisted(() => {
   const mockChannel = {

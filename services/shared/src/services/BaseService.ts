@@ -1,6 +1,6 @@
 import type { Logger } from 'winston';
-import { createLogger } from '@/logger';
-import type { HealthResponse } from '@/types/api';
+import { createLogger } from '../logger';
+import type { HealthResponse } from '../types/api';
 
 export abstract class BaseService {
   protected readonly logger: Logger;

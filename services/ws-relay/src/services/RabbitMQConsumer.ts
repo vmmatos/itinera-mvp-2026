@@ -1,12 +1,12 @@
 import amqplib from 'amqplib'
-import type { Connection, Channel, ConsumeMessage } from 'amqplib'
-import { createLogger } from '@itinera/shared'
+import type { ChannelModel, Channel, ConsumeMessage } from 'amqplib'
+import { createLogger, AgentEventSchema } from '@itinera/shared'
 import type { AgentEvent } from '@itinera/shared'
 
 type MessageHandler = (event: AgentEvent) => void
 
 export class RabbitMQConsumer {
-  private connection: Connection | null = null
+  private connection: ChannelModel | null = null
   private channel: Channel | null = null
   private readonly logger = createLogger('ws-relay')
   private reconnectAttempts = 0
@@ -18,18 +18,19 @@ export class RabbitMQConsumer {
   constructor(private readonly url: string) {}
 
   async connect(): Promise<void> {
-    this.connection = await amqplib.connect(this.url)
-    this.channel = await this.connection.createChannel()
+    const connection = await amqplib.connect(this.url)
+    this.connection = connection
+    this.channel = await connection.createChannel()
     await this.channel.prefetch(1)
     this.reconnectAttempts = 0
     this.reconnecting = false
     this.logger.info('RabbitMQ connected')
 
-    this.connection.on('error', (err: Error) => {
+    connection.on('error', (err: Error) => {
       this.logger.error('RabbitMQ connection error', { error: err.message })
       void this.scheduleReconnect()
     })
-    this.connection.on('close', () => {
+    connection.on('close', () => {
       this.logger.warn('RabbitMQ connection closed')
       void this.scheduleReconnect()
     })
@@ -42,8 +43,17 @@ export class RabbitMQConsumer {
     await this.channel.consume(queue, (msg: ConsumeMessage | null) => {
       if (!msg) return
       try {
-        const event = JSON.parse(msg.content.toString()) as AgentEvent
-        handler(event)
+        const raw: unknown = JSON.parse(msg.content.toString())
+        const result = AgentEventSchema.safeParse(raw)
+        if (!result.success) {
+          this.logger.warn('Invalid AgentEvent — discarding', {
+            error: result.error.message,
+            raw: JSON.stringify(raw).slice(0, 200),
+          })
+          this.channel!.nack(msg, false, false)
+          return
+        }
+        handler(result.data as AgentEvent)
         this.channel!.ack(msg)
       } catch (err) {
         this.logger.error('Failed to process RabbitMQ message', { error: String(err) })

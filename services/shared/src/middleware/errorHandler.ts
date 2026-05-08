@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
-import { AppError } from '@/errors';
-import { createLogger } from '@/logger';
+import { AppError } from '../errors';
+import { createLogger } from '../logger';
 
 const logger = createLogger('error-handler');
 

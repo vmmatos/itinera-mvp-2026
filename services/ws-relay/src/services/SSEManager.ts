@@ -8,6 +8,11 @@ interface SSEClient {
   connectedAt: Date
 }
 
+function sanitizeEventType(eventType: string): string {
+  // Strip CR, LF and colon — these would break the SSE line protocol
+  return eventType.replace(/[\r\n:]/g, '_')
+}
+
 export class SSEManager {
   private readonly clients = new Map<string, SSEClient>()
   private readonly logger = createLogger('ws-relay')
@@ -24,14 +29,16 @@ export class SSEManager {
   }
 
   broadcast(event: unknown, eventType = 'agent'): void {
-    const payload = `event: ${eventType}\ndata: ${JSON.stringify(event)}\n\n`
+    const safeType = sanitizeEventType(eventType)
+    const payload = `event: ${safeType}\ndata: ${JSON.stringify(event)}\n\n`
     for (const client of this.clients.values()) {
       this.writeToClient(client, payload)
     }
   }
 
   broadcastToTrip(tripId: string, event: unknown, eventType = 'agent'): void {
-    const payload = `event: ${eventType}\ndata: ${JSON.stringify(event)}\n\n`
+    const safeType = sanitizeEventType(eventType)
+    const payload = `event: ${safeType}\ndata: ${JSON.stringify(event)}\n\n`
     for (const client of this.clients.values()) {
       if (!client.tripId || client.tripId === tripId) {
         this.writeToClient(client, payload)

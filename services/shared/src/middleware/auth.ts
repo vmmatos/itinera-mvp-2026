@@ -1,14 +1,17 @@
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import jwt from 'jsonwebtoken';
-import type { JwtPayload, AuthenticatedRequest } from '@/types/auth';
-import type { UserRole } from '@/types/entities';
-import { UnauthorizedError, ForbiddenError } from '@/errors';
+import type { JwtPayload, AuthenticatedRequest } from '../types/auth';
+import type { UserRole } from '../types/entities';
+import { UnauthorizedError, ForbiddenError } from '../errors';
 
 function getSecret(): string {
   const secret = process.env['JWT_SECRET'];
   if (!secret) throw new Error('JWT_SECRET env var is not set');
-
   return secret;
+}
+
+function getIssuer(): string | undefined {
+  return process.env['JWT_ISSUER'];
 }
 
 export function authMiddleware(req: Request, res: Response, next: NextFunction): void {
@@ -20,7 +23,9 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
 
   const token = authHeader.slice(7);
   try {
-    const payload = jwt.verify(token, getSecret()) as JwtPayload;
+    const issuer = getIssuer();
+    const options = issuer ? { issuer } : {};
+    const payload = jwt.verify(token, getSecret(), options) as JwtPayload;
     (req as AuthenticatedRequest).user = payload;
     next();
   } catch {

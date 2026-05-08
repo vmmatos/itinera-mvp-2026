@@ -126,7 +126,9 @@ services:
   # -------------------------------------------------------------------------
 
   orchestrator:
-    build: ../services/orchestrator
+    build:
+      context: ..
+      dockerfile: services/orchestrator/Dockerfile
     container_name: itinera-orchestrator
     restart: unless-stopped
     profiles: [services]
@@ -205,7 +207,9 @@ services:
   #     - "${SHARING_PORT:-3008}:${SHARING_PORT:-3008}"
 
   ws-relay:
-    build: ../services/ws-relay
+    build:
+      context: ..
+      dockerfile: services/ws-relay/Dockerfile
     container_name: itinera-ws-relay
     restart: unless-stopped
     profiles: [services]

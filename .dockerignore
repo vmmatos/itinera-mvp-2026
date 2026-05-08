@@ -1,0 +1,23 @@
+# Node
+**/node_modules
+**/dist
+**/.yarn/cache
+**/*.tsbuildinfo
+**/*.log
+
+# Git
+.git
+.github
+
+# Secrets — never in build context
+dev/.secrets.env
+.env
+.env.*
+!.env.example
+
+# Frontend (not needed for service builds)
+apps/
+
+# Editor
+.vscode
+.idea
