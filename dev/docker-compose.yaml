@@ -204,11 +204,28 @@ services:
   #   ports:
   #     - "${SHARING_PORT:-3008}:${SHARING_PORT:-3008}"
 
-  # ws-relay:
-  #   build: ../services/ws-relay
-  #   profiles: [services]
-  #   ports:
-  #     - "${WS_RELAY_PORT:-3009}:${WS_RELAY_PORT:-3009}"
+  ws-relay:
+    build: ../services/ws-relay
+    container_name: itinera-ws-relay
+    restart: unless-stopped
+    profiles: [services]
+    environment:
+      PORT: ${WS_RELAY_PORT:-3009}
+      NODE_ENV: ${NODE_ENV}
+      LOG_LEVEL: ${LOG_LEVEL}
+      RABBITMQ_HOST: ${RABBITMQ_HOST}
+      RABBITMQ_PORT: ${RABBITMQ_PORT}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ISSUER: ${JWT_ISSUER}
+    ports:
+      - "${WS_RELAY_PORT:-3009}:${WS_RELAY_PORT:-3009}"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      kong:
+        condition: service_healthy
 
 # ---------------------------------------------------------------------------
 # Volumes
