@@ -1,3 +1,21 @@
+import { z } from 'zod';
+
+export const AgentEventSchema = z.object({
+  tripId: z.string(),
+  type: z.string(),
+  agent: z.string(),
+  round: z.number().int(),
+  timestamp: z.string(),
+  content: z.any(),
+  reasoning: z.string().optional(),
+  metrics: z
+    .object({
+      latencyMs: z.number(),
+      tokensUsed: z.number(),
+    })
+    .optional(),
+});
+
 export interface AgentEvent {
   tripId: string;
   type: string;

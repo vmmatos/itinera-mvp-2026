@@ -1,5 +1,5 @@
 import type { Request } from 'express';
-import type { UserRole } from '@/types/entities';
+import type { UserRole } from './entities';
 
 export interface JwtPayload {
   sub: string;

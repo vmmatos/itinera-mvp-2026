@@ -1,3 +1,3 @@
-export { authMiddleware, requireRole } from '@/middleware/auth';
-export { requestLogger } from '@/middleware/requestLogger';
-export { errorHandler } from '@/middleware/errorHandler';
+export { authMiddleware, requireRole } from './auth';
+export { requestLogger } from './requestLogger';
+export { errorHandler } from './errorHandler';
