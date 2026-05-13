@@ -9,7 +9,11 @@ vi.mock('@itinera/shared', async (importOriginal) => {
 });
 
 vi.mock('@/config', () => ({
-  config: { ANTHROPIC_API_KEY: 'test-key', NODE_ENV: 'test' },
+  config: { 
+    ANTHROPIC_API_KEY: 'test-key',
+    NODE_ENV: 'test',
+    ANTHROPIC_MODEL: 'claude-sonnet-4-20250514',
+  },
 }));
 
 const mockCreate = vi.fn();

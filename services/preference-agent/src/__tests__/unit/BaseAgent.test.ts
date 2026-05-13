@@ -13,6 +13,7 @@ vi.mock('@itinera/shared', async (importOriginal) => {
 vi.mock('@/config', () => ({
   config: {
     ANTHROPIC_API_KEY: 'test-key',
+    ANTHROPIC_MODEL: 'claude-sonnet-4-20250514',
     NODE_ENV: 'test',
     RABBITMQ_EXCHANGE: 'agent.events',
   },
