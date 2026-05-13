@@ -237,11 +237,45 @@ services:
       kong:
         condition: service_healthy
 
-  # finance-agent:
-  #   build: ../services/finance-agent
-  #   profiles: [services]
-  #   ports:
-  #     - "${FINANCE_AGENT_PORT:-3004}:${FINANCE_AGENT_PORT:-3004}"
+  finance-agent:
+    build:
+      context: ..
+      dockerfile: services/finance-agent/Dockerfile
+    container_name: itinera-finance-agent
+    restart: unless-stopped
+    profiles: [services]
+    environment:
+      PORT: ${FINANCE_AGENT_PORT}
+      NODE_ENV: ${NODE_ENV}
+      LOG_LEVEL: ${LOG_LEVEL}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL}
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      RABBITMQ_HOST: ${RABBITMQ_HOST}
+      RABBITMQ_PORT: ${RABBITMQ_PORT}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ISSUER: ${JWT_ISSUER}
+      CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS}
+    ports:
+      - "${FINANCE_AGENT_PORT:-3004}:${FINANCE_AGENT_PORT:-3004}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      kong:
+        condition: service_healthy
 
   # logistics-agent:
   #   build: ../services/logistics-agent
