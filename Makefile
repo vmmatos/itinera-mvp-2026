@@ -10,7 +10,7 @@ DC := docker compose \
 
 ## Start all infrastructure, run DB migrations + seed, apply Kong config
 dev:
-	$(DC) up -d
+	$(DC) --profile services up -d
 	@echo "Waiting for PostgreSQL to be ready..."
 	@until $(DC) exec -T postgres pg_isready -q 2>/dev/null; do sleep 1; done
 	@$(MAKE) db-migrate

@@ -199,11 +199,43 @@ services:
       kong:
         condition: service_healthy
 
-  # orchestrator-agent:
-  #   build: ../services/orchestrator-agent
-  #   profiles: [services]
-  #   ports:
-  #     - "${ORCHESTRATOR_AGENT_PORT:-3003}:${ORCHESTRATOR_AGENT_PORT:-3003}"
+  orchestrator-agent:
+    build:
+      context: ..
+      dockerfile: services/orchestrator-agent/Dockerfile
+    container_name: itinera-orchestrator-agent
+    restart: unless-stopped
+    profiles: [services]
+    environment:
+      PORT: ${ORCHESTRATOR_AGENT_PORT}
+      NODE_ENV: ${NODE_ENV}
+      LOG_LEVEL: ${LOG_LEVEL}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL}
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      RABBITMQ_HOST: ${RABBITMQ_HOST}
+      RABBITMQ_PORT: ${RABBITMQ_PORT}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ISSUER: ${JWT_ISSUER}
+    ports:
+      - "${ORCHESTRATOR_AGENT_PORT:-3003}:${ORCHESTRATOR_AGENT_PORT:-3003}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      kong:
+        condition: service_healthy
 
   # finance-agent:
   #   build: ../services/finance-agent
