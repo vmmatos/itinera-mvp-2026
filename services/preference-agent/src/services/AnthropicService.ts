@@ -3,7 +3,7 @@ import type { MessageParam } from '@anthropic-ai/sdk/resources/messages';
 import { BaseService } from '@itinera/shared';
 import { config } from '@/config';
 
-const MODEL = 'claude-sonnet-4-20250514';
+const MODEL = config.ANTHROPIC_MODEL;
 
 interface CompletionResult {
   content: string;
