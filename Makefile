@@ -1,4 +1,4 @@
-.PHONY: dev infra up stop logs shell kong-config db-migrate db-seed test test-unit help
+.PHONY: dev infra up stop logs shell kong-config db-migrate db-seed test test-unit test-local help
 
 DC := docker compose \
 	-f dev/docker-compose.yaml \
@@ -62,9 +62,23 @@ else
 	done
 endif
 
-## Unit tests only
+## Unit tests only (Docker)
 test-unit:
 	$(DC) run --rm orchestrator yarn test:unit
+
+## Run tests locally without Docker — all or one service:  make test-local s=preference-agent
+test-local:
+ifdef s
+	cd services/$(s) && yarn test
+else
+	@for svc in orchestrator preference-agent orchestrator-agent \
+		finance-agent logistics-agent validator notification sharing ws-relay; do \
+		if [ -f "services/$$svc/package.json" ]; then \
+			echo "==> Testing $$svc"; \
+			(cd services/$$svc && yarn test) || echo "  ($$svc tests failed)"; \
+		fi; \
+	done
+endif
 
 ## Tear down all containers and volumes (destructive)
 down:
