@@ -1,4 +1,4 @@
-.PHONY: dev infra up stop logs shell kong-config db-migrate db-seed test test-unit test-local help
+.PHONY: dev infra up stop logs shell kong-config db-migrate db-seed test test-unit test-local test-scenarios help
 
 DC := docker compose \
 	-f dev/docker-compose.yaml \
@@ -79,6 +79,10 @@ else
 		fi; \
 	done
 endif
+
+## Run scenario tests locally
+test-scenarios:
+	cd tests/scenarios && yarn test
 
 ## Tear down all containers and volumes (destructive)
 down:
