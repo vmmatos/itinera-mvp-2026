@@ -277,11 +277,50 @@ services:
       kong:
         condition: service_healthy
 
-  # logistics-agent:
-  #   build: ../services/logistics-agent
-  #   profiles: [services]
-  #   ports:
-  #     - "${LOGISTICS_AGENT_PORT:-3005}:${LOGISTICS_AGENT_PORT:-3005}"
+  logistics-agent:
+    build:
+      context: ..
+      dockerfile: services/logistics-agent/Dockerfile
+    container_name: itinera-logistics-agent
+    restart: unless-stopped
+    profiles: [services]
+    environment:
+      PORT: ${LOGISTICS_AGENT_PORT}
+      NODE_ENV: ${NODE_ENV}
+      LOG_LEVEL: ${LOG_LEVEL}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL}
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      RABBITMQ_HOST: ${RABBITMQ_HOST}
+      RABBITMQ_PORT: ${RABBITMQ_PORT}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ISSUER: ${JWT_ISSUER}
+      CACHE_TTL_SECONDS: ${CACHE_TTL_SECONDS}
+      WEATHER_CACHE_TTL_SECONDS: ${WEATHER_CACHE_TTL_SECONDS:-1800}
+      ATTRACTIONS_CACHE_TTL_SECONDS: ${ATTRACTIONS_CACHE_TTL_SECONDS:-86400}
+      OPENWEATHERMAP_API_KEY: ${OPENWEATHERMAP_API_KEY}
+      GOOGLE_PLACES_API_KEY: ${GOOGLE_PLACES_API_KEY}
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY}
+    ports:
+      - "${LOGISTICS_AGENT_PORT:-3005}:${LOGISTICS_AGENT_PORT:-3005}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      kong:
+        condition: service_healthy
 
   # validator:
   #   build: ../services/validator
