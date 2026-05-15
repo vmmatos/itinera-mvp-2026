@@ -10,10 +10,20 @@ export class RedisService extends BaseService {
     this.client = new Redis(getRedisUrl(), {
       lazyConnect: true,
       enableOfflineQueue: false,
+      retryStrategy(times: number) {
+        if (times > 30) return null;
+        return Math.min(times * 300, 5000);
+      },
     });
 
     this.client.on('error', (err: Error) => {
-      this.logger.error('Redis error', { error: err.message });
+      const isTransient =
+        err.message.includes('EAI_AGAIN') || err.message.includes('ECONNREFUSED');
+      if (isTransient) {
+        this.logger.warn('Redis connecting…', { error: err.message });
+      } else {
+        this.logger.error('Redis error', { error: err.message });
+      }
     });
   }
 
