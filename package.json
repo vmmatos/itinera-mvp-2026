@@ -3,7 +3,8 @@
   "private": true,
   "workspaces": [
     "services/*",
-    "apps/*"
+    "apps/*",
+    "tests/*"
   ],
   "packageManager": "yarn@1.22.22"
 }
