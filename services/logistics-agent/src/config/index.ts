@@ -27,6 +27,9 @@ const EnvSchema = z.object({
   OPENWEATHERMAP_API_KEY: z.string().min(1),
   GOOGLE_PLACES_API_KEY: z.string().min(1),
   GOOGLE_MAPS_API_KEY: z.string().min(1),
+  GOOGLE_MAPS_BASE_URL: z.string().default('https://maps.googleapis.com/maps/api'),
+  GOOGLE_PLACES_BASE_URL: z.string().default('https://places.googleapis.com/v1'),
+  OPENWEATHERMAP_BASE_URL: z.string().default('https://api.openweathermap.org'),
 });
 
 const parsed = EnvSchema.safeParse(process.env);
