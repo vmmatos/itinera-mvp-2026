@@ -9,7 +9,8 @@ export function createLogger(service: string): winston.Logger {
       winston.format.errors({ stack: true }),
       winston.format.json(),
     ),
-    transports: [new winston.transports.Console()],
+    transports:
+      process.env['NODE_ENV'] === 'test' ? [] : [new winston.transports.Console()],
   });
 }
 

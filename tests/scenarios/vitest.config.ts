@@ -2,6 +2,9 @@ import { defineConfig } from 'vitest/config';
 import { resolve } from 'path';
 
 export default defineConfig({
+  test: {
+    silent: true,
+  },
   resolve: {
     alias: {
       '@': resolve(__dirname, '../../services/orchestrator-agent/src'),
