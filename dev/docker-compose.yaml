@@ -355,11 +355,46 @@ services:
       kong:
         condition: service_healthy
 
-  # notification:
-  #   build: ../services/notification
-  #   profiles: [services]
-  #   ports:
-  #     - "${NOTIFICATION_PORT:-3007}:${NOTIFICATION_PORT:-3007}"
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    container_name: itinera-mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+  notification:
+    build:
+      context: ..
+      dockerfile: services/notification/Dockerfile
+    container_name: itinera-notification
+    restart: unless-stopped
+    profiles: [services]
+    environment:
+      PORT: ${NOTIFICATION_PORT:-3007}
+      NODE_ENV: ${NODE_ENV}
+      LOG_LEVEL: ${LOG_LEVEL}
+      RABBITMQ_HOST: ${RABBITMQ_HOST}
+      RABBITMQ_PORT: ${RABBITMQ_PORT}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ISSUER: ${JWT_ISSUER}
+      SENDGRID_ENABLED: ${SENDGRID_ENABLED:-false}
+      SENDGRID_API_KEY: ${SENDGRID_API_KEY}
+      SMTP_HOST: ${SMTP_HOST:-mailhog}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      FCM_ENABLED: ${FCM_ENABLED:-false}
+      TWILIO_ENABLED: ${TWILIO_ENABLED:-false}
+      NOTIFICATION_FROM_EMAIL: ${NOTIFICATION_FROM_EMAIL:-noreply@itinera.dev}
+      NOTIFICATION_FROM_NAME: ${NOTIFICATION_FROM_NAME:-Itinera}
+    ports:
+      - "${NOTIFICATION_PORT:-3007}:${NOTIFICATION_PORT:-3007}"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      kong:
+        condition: service_healthy
 
   # sharing:
   #   build: ../services/sharing

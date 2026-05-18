@@ -75,6 +75,13 @@
       "durable": true,
       "auto_delete": false,
       "arguments": { "x-message-ttl": 3600000 }
+    },
+    {
+      "name": "notification.email",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": { "x-message-ttl": 3600000 }
     }
   ],
   "bindings": [
@@ -132,6 +139,14 @@
       "destination": "notification.sms",
       "destination_type": "queue",
       "routing_key": "notification.sms.#",
+      "arguments": {}
+    },
+    {
+      "source": "notifications",
+      "vhost": "/",
+      "destination": "notification.email",
+      "destination_type": "queue",
+      "routing_key": "notification.email.#",
       "arguments": {}
     }
   ],
