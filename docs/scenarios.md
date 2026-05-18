@@ -40,13 +40,37 @@ a balanced itinerary without further refinement rounds.
 
 ---
 
-## Scenario 002 — 2 people, conflicting preferences (planned)
+## Scenario 002 — 4 people, conflicting preferences
 
 **File:** `tests/scenarios/002-conflicting-preferences.test.ts`
-**Status:** planned
+**Status:** implemented
 
-Participants with opposing styles (e.g., adventure seeker vs. fine dining) that require
-multiple rounds of compromise before converging.
+### Input
+
+| Field | Value |
+|-------|-------|
+| Participants | Alice (Culture & History), Bob (Relaxation & Wine), Carlos (Adventure & Outdoors), Diana (Gastronomy & Fine Dining) |
+| Duration | 2 days |
+| Destinations | Sintra (day 1) + Cascais (day 2), Portugal |
+| Budget | €600 total (4 people) |
+
+### Acceptance criteria
+
+| Criterion | Threshold |
+|-----------|-----------|
+| Convergence | ≤ 6 negotiation rounds |
+| Fairness | Satisfaction score ≥ 65% per agent |
+| Budget | Final itinerary ≤ €600 total |
+| Logistics | No overlapping activity times within a day |
+| Coverage | Both destinations represented across itinerary |
+
+### Rationale
+
+Alice (palaces, museums), Bob (wine, coastal leisure), Carlos (hiking, surfing, cycling),
+and Diana (fine dining, food markets) have deeply opposing preferences on pace, activity
+type, and budget allocation. The ConflictAnalyzer should return `overallConflictScore > 2.0`
+in round 1, requiring multiple refinement rounds before the CompromiseGenerator can produce
+a balanced itinerary satisfying all four profiles.
 
 ---
 
@@ -55,7 +79,7 @@ multiple rounds of compromise before converging.
 **File:** `tests/scenarios/003-four-people-mixed.test.ts`
 **Status:** planned
 
-Full 4-agent negotiation (Alice, Bob, Carlos, Diana) with diverse preferences
+Full 4-agent negotiation (Alice, Bob, Carlos, Diana) with partially overlapping preferences
 requiring the orchestrator to balance competing demands across ≥2 rounds.
 
 ---
