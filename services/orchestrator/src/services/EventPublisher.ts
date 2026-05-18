@@ -8,13 +8,15 @@ import { config, getRabbitMQUrl } from '@/config';
 export class EventPublisher extends BaseService {
   private connection: ChannelModel | null = null;
   private channel: Channel | null = null;
+  private reconnecting = false;
 
   constructor() {
     super('event-publisher');
   }
 
   async connect(): Promise<void> {
-    const connection = await amqplib.connect(getRabbitMQUrl());
+    this.reconnecting = false;
+    const connection = await amqplib.connect(`${getRabbitMQUrl()}?heartbeat=60`);
     this.connection = connection;
     this.channel = await connection.createChannel();
     await this.channel.assertExchange(config.RABBITMQ_EXCHANGE, 'topic', { durable: true });
@@ -26,6 +28,8 @@ export class EventPublisher extends BaseService {
       this.logger.warn('RabbitMQ connection closed');
       this.connection = null;
       this.channel = null;
+      this.reconnecting = true;
+      setTimeout(() => void this.connect(), 5000);
     });
 
     this.logger.info('EventPublisher connected');
@@ -46,7 +50,7 @@ export class EventPublisher extends BaseService {
   }
 
   isConnected(): boolean {
-    return this.connection !== null && this.channel !== null;
+    return this.reconnecting || (this.connection !== null && this.channel !== null);
   }
 
   async close(): Promise<void> {

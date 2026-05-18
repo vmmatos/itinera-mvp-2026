@@ -15,6 +15,7 @@ export function createHealthRouter(eventPublisher: EventPublisher): Router {
     const db = AppDataSource.isInitialized;
     const mq = eventPublisher.isConnected();
     const ready = db && mq;
+    
     res.status(ready ? 200 : 503).json({
       status: ready ? 'ready' : 'not_ready',
       service: 'orchestrator',
