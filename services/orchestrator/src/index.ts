@@ -1,43 +1,44 @@
 import 'reflect-metadata';
 import express from 'express';
 import { requestLogger, errorHandler, createLogger } from '@itinera/shared';
-import type { HealthResponse, ReadyResponse } from '@itinera/shared';
 import { AppDataSource } from '@/data-source';
+import { config } from '@/config';
+import { EventPublisher } from '@/services/EventPublisher';
+import { StateManager } from '@/services/StateManager';
+import { AgentCaller } from '@/services/AgentCaller';
+import { NegotiationLoop } from '@/services/NegotiationLoop';
+import { TripService } from '@/services/TripService';
+import { registerRoutes } from '@/routes';
 
 const logger = createLogger('orchestrator');
 const app = express();
-const PORT = parseInt(process.env['PORT'] ?? '3001', 10);
 
 app.use(requestLogger);
 app.use(express.json());
-
-app.get('/health', (_req, res: express.Response<HealthResponse>) => {
-  res.json({ status: 'ok', service: 'orchestrator', timestamp: new Date().toISOString() });
-});
-
-app.get('/ready', (_req, res: express.Response<ReadyResponse>) => {
-  const db = AppDataSource.isInitialized;
-  res.status(db ? 200 : 503).json({
-    status: db ? 'ready' : 'not_ready',
-    service: 'orchestrator',
-    timestamp: new Date().toISOString(),
-    checks: { db },
-  });
-});
-
-app.use(errorHandler);
 
 async function start(): Promise<void> {
   await AppDataSource.initialize();
   logger.info('Database connected');
 
-  const server = app.listen(PORT, () => {
-    logger.info('Orchestrator started', { port: PORT });
+  const eventPublisher = new EventPublisher();
+  await eventPublisher.connect();
+
+  const stateManager = new StateManager();
+  const agentCaller = new AgentCaller();
+  const negotiationLoop = new NegotiationLoop(stateManager, agentCaller, eventPublisher);
+  const tripService = new TripService(stateManager, negotiationLoop);
+
+  registerRoutes(app, eventPublisher, tripService);
+  app.use(errorHandler);
+
+  const server = app.listen(config.PORT, () => {
+    logger.info('Orchestrator started', { port: config.PORT });
   });
 
   const shutdown = async (): Promise<void> => {
     logger.info('Shutting down orchestrator');
     await AppDataSource.destroy();
+    await eventPublisher.close();
     server.close(() => {
       logger.info('Orchestrator stopped');
       process.exit(0);
