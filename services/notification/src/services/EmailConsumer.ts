@@ -146,9 +146,15 @@ export class EmailConsumer {
     })
     await new Promise<void>((resolve) => setTimeout(resolve, delay))
 
-    await this.connect()
-    if (this.savedQueue) {
-      await this.consume(this.savedQueue)
+    try {
+      await this.connect()
+      if (this.savedQueue) {
+        await this.consume(this.savedQueue)
+      }
+    } catch (err: unknown) {
+      this.logger.error('RabbitMQ reconnect attempt failed', { error: String(err) })
+      this.reconnecting = false
+      void this.scheduleReconnect()
     }
   }
 }
