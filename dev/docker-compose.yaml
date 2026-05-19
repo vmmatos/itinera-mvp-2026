@@ -160,6 +160,9 @@ services:
         condition: service_healthy
       kong:
         condition: service_healthy
+    volumes:
+      - ../services/orchestrator/src:/app/services/orchestrator/src
+      - ../services/shared/src:/app/services/shared/src
 
   preference-agent:
     build:
@@ -198,6 +201,9 @@ services:
         condition: service_healthy
       kong:
         condition: service_healthy
+    volumes:
+      - ../services/preference-agent/src:/app/services/preference-agent/src
+      - ../services/shared/src:/app/services/shared/src
 
   orchestrator-agent:
     build:
@@ -236,6 +242,9 @@ services:
         condition: service_healthy
       kong:
         condition: service_healthy
+    volumes:
+      - ../services/orchestrator-agent/src:/app/services/orchestrator-agent/src
+      - ../services/shared/src:/app/services/shared/src
 
   finance-agent:
     build:
@@ -276,6 +285,9 @@ services:
         condition: service_healthy
       kong:
         condition: service_healthy
+    volumes:
+      - ../services/finance-agent/src:/app/services/finance-agent/src
+      - ../services/shared/src:/app/services/shared/src
 
   logistics-agent:
     build:
@@ -321,6 +333,9 @@ services:
         condition: service_healthy
       kong:
         condition: service_healthy
+    volumes:
+      - ../services/logistics-agent/src:/app/services/logistics-agent/src
+      - ../services/shared/src:/app/services/shared/src
 
   validator:
     build:
@@ -354,6 +369,9 @@ services:
         condition: service_healthy
       kong:
         condition: service_healthy
+    volumes:
+      - ../services/validator/src:/app/services/validator/src
+      - ../services/shared/src:/app/services/shared/src
 
   mailhog:
     image: mailhog/mailhog:v1.0.1
@@ -395,6 +413,9 @@ services:
         condition: service_healthy
       kong:
         condition: service_healthy
+    volumes:
+      - ../services/notification/src:/app/services/notification/src
+      - ../services/shared/src:/app/services/shared/src
 
   sharing:
     build:
@@ -420,6 +441,9 @@ services:
         condition: service_healthy
       kong:
         condition: service_healthy
+    volumes:
+      - ../services/sharing/src:/app/services/sharing/src
+      - ../services/shared/src:/app/services/shared/src
 
   ws-relay:
     build:
@@ -445,6 +469,9 @@ services:
         condition: service_healthy
       kong:
         condition: service_healthy
+    volumes:
+      - ../services/ws-relay/src:/app/services/ws-relay/src
+      - ../services/shared/src:/app/services/shared/src
 
 # ---------------------------------------------------------------------------
 # Volumes
