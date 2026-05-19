@@ -396,11 +396,30 @@ services:
       kong:
         condition: service_healthy
 
-  # sharing:
-  #   build: ../services/sharing
-  #   profiles: [services]
-  #   ports:
-  #     - "${SHARING_PORT:-3008}:${SHARING_PORT:-3008}"
+  sharing:
+    build:
+      context: ..
+      dockerfile: services/sharing/Dockerfile
+    container_name: itinera-sharing
+    restart: unless-stopped
+    profiles: [services]
+    environment:
+      PORT: ${SHARING_PORT:-3008}
+      NODE_ENV: ${NODE_ENV}
+      LOG_LEVEL: ${LOG_LEVEL}
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ISSUER: ${JWT_ISSUER}
+      SHARE_LINK_TTL_SECONDS: ${SHARE_LINK_TTL_SECONDS:-604800}
+      SHARING_BASE_URL: ${SHARING_BASE_URL:-http://localhost:8000/api/share}
+    ports:
+      - "${SHARING_PORT:-3008}:${SHARING_PORT:-3008}"
+    depends_on:
+      redis:
+        condition: service_healthy
+      kong:
+        condition: service_healthy
 
   ws-relay:
     build:
