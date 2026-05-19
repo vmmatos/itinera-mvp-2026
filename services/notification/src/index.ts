@@ -1,5 +1,6 @@
 import 'dotenv/config'
 import express from 'express'
+import helmet from 'helmet'
 import { requestLogger, errorHandler, createLogger } from '@itinera/shared'
 import { config, getRabbitMQUrl } from '@/config'
 import { createEmailTransport } from '@/services/EmailService'
@@ -12,6 +13,7 @@ const app = express()
 const transport = createEmailTransport(config)
 const consumer = new EmailConsumer(getRabbitMQUrl(), transport, config)
 
+app.use(helmet())
 app.use(requestLogger)
 app.use(createHealthRouter(consumer))
 app.use(errorHandler)

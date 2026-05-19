@@ -1,5 +1,6 @@
 import 'dotenv/config'
 import express from 'express'
+import helmet from 'helmet'
 import { requestLogger, errorHandler, authMiddleware, createLogger } from '@itinera/shared'
 import { config } from '@/config'
 import { RedisService } from '@/services/RedisService'
@@ -21,6 +22,7 @@ async function start(): Promise<void> {
 
   const app = express()
 
+  app.use(helmet())
   app.use(requestLogger)
   app.use(express.json({ limit: '5mb' }))
 

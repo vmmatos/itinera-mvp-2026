@@ -1,5 +1,6 @@
 import 'dotenv/config'
 import express from 'express'
+import helmet from 'helmet'
 import { requestLogger, errorHandler, createLogger } from '@itinera/shared'
 import type { AgentEvent } from '@itinera/shared'
 import { config } from '@/config'
@@ -14,6 +15,7 @@ const sseManager = new SSEManager()
 const rabbitUrl = `amqp://${config.RABBITMQ_DEFAULT_USER}:${config.RABBITMQ_DEFAULT_PASS}@${config.RABBITMQ_HOST}:${config.RABBITMQ_PORT}`
 const consumer = new RabbitMQConsumer(rabbitUrl)
 
+app.use(helmet())
 app.use(requestLogger)
 app.use(createHealthRouter(consumer, sseManager))
 app.use(createStreamRouter(sseManager))

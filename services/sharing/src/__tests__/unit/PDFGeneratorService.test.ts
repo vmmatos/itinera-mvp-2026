@@ -22,6 +22,16 @@ vi.mock('@itinera/shared', async (importOriginal) => {
   }
 })
 
+vi.mock('@/config', () => ({
+  config: {
+    PUPPETEER_EXECUTABLE_PATH: undefined,
+    JWT_SECRET: 'test-secret',
+    SHARING_BASE_URL: 'http://localhost:3008',
+    SHARE_LINK_TTL_SECONDS: 604800,
+  },
+  getRedisUrl: () => 'redis://localhost:6379',
+}))
+
 vi.mock('@/templates/itinerary', () => ({
   renderItineraryHtml: vi.fn().mockReturnValue('<html><body>Paris Trip</body></html>'),
 }))

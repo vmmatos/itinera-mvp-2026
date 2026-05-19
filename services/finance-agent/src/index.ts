@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import express from 'express';
+import helmet from 'helmet';
 import { requestLogger, errorHandler, authMiddleware, createLogger } from '@itinera/shared';
 import { AppDataSource } from '@/data-source';
 import { config } from '@/config';
@@ -16,8 +17,9 @@ import { createFinanceRouter } from '@/routes/finance';
 const logger = createLogger('finance-agent');
 const app = express();
 
+app.use(helmet());
 app.use(requestLogger);
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 
 async function start(): Promise<void> {
   await AppDataSource.initialize();
