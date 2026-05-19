@@ -1,5 +1,6 @@
 import 'dotenv/config'
 import express from 'express'
+import helmet from 'helmet'
 import { requestLogger, errorHandler, authMiddleware, createLogger } from '@itinera/shared'
 import { config } from '@/config'
 import { RedisService } from '@/services/RedisService'
@@ -21,6 +22,7 @@ async function start(): Promise<void> {
 
   const app = express()
 
+  app.use(helmet())
   app.use(requestLogger)
   app.use(express.json({ limit: '5mb' }))
 
@@ -55,7 +57,22 @@ async function start(): Promise<void> {
   })
 }
 
-start().catch((err: unknown) => {
-  logger.error('Failed to start sharing service', { error: String(err) })
-  process.exit(1)
-})
+async function startWithRetry(): Promise<void> {
+  const MAX_ATTEMPTS = 5
+  const RETRY_DELAY_MS = 3000
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      await start()
+      return
+    } catch (err: unknown) {
+      if (attempt === MAX_ATTEMPTS) {
+        logger.error('Failed to start sharing service, giving up', { error: String(err) })
+        process.exit(1)
+      }
+      logger.warn('Failed to start sharing service, retrying...', { attempt, error: String(err) })
+      await new Promise<void>((res) => setTimeout(res, RETRY_DELAY_MS))
+    }
+  }
+}
+
+void startWithRetry()

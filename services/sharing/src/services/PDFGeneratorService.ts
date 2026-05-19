@@ -1,12 +1,13 @@
 import puppeteer from 'puppeteer-core'
 import { createLogger } from '@itinera/shared'
 import { renderItineraryHtml } from '@/templates/itinerary'
+import { config } from '@/config'
 import type { ItineraryData } from '@/types/sharing'
 
 export class PDFGeneratorService {
   private readonly logger = createLogger('pdf-generator')
   private readonly executablePath =
-    process.env['PUPPETEER_EXECUTABLE_PATH'] ?? '/usr/bin/chromium-browser'
+    config.PUPPETEER_EXECUTABLE_PATH ?? '/usr/bin/chromium-browser'
 
   async generate(itinerary: ItineraryData): Promise<Buffer> {
     this.logger.info('Generating PDF', { tripId: itinerary.tripId })

@@ -6,7 +6,7 @@ export const AgentEventSchema = z.object({
   agent: z.string(),
   round: z.number().int(),
   timestamp: z.string(),
-  content: z.any(),
+  content: z.unknown(),
   reasoning: z.string().optional(),
   metrics: z
     .object({
