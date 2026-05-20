@@ -110,13 +110,40 @@ compromise achieves ≥60% satisfaction for all four agents at ≤€276 total.
 
 ---
 
-## Scenario 004 — Budget constraint binding (planned)
+## Scenario 004 — Rain forecast
 
-**File:** `tests/scenarios/004-budget-constraint.test.ts`
-**Status:** planned
+**File:** `tests/scenarios/004-rain-forecast.test.ts`
+**Status:** implemented
 
-Scenario where agent proposals exceed the budget cap, requiring the FinanceAgent
-to flag violations and the CompromiseGenerator to substitute lower-cost alternatives.
+### Input
+
+| Field | Value |
+|-------|-------|
+| Participants | Alice (Culture & History), Bob (Relaxation & Wine), Carlos (Adventure & Outdoors), Diana (Gastronomy & Fine Dining) |
+| Duration | 2 days |
+| Destinations | Sintra (day 1) + Cascais (day 2), Portugal |
+| Budget | €600 total (4 people) |
+| Weather | 80% rain all day — both days |
+
+### Acceptance criteria
+
+| Criterion | Threshold |
+|-----------|-----------|
+| Weather flagging | LogisticsAgent returns `overallRisk: 'high'` with all outdoor activities in `affectedActivities[]` |
+| Indoor alternatives | `indoorAlternatives[]` provided for every flagged activity |
+| Convergence | ≤ 4 negotiation rounds |
+| Fairness | Satisfaction score ≥ 60% per agent |
+| Final plan | No outdoor activities remain (no trail/hike/surf/cycling/kayak/beach/cliff keywords) |
+| Coverage | Both destinations represented across itinerary |
+
+### Rationale
+
+With 80% rain forecast all day, Carlos's outdoor-heavy plan (cliff hike, surfing, coastal cycling,
+kayaking) and Bob's beach/coastal activities become high-risk. The WeatherAnalyzer must flag all
+exposed activities and provide indoor museum/palace/workshop alternatives. The ConflictAnalyzer
+should return `overallConflictScore > 2.0` in round 1 (Carlos's preferences now irreconcilable
+with weather constraints). The CompromiseGenerator converges by round 2 with an indoor-only
+itinerary covering both Sintra and Cascais, achieving ≥60% satisfaction for all four agents.
 
 ---
 
