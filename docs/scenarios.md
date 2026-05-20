@@ -185,10 +185,38 @@ beach anchors on both days (≥90% satisfaction) while keeping the rest of the g
 
 ---
 
-## Scenario 006 — Max rounds reached, no convergence (planned)
+## Scenario 006 — Dietary conflict
 
-**File:** `tests/scenarios/006-no-convergence.test.ts`
-**Status:** planned
+**File:** `tests/scenarios/006-dietary-conflict.test.ts`
+**Status:** implemented
 
-Stress test verifying that the negotiation engine halts gracefully at the round
-limit when preferences are irreconcilable, and returns the best available compromise.
+### Input
+
+| Field | Value |
+|-------|-------|
+| Participants | Alice (Culture & History — `dietary: vegan`, `flexibility: none`), Diana (Gastronomy & Fine Dining — non-vegan) |
+| Duration | 2 days |
+| Destinations | Sintra (day 1) + Cascais (day 2), Portugal |
+| Budget | €400 total (2 people) |
+| Dietary constraint | Alice is vegan — all meals must offer a fully plant-based option |
+
+### Acceptance criteria
+
+| Criterion | Threshold |
+|-----------|-----------|
+| Dietary constraint identified | ConflictAnalyzer returns `hardConstraints[]` with Alice's entry (`flexibility=none`, `topic=dietary_vegan`) |
+| Meal incompatibility detected | `conflicts[]` includes `meal_incompatibility` topic with `severity ≥ 4`, involving both `alice` and `diana` |
+| Initial conflict | `overallConflictScore > 2.0` in round 1 |
+| Logistics validated | Final compromise includes `mealsValidated: true` — confirms vegan-friendly venues found in both Sintra and Cascais |
+| Alice viable meal | Every meal activity (`dietaryNote` set) in final itinerary appears in `satisfies[]` for `alice` |
+| Diana viable meal | Every meal activity in final itinerary appears in `satisfies[]` for `diana` |
+| No constraint violated | Every meal activity carries `dietaryNote=vegan_option_available` and satisfies both `alice` and `diana` |
+| Convergence | ≤ 4 negotiation rounds |
+| Alice satisfaction | ≥ 80% in final compromise (vegan constraint respected throughout) |
+| Diana satisfaction | ≥ 75% in final compromise (fine dining quality preserved) |
+| Budget | Final itinerary ≤ €400 total (2 people) |
+| Logistics | No overlapping activity times within a day |
+
+### Rationale
+
+Alice's vegan constraint (`flexibility=none`) is a hard constraint the ConflictAnalyzer must surface in round 1 via `hardConstraints[]`. Diana's non-vegan fine dining preference is incompatible with Alice's constraint at face value — duck cataplana, lobster bisque, seafood tasting menus — driving `overallConflictScore > 2.0`. Resolution requires selecting shared dining venues that offer both upscale non-vegan dishes (satisfying Diana) and fully plant-based alternatives (satisfying Alice). The `TRIP_CONTEXT` explicitly states that logistics has confirmed vegan-friendly venues exist in both Sintra and Cascais, and the final CompromiseGenerator output sets `mealsValidated: true` to confirm this. By round 3 the orchestrator converges on a compromise with `alice ≥ 0.80` (vegan constraint met at every meal slot) and `diana ≥ 0.75` (fine dining quality preserved via shared venues offering vegan and non-vegan menus).
