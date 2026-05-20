@@ -74,13 +74,39 @@ a balanced itinerary satisfying all four profiles.
 
 ---
 
-## Scenario 003 — 4 people, mixed preferences (planned)
+## Scenario 003 — 4 people, tight budget
 
-**File:** `tests/scenarios/003-four-people-mixed.test.ts`
-**Status:** planned
+**File:** `tests/scenarios/003-tight-budget.test.ts`
+**Status:** implemented
 
-Full 4-agent negotiation (Alice, Bob, Carlos, Diana) with partially overlapping preferences
-requiring the orchestrator to balance competing demands across ≥2 rounds.
+### Input
+
+| Field | Value |
+|-------|-------|
+| Participants | Alice (Culture & History), Bob (Relaxation & Wine), Carlos (Adventure & Outdoors), Diana (Gastronomy & Fine Dining) |
+| Duration | 2 days |
+| Destinations | Sintra (day 1) + Cascais (day 2), Portugal |
+| Budget | €300 total (4 people) — 50% of normal |
+
+### Acceptance criteria
+
+| Criterion | Threshold |
+|-----------|-----------|
+| Budget flagged | FinanceAgent returns `over_budget` on initial proposals |
+| Alternatives | AlternativeFinder provides cost substitutions |
+| Convergence | ≤ 4 negotiation rounds |
+| Fairness | Satisfaction score ≥ 60% per agent |
+| Final budget | Total itinerary ≤ €300 for 4 people |
+| Coverage | Both destinations represented across itinerary |
+
+### Rationale
+
+With only €75/person for 2 days, Diana's premium dining (€182/person/day) and Carlos's paid
+outdoor activities alone breach the cap. The BudgetValidator must flag `over_budget` on initial
+proposals. The AlternativeFinder then calls Claude to propose substitutions (free trails, local
+taverns, fish markets). The ConflictAnalyzer should return `overallConflictScore > 2.0` in round 1
+due to budget pressure, converging by round 3 after the orchestrator enforces substitutions. Final
+compromise achieves ≥60% satisfaction for all four agents at ≤€276 total.
 
 ---
 

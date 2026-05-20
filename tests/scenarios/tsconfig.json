@@ -8,6 +8,9 @@
     "skipLibCheck": true,
     "baseUrl": ".",
     "paths": {
+      "@/agents/BaseFinanceAgent": ["../../services/finance-agent/src/agents/BaseFinanceAgent.ts"],
+      "@/agents/CostCalculator": ["../../services/finance-agent/src/agents/CostCalculator.ts"],
+      "@/agents/BudgetValidator": ["../../services/finance-agent/src/agents/BudgetValidator.ts"],
       "@/*": ["../../services/orchestrator-agent/src/*"],
       "@itinera/shared": ["../../services/shared/src/index.ts"]
     }
