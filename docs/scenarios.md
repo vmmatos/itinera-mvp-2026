@@ -147,13 +147,41 @@ itinerary covering both Sintra and Cascais, achieving ≥60% satisfaction for al
 
 ---
 
-## Scenario 005 — Logistical conflict resolution (planned)
+## Scenario 005 — Inflexible traveller
 
-**File:** `tests/scenarios/005-logistical-conflicts.test.ts`
-**Status:** planned
+**File:** `tests/scenarios/005-inflexible-traveller.test.ts`
+**Status:** implemented
 
-Scenario where initial proposals have timing overlaps or unrealistic travel times,
-requiring the LogisticsAgent to flag issues and the ProposalRefiner to adjust.
+### Input
+
+| Field | Value |
+|-------|-------|
+| Participants | Alice (Culture & History), Bob (Relaxation & Wine), Carlos (Adventure & Outdoors), Elena (Beach & Coastal — `flexibility: low`) |
+| Duration | 2 days |
+| Destinations | Sintra (day 1) + Cascais (day 2), Portugal |
+| Budget | €600 total (4 people) |
+| Hard constraint | Elena has `flexibility=low` — beach/coastal activities required on both days |
+
+### Acceptance criteria
+
+| Criterion | Threshold |
+|-----------|-----------|
+| Hard constraint identified | ConflictAnalyzer returns `hardConstraints[]` with Elena's entry (`flexibility=low`, `topic=beach_coastal`) |
+| Initial conflict | `overallConflictScore > 2.0` in round 1 |
+| Convergence | ≤ 6 negotiation rounds |
+| Elena satisfaction | ≥ 90% in final compromise |
+| Group adaptation | Alice, Bob, Carlos each ≥ 65% satisfaction |
+| Budget | Final itinerary ≤ €600 total (4 people) |
+| Logistics | No overlapping activity times within a day |
+
+### Rationale
+
+Elena's single preference (beach/coastal) with `flexibility=low` acts as a hard constraint the
+orchestrator must acknowledge in round 1. Alice's inland palaces and Carlos's mountain trails are
+incompatible with this constraint, forcing `overallConflictScore > 2.0`. Over subsequent rounds,
+Alice and Carlos adapt their proposals to coastal equivalents (Moorish Castle view walk, Guincho
+coastal cycling). By round 3 the orchestrator converges on a compromise that preserves Elena's
+beach anchors on both days (≥90% satisfaction) while keeping the rest of the group ≥65%.
 
 ---
 
