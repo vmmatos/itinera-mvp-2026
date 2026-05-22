@@ -122,8 +122,60 @@ services:
       start_period: 20s
 
   # -------------------------------------------------------------------------
-  # Microservices (uncomment as each service is implemented)
+  # Microservices
   # -------------------------------------------------------------------------
+
+  auth:
+    build:
+      context: ..
+      dockerfile: services/auth/Dockerfile
+    container_name: itinera-auth
+    restart: unless-stopped
+    profiles: [services]
+    environment:
+      PORT: ${AUTH_PORT:-3010}
+      NODE_ENV: ${NODE_ENV}
+      LOG_LEVEL: ${LOG_LEVEL}
+      POSTGRES_HOST: ${POSTGRES_HOST}
+      POSTGRES_PORT: ${POSTGRES_PORT}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_ISSUER: ${JWT_ISSUER}
+      JWT_CONSUMER_KEY: ${JWT_CONSUMER_KEY:-itinera}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL:-http://localhost:8000/api/auth/oauth2/google/callback}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+    ports:
+      - "${AUTH_PORT:-3010}:${AUTH_PORT:-3010}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      kong:
+        condition: service_healthy
+    volumes:
+      - ../services/auth/src:/app/services/auth/src
+      - ../services/shared/src:/app/services/shared/src
+
+  frontend:
+    build:
+      context: ../apps/frontend
+      dockerfile: Dockerfile.dev
+    container_name: itinera-frontend
+    restart: unless-stopped
+    profiles: [services]
+    environment:
+      NUXT_PUBLIC_API_URL: ${NUXT_PUBLIC_API_URL:-http://localhost:8000}
+      NUXT_PUBLIC_WS_URL: ${NUXT_PUBLIC_WS_URL:-http://localhost:8000}
+      NUXT_PUBLIC_APP_MODE: ${NODE_ENV:-development}
+    ports:
+      - "3000:3000"
+    volumes:
+      - ../apps/frontend:/app
+      - /app/node_modules
+      - /app/.nuxt
 
   orchestrator:
     build:

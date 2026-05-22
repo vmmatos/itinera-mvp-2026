@@ -55,7 +55,7 @@ test:
 ifdef s
 	$(DC) exec $(s) yarn test
 else
-	@for svc in orchestrator preference-agent orchestrator-agent \
+	@for svc in auth orchestrator preference-agent orchestrator-agent \
 		finance-agent logistics-agent validator notification sharing ws-relay; do \
 		echo "==> Testing $$svc"; \
 		$(DC) exec $$svc yarn test 2>/dev/null || echo "  (service not running, skip)"; \
@@ -71,7 +71,7 @@ test-local:
 ifdef s
 	cd services/$(s) && yarn test
 else
-	@for svc in orchestrator preference-agent orchestrator-agent \
+	@for svc in auth orchestrator preference-agent orchestrator-agent \
 		finance-agent logistics-agent validator notification sharing ws-relay; do \
 		if [ -f "services/$$svc/package.json" ]; then \
 			echo "==> Testing $$svc"; \
