@@ -68,7 +68,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   const loginWithGoogle = (): void => {
     const config = useRuntimeConfig()
-    window.location.href = `${config.public.apiUrl}/api/auth/oauth2/google`
+    window.location.href = `${config.public.apiBase}/api/auth/oauth2/google`
   }
 
   const logout = async (): Promise<void> => {
