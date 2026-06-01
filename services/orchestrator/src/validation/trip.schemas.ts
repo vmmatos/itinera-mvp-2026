@@ -10,7 +10,7 @@ export const CreateTripSchema = z.object({
   travellers: z
     .array(
       z.object({
-        userId: z.string().uuid(),
+        userId: z.string().uuid().optional(),
         preferences: z.record(z.unknown()).default({}),
       }),
     )

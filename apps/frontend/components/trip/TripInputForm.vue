@@ -141,7 +141,7 @@ const submit = async (): Promise<void> => {
     budgetTotal:    budgetTotal.value,
     budgetCurrency: 'USD',
     travellers:     travellers.value.map((t): TravellerInput => ({
-      userId: t.isCurrentUser ? currentUserId.value : t.id,
+      userId: t.isCurrentUser ? currentUserId.value : undefined,
       preferences: {
         persona:      t.persona!,
         flexibility:  t.flexibility,

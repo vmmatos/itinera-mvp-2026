@@ -12,7 +12,6 @@ import { Trip } from '@/entities/Trip';
 import { User } from '@/entities/User';
 
 @Entity('travellers')
-@Unique(['tripId', 'userId'])
 export class Traveller {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
@@ -20,8 +19,8 @@ export class Traveller {
   @Column({ name: 'trip_id', type: 'uuid' })
   tripId!: string;
 
-  @Column({ name: 'user_id', type: 'uuid' })
-  userId!: string;
+  @Column({ name: 'user_id', type: 'uuid', nullable: true })
+  userId!: string | null;
 
   @Column({ type: 'jsonb', default: {} })
   preferences!: Record<string, unknown>;
@@ -36,7 +35,7 @@ export class Traveller {
   @JoinColumn({ name: 'trip_id' })
   trip!: Trip;
 
-  @ManyToOne(() => User, (user) => user.travellers, { onDelete: 'CASCADE' })
+  @ManyToOne(() => User, (user) => user.travellers, { onDelete: 'CASCADE', nullable: true })
   @JoinColumn({ name: 'user_id' })
-  user!: User;
+  user!: User | null;
 }

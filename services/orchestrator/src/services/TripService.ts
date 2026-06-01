@@ -59,7 +59,7 @@ export class TripService extends BaseService {
         const travellers = input.travellers.map((t) =>
           travellerRepo.create({
             tripId: savedTrip.id,
-            userId: t.userId,
+            userId: t.userId ?? null,
             preferences: t.preferences ?? {},
           }),
         );
