@@ -5,7 +5,7 @@ export const useApi = (): AxiosInstance => {
   const config = useRuntimeConfig()
 
   const api = axios.create({
-    baseURL: config.public.apiUrl as string,
+    baseURL: config.public.apiBase as string,
     headers: { 'Content-Type': 'application/json' },
   })
 
