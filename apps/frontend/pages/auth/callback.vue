@@ -30,7 +30,12 @@ onMounted(() => {
     const payload = decodeJwt(token)
     authStore.setFromOAuth({
       token,
-      user: { id: payload.sub, email: payload.email, name: payload.name, role: payload.role },
+      user: {
+        id: payload.sub,
+        email: payload.email,
+        name: payload.name,
+        role: payload.role
+      },
     })
     navigateTo('/', { replace: true })
   } catch {

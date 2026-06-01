@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import type { Trip, CreateTripInput } from '~/types/index'
 
 export const useTripPlannerStore = defineStore('tripPlanner', () => {
+  const api = useApi()
   const trips = ref<Trip[]>([])
   const currentTrip = ref<Trip | null>(null)
   const loading = ref(false)
@@ -12,7 +13,6 @@ export const useTripPlannerStore = defineStore('tripPlanner', () => {
     loading.value = true
     error.value = null
     try {
-      const api = useApi()
       const { data } = await api.get<{ success: true; data: Trip[] }>('/api/v1/trips')
       trips.value = data.data
     } catch (err: unknown) {
@@ -26,7 +26,6 @@ export const useTripPlannerStore = defineStore('tripPlanner', () => {
     loading.value = true
     error.value = null
     try {
-      const api = useApi()
       const { data } = await api.post<{ success: true; data: { tripId: string } }>('/api/v1/trips', input)
       await fetchTrips()
       return data.data.tripId
@@ -42,5 +41,9 @@ export const useTripPlannerStore = defineStore('tripPlanner', () => {
     currentTrip.value = trip
   }
 
-  return { trips, currentTrip, loading, error, fetchTrips, createTrip, setCurrentTrip }
+  const clearError = (): void => {
+    error.value = null
+  }
+
+  return { trips, currentTrip, loading, error, fetchTrips, createTrip, setCurrentTrip, clearError }
 })
