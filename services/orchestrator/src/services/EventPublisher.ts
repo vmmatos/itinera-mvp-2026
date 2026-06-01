@@ -9,6 +9,8 @@ export class EventPublisher extends BaseService {
   private connection: ChannelModel | null = null;
   private channel: Channel | null = null;
   private reconnecting = false;
+  private reconnectAttempts = 0;
+  private readonly maxReconnectAttempts = 10;
 
   constructor() {
     super('event-publisher');
@@ -16,6 +18,7 @@ export class EventPublisher extends BaseService {
 
   async connect(): Promise<void> {
     this.reconnecting = false;
+    this.reconnectAttempts = 0;
     const connection = await amqplib.connect(`${getRabbitMQUrl()}?heartbeat=60`);
     this.connection = connection;
     this.channel = await connection.createChannel();
@@ -23,16 +26,39 @@ export class EventPublisher extends BaseService {
 
     connection.on('error', (err: Error) => {
       this.logger.error('RabbitMQ connection error', { error: err.message });
+      void this.scheduleReconnect();
     });
     connection.on('close', () => {
       this.logger.warn('RabbitMQ connection closed');
-      this.connection = null;
-      this.channel = null;
-      this.reconnecting = true;
-      setTimeout(() => void this.connect(), 5000);
+      void this.scheduleReconnect();
     });
 
     this.logger.info('EventPublisher connected');
+  }
+
+  private async scheduleReconnect(): Promise<void> {
+    if (this.reconnecting) return;
+    this.reconnecting = true;
+    this.connection = null;
+    this.channel = null;
+
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      this.logger.error('RabbitMQ max reconnect attempts reached — exiting');
+      process.exit(1);
+    }
+
+    const delay = Math.min(1000 * 2 ** this.reconnectAttempts, 30_000);
+    this.reconnectAttempts++;
+    this.logger.info('Reconnecting RabbitMQ', { attempt: this.reconnectAttempts, delayMs: delay });
+    await new Promise<void>(resolve => setTimeout(resolve, delay));
+
+    try {
+      await this.connect();
+    } catch (err) {
+      this.logger.error('RabbitMQ reconnect failed', { error: String(err) });
+      this.reconnecting = false;
+      void this.scheduleReconnect();
+    }
   }
 
   async publish(agent: AgentName, action: AgentAction, event: AgentEvent): Promise<void> {
@@ -50,7 +76,7 @@ export class EventPublisher extends BaseService {
   }
 
   isConnected(): boolean {
-    return this.reconnecting || (this.connection !== null && this.channel !== null);
+    return this.connection !== null && this.channel !== null;
   }
 
   async close(): Promise<void> {
