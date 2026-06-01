@@ -48,6 +48,9 @@ async function startWithRetry(): Promise<void> {
       await start();
       return;
     } catch (err: unknown) {
+      if (AppDataSource.isInitialized) {
+        await AppDataSource.destroy().catch(() => {});
+      }
       if (attempt === MAX_ATTEMPTS) {
         logger.error('Failed to start auth service, giving up', { error: String(err) });
         process.exit(1);

@@ -45,7 +45,7 @@ async function start(): Promise<void> {
 
   app.use(createHealthRouter(publisher));
   app.use(authMiddleware);
-  app.use('/api/v1/validate', createValidatorRouter(
+  app.use('/', createValidatorRouter(
     validationService,
     scoringEngine,
     fairnessCalculator,
@@ -79,6 +79,9 @@ async function startWithRetry(): Promise<void> {
       await start();
       return;
     } catch (err: unknown) {
+      if (AppDataSource.isInitialized) {
+        await AppDataSource.destroy().catch(() => {});
+      }
       if (attempt === MAX_ATTEMPTS) {
         logger.error('Failed to start validator, giving up', { error: String(err) });
         process.exit(1);
