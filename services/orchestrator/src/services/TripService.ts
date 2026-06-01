@@ -14,6 +14,7 @@ export interface TripSummary {
   id: string;
   name: string;
   status: TripStatus;
+  region: string | null;
   ownerId: string;
   startDate: Date | null;
   endDate: Date | null;
@@ -44,6 +45,7 @@ export class TripService extends BaseService {
     const trip = await AppDataSource.transaction(async (manager) => {
       const newTrip = tripRepo.create({
         name: input.name,
+        region: input.region ?? null,
         ownerId,
         startDate: input.startDate ? new Date(input.startDate) : null,
         endDate: input.endDate ? new Date(input.endDate) : null,
@@ -105,6 +107,7 @@ export class TripService extends BaseService {
       id: trip.id,
       name: trip.name,
       status: trip.status as TripStatus,
+      region: trip.region,
       ownerId: trip.ownerId,
       startDate: trip.startDate,
       endDate: trip.endDate,

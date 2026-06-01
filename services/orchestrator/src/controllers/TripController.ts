@@ -23,7 +23,7 @@ export class TripController {
       const input = CreateTripSchema.parse(req.body);
       const trip = await this.tripService.createTrip(authedReq.user.sub, input);
       this.tripService.startOrchestration(trip.id);
-      res.status(202).json(ok(trip));
+      res.status(202).json(ok({ tripId: trip.id, status: trip.status, message: 'Trip created' }));
     } catch (err) {
       next(err);
     }

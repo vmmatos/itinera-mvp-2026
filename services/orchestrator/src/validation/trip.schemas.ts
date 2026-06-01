@@ -2,8 +2,9 @@ import { z } from 'zod';
 
 export const CreateTripSchema = z.object({
   name: z.string().min(1).max(255),
-  startDate: z.string().datetime().optional(),
-  endDate: z.string().datetime().optional(),
+  region: z.string().min(1).max(255).optional(),
+  startDate: z.string().date().optional(),
+  endDate: z.string().date().optional(),
   budgetTotal: z.number().positive().optional(),
   budgetCurrency: z.string().length(3).default('EUR'),
   travellers: z

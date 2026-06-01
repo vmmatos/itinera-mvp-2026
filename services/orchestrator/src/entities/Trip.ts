@@ -25,6 +25,9 @@ export class Trip {
   @Column({ type: 'varchar', length: 50, default: 'draft' })
   status!: string;
 
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  region!: string | null;
+
   @Column({ name: 'owner_id', type: 'uuid' })
   ownerId!: string;
 
