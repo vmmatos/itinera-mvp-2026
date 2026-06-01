@@ -12,7 +12,7 @@ DC := docker compose \
 dev:
 	$(DC) --profile services up -d
 	@echo "Waiting for PostgreSQL to be ready..."
-	@until $(DC) exec -T postgres pg_isready -q 2>/dev/null; do sleep 1; done
+	@until docker inspect --format='{{.State.Health.Status}}' itinera-postgres-db 2>/dev/null | grep -q healthy; do sleep 2; done
 	@$(MAKE) db-migrate
 	@$(MAKE) db-seed
 	@$(MAKE) kong-config
