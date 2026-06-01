@@ -20,6 +20,23 @@ watch(mode, () => {
 })
 
 const handleSubmit = async (): Promise<void> => {
+  authStore.clearError()
+  if (mode.value === 'register' && !form.name.trim()) {
+    authStore.error = 'Name is required.'
+    return
+  }
+  if (!form.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
+    authStore.error = 'Enter a valid email address.'
+    return
+  }
+  if (!form.password) {
+    authStore.error = 'Password is required.'
+    return
+  }
+  if (mode.value === 'register' && form.password.length < 8) {
+    authStore.error = 'Password must be at least 8 characters.'
+    return
+  }
   if (mode.value === 'login') {
     await authStore.login(form.email, form.password)
   } else {
@@ -74,7 +91,7 @@ const errorMessage = computed(() => oauthError.value ?? authStore.error)
       </Transition>
 
       <!-- Form -->
-      <form class="space-y-4" @submit.prevent="handleSubmit">
+      <form class="space-y-4" novalidate @submit.prevent="handleSubmit">
 
         <!-- Name — register only -->
         <Transition name="fade">
@@ -86,7 +103,6 @@ const errorMessage = computed(() => oauthError.value ?? authStore.error)
               class="input"
               placeholder="Your name"
               autocomplete="name"
-              required
             />
           </div>
         </Transition>
@@ -100,7 +116,6 @@ const errorMessage = computed(() => oauthError.value ?? authStore.error)
             class="input"
             placeholder="you@example.com"
             autocomplete="email"
-            required
           />
         </div>
 
@@ -113,8 +128,6 @@ const errorMessage = computed(() => oauthError.value ?? authStore.error)
             class="input"
             placeholder="••••••••"
             :autocomplete="mode === 'login' ? 'current-password' : 'new-password'"
-            :minlength="mode === 'register' ? 8 : undefined"
-            required
           />
           <p v-if="mode === 'register'" class="text-fg-3 text-13 mt-1">Minimum 8 characters</p>
         </div>
