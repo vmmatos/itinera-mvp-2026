@@ -178,12 +178,22 @@ register_service() {
       "strip_path=true"
   fi
 
-  # Health + ready paths are public (no JWT/ACL)
+  # Health + ready: public (no JWT/ACL). strip_path=false + request-transformer
+  # rewrites the full path so upstream receives /health or /ready.
   upsert_route "${name}-health" "$name" \
-    "paths=[\"${path}/health\",\"${path}/ready\"]" \
-    "strip_path=true"
+    "paths=[\"${path}/health\"]" \
+    "strip_path=false"
+  ensure_plugin route "${name}-health" request-transformer \
+    '{"replace":{"uri":"/health"}}'
+
+  upsert_route "${name}-ready" "$name" \
+    "paths=[\"${path}/ready\"]" \
+    "strip_path=false"
+  ensure_plugin route "${name}-ready" request-transformer \
+    '{"replace":{"uri":"/ready"}}'
 }
 
+register_service auth                http://auth:3010                /api/auth
 register_service orchestrator        http://orchestrator:3001        /api/orchestrator
 register_service preference-agent    http://preference-agent:3002    /api/preferences
 register_service orchestrator-agent  http://orchestrator-agent:3003  /api/consensus
@@ -229,6 +239,7 @@ for svc in \
   ensure_plugin route "${svc}-api" acl \
     '{"allow":["user","admin","service"],"hide_groups_header":true}'
 done
+# auth-api is intentionally excluded — login/register/oauth2 are public endpoints
 
 # ---------------------------------------------------------------------------
 # Consumers + credentials
@@ -237,12 +248,22 @@ echo ""
 echo "==> Configuring consumers..."
 
 # Validate required env vars
+: "${JWT_SECRET:?JWT_SECRET not set in .secrets.env}"
+: "${JWT_CONSUMER_KEY:?JWT_CONSUMER_KEY not set}"
 : "${DEV_JWT_KEY_USER:?DEV_JWT_KEY_USER not set in .secrets.env}"
 : "${DEV_JWT_SECRET_USER:?DEV_JWT_SECRET_USER not set in .secrets.env}"
 : "${DEV_JWT_KEY_ADMIN:?DEV_JWT_KEY_ADMIN not set in .secrets.env}"
 : "${DEV_JWT_SECRET_ADMIN:?DEV_JWT_SECRET_ADMIN not set in .secrets.env}"
 : "${DEV_JWT_KEY_SERVICE:?DEV_JWT_KEY_SERVICE not set in .secrets.env}"
 : "${DEV_JWT_SECRET_SERVICE:?DEV_JWT_SECRET_SERVICE not set in .secrets.env}"
+
+# Consumer for auth-service-issued tokens (iss=JWT_CONSUMER_KEY)
+ensure_consumer "itinera-app"
+ensure_jwt_cred "itinera-app" "${JWT_CONSUMER_KEY}" "${JWT_SECRET}"
+ensure_acl "itinera-app" "user"
+ensure_acl "itinera-app" "admin"
+ensure_plugin consumer "itinera-app" rate-limiting \
+  '{"minute":200,"policy":"local","fault_tolerant":true}'
 
 ensure_consumer "dev-user"
 ensure_jwt_cred "dev-user" "$DEV_JWT_KEY_USER" "$DEV_JWT_SECRET_USER"

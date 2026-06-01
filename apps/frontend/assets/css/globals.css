@@ -1,0 +1,321 @@
+/* ─────────────────────────────────────────────────────────────
+   itinera — global styles
+   Design tokens extracted from Claude Design artefact
+───────────────────────────────────────────────────────────── */
+
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@300;400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Design tokens ──────────────────────────────────────────── */
+:root {
+  /* Fonts */
+  --sans: 'Geist', 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --mono: 'Geist Mono', ui-monospace, 'JetBrains Mono', Menlo, monospace;
+
+  /* Type scale (slightly scaled down for density) */
+  --t-12: 11px;
+  --t-13: 12px;
+  --t-14: 13px;
+  --t-15: 14px;   /* base */
+  --t-16: 15px;
+  --t-18: 17px;
+  --t-22: 21px;
+  --t-28: 27px;
+  --t-40: 38px;
+  --t-64: 60px;
+  --t-96: 88px;
+
+  /* Spacing — 4px base */
+  --s-1: 4px;   --s-2: 8px;   --s-3: 12px;
+  --s-4: 16px;  --s-5: 20px;  --s-6: 24px;
+  --s-8: 32px;  --s-10: 40px; --s-12: 48px;
+  --s-16: 64px; --s-20: 80px; --s-24: 96px;
+
+  /* Border radius */
+  --r-1: 2px;
+  --r-2: 4px;
+  --r-3: 6px;
+
+  /* Backgrounds */
+  --bg-0: #0a0a0a;
+  --bg-1: #111111;
+  --bg-2: #161616;
+  --bg-3: #1c1c1c;
+
+  /* Foregrounds */
+  --fg-0: #f2f2f2;
+  --fg-1: #c9c9c9;
+  --fg-2: #a1a1a1;
+  --fg-3: #666666;
+  --fg-4: #3a3a3a;
+
+  /* Lines / borders */
+  --line-1: #1f1f1f;
+  --line-2: #272727;
+  --line-3: #333333;
+
+  /* Borders shorthand */
+  --hair:      1px solid var(--line-2);
+  --hair-soft: 1px solid var(--line-1);
+
+  /* Accent — electric green */
+  --green:      #00ff88;
+  --green-dim:  #00cc6e;
+  --green-dark: #00b85f;
+  --green-bg:   rgba(0, 255, 136, 0.08);
+  --green-line: rgba(0, 255, 136, 0.32);
+
+  /* Agent accent colours */
+  --agent-1: var(--green);    /* alice    — culture      */
+  --agent-2: var(--amber);    /* bob      — relaxation   */
+  --agent-3: var(--blue);     /* carlos   — action       */
+  --agent-4: var(--magenta);  /* diana    — gastronomy   */
+
+  --amber:      #ffb547;
+  --amber-bg:   rgba(255, 181, 71,  0.08);
+  --amber-line: rgba(255, 181, 71,  0.32);
+
+  --blue:       #5b9dff;
+  --blue-bg:    rgba(91,  157, 255, 0.08);
+  --blue-line:  rgba(91,  157, 255, 0.32);
+
+  --magenta:      #d36bff;
+  --magenta-bg:   rgba(211, 107, 255, 0.08);
+  --magenta-line: rgba(211, 107, 255, 0.32);
+
+  --red: #ff5d5d;
+}
+
+/* ── Base reset ─────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg-0);
+  color: var(--fg-0);
+  font-family: var(--sans);
+  font-size: var(--t-15);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: 'ss01', 'cv01';
+}
+
+/* ── Scrollbar ──────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track  { background: var(--bg-1); }
+::-webkit-scrollbar-thumb  { background: var(--line-3); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--fg-4); }
+
+/* ── Selection ──────────────────────────────────────────────── */
+::selection {
+  background: var(--green-bg);
+  color: var(--green);
+}
+
+/* ── Focus ring ─────────────────────────────────────────────── */
+:focus-visible {
+  outline: 1px solid var(--green);
+  outline-offset: 2px;
+}
+
+/* ── Utility classes ────────────────────────────────────────── */
+
+/* Hair borders */
+.border-hair      { border: var(--hair); }
+.border-hair-soft { border: var(--hair-soft); }
+.border-b-hair    { border-bottom: var(--hair); }
+.border-t-hair    { border-top: var(--hair); }
+
+/* Mono text */
+.font-mono { font-family: var(--mono); }
+
+/* Agent colour pills */
+.agent-alice   { color: var(--agent-1); background: var(--green-bg); }
+.agent-bob     { color: var(--agent-2); background: var(--amber-bg); }
+.agent-carlos  { color: var(--agent-3); background: var(--blue-bg); }
+.agent-diana   { color: var(--agent-4); background: var(--magenta-bg); }
+
+/* Status colours */
+.text-success { color: var(--green); }
+.text-warning { color: var(--amber); }
+.text-danger  { color: var(--red); }
+.text-info    { color: var(--blue); }
+
+/* Muted text levels */
+.text-fg-1 { color: var(--fg-1); }
+.text-fg-2 { color: var(--fg-2); }
+.text-fg-3 { color: var(--fg-3); }
+
+/* Background levels */
+.bg-base   { background: var(--bg-0); }
+.bg-raised { background: var(--bg-1); }
+.bg-card   { background: var(--bg-2); }
+.bg-hover  { background: var(--bg-3); }
+
+/* ── Component base styles ──────────────────────────────────── */
+
+/* Card */
+.card {
+  background: var(--bg-2);
+  border: var(--hair);
+  border-radius: var(--r-3);
+  padding: var(--s-4) var(--s-5);
+}
+
+.card-sm {
+  background: var(--bg-2);
+  border: var(--hair);
+  border-radius: var(--r-2);
+  padding: var(--s-3) var(--s-4);
+}
+
+/* Button */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-4);
+  font-family: var(--sans);
+  font-size: var(--t-14);
+  font-weight: 500;
+  border-radius: var(--r-2);
+  border: var(--hair);
+  background: transparent;
+  color: var(--fg-1);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
+  white-space: nowrap;
+}
+
+.btn:hover {
+  background: var(--bg-3);
+  color: var(--fg-0);
+  border-color: var(--line-3);
+}
+
+.btn:active { opacity: 0.8; }
+
+.btn-primary {
+  background: var(--green);
+  color: #000;
+  border-color: var(--green);
+  font-weight: 600;
+}
+
+.btn-primary:hover {
+  background: var(--green-dim);
+  border-color: var(--green-dim);
+  color: #000;
+}
+
+/* Input */
+.input {
+  width: 100%;
+  background: var(--bg-1);
+  border: var(--hair);
+  border-radius: var(--r-2);
+  padding: var(--s-2) var(--s-3);
+  font-family: var(--sans);
+  font-size: var(--t-15);
+  color: var(--fg-0);
+  outline: none;
+  transition: border-color 0.1s;
+}
+
+.input::placeholder { color: var(--fg-3); }
+
+.input:focus {
+  border-color: var(--green-line);
+  background: var(--bg-2);
+}
+
+/* Label */
+.label {
+  display: block;
+  font-size: var(--t-13);
+  font-weight: 500;
+  color: var(--fg-2);
+  margin-bottom: var(--s-1);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+/* Badge */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+  padding: 2px var(--s-2);
+  font-size: var(--t-12);
+  font-weight: 500;
+  border-radius: var(--r-2);
+  border: 1px solid transparent;
+}
+
+.badge-green   { background: var(--green-bg);   color: var(--green);   border-color: var(--green-line); }
+.badge-amber   { background: var(--amber-bg);   color: var(--amber);   border-color: var(--amber-line); }
+.badge-blue    { background: var(--blue-bg);    color: var(--blue);    border-color: var(--blue-line); }
+.badge-magenta { background: var(--magenta-bg); color: var(--magenta); border-color: var(--magenta-line); }
+.badge-red     { background: rgba(255,93,93,0.08); color: var(--red);  border-color: rgba(255,93,93,0.32); }
+
+/* Divider */
+.divider {
+  border: none;
+  border-top: var(--hair);
+  margin: var(--s-4) 0;
+}
+
+/* Monospace block (agent logs) */
+.mono-block {
+  font-family: var(--mono);
+  font-size: var(--t-13);
+  color: var(--fg-2);
+  background: var(--bg-1);
+  border: var(--hair);
+  border-radius: var(--r-2);
+  padding: var(--s-3) var(--s-4);
+  overflow-x: auto;
+  white-space: pre;
+}
+
+/* Score bar */
+.score-bar {
+  height: 4px;
+  background: var(--line-2);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.score-bar-fill {
+  height: 100%;
+  background: var(--green);
+  border-radius: 2px;
+  transition: width 0.6s ease;
+}
+
+/* Pulse animation for active agent */
+@keyframes pulse-green {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.4; }
+}
+
+.pulse-green {
+  animation: pulse-green 1.5s ease-in-out infinite;
+}
+
+/* Fade in */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in { animation: fade-in 0.2s ease forwards; }
