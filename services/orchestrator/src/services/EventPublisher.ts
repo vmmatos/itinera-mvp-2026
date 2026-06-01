@@ -17,12 +17,14 @@ export class EventPublisher extends BaseService {
   }
 
   async connect(): Promise<void> {
-    this.reconnecting = false;
-    this.reconnectAttempts = 0;
     const connection = await amqplib.connect(`${getRabbitMQUrl()}?heartbeat=60`);
     this.connection = connection;
     this.channel = await connection.createChannel();
     await this.channel.assertExchange(config.RABBITMQ_EXCHANGE, 'topic', { durable: true });
+
+    // Reset only after fully successful connect
+    this.reconnecting = false;
+    this.reconnectAttempts = 0;
 
     connection.on('error', (err: Error) => {
       this.logger.error('RabbitMQ connection error', { error: err.message });

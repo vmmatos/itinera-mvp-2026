@@ -77,6 +77,14 @@ export class TripService extends BaseService {
     });
   }
 
+  async listTrips(ownerId: string): Promise<TripSummary[]> {
+    const trips = await AppDataSource.getRepository(Trip).find({
+      where: { ownerId },
+      order: { createdAt: 'DESC' },
+    });
+    return trips.map((t) => this.toSummary(t));
+  }
+
   async getTrip(tripId: string, isAdmin: boolean): Promise<TripSummary | TripDebugView> {
     const trip = await AppDataSource.getRepository(Trip).findOne({ where: { id: tripId } });
     if (!trip) throw new NotFoundError(`Trip ${tripId}`);

@@ -7,6 +7,16 @@ import { CreateTripSchema, TripIdParamSchema } from '@/validation/trip.schemas';
 export class TripController {
   constructor(private readonly tripService: TripService) {}
 
+  listTrips = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const authedReq = req as AuthenticatedRequest;
+      const trips = await this.tripService.listTrips(authedReq.user.sub);
+      res.json(ok(trips));
+    } catch (err) {
+      next(err);
+    }
+  };
+
   createTrip = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const authedReq = req as AuthenticatedRequest;
