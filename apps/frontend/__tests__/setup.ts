@@ -43,3 +43,8 @@ globalThis.navigateTo = vi.fn()
 globalThis.useAuthStore = vi.fn(() => authStoreMock)
 // @ts-expect-error global shim
 globalThis.useTripPlannerStore = vi.fn(() => tripStoreMock)
+
+// ── useAgentStream shim (returns empty/disconnected by default) ─
+export const agentStreamMock = { events: { value: [] }, connected: { value: false } }
+// @ts-expect-error global shim
+globalThis.useAgentStream = vi.fn(() => agentStreamMock)
