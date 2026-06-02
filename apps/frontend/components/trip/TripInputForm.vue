@@ -185,7 +185,7 @@ const AGENT_COLOUR: Record<string, string> = {
   bob:          'var(--amber)',
   carlos:       'var(--blue)',
   diana:        'var(--magenta)',
-  orchestrator: 'var(--green)',
+  orchestrator: 'var(--fg-0)',
   finance:      'var(--amber)',
   logistics:    'var(--blue)',
   validator:    'var(--magenta)',

@@ -10,7 +10,6 @@ export class RabbitMQConsumer {
   private channel: Channel | null = null
   private readonly logger = createLogger('ws-relay')
   private reconnectAttempts = 0
-  private readonly maxReconnectAttempts = 5
   private savedHandler: MessageHandler | null = null
   private savedQueue = ''
   private reconnecting = false
@@ -80,19 +79,20 @@ export class RabbitMQConsumer {
     this.channel = null
     this.connection = null
 
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      this.logger.error('RabbitMQ max reconnect attempts reached — exiting')
-      process.exit(1)
-    }
-
     const delay = Math.min(1000 * 2 ** this.reconnectAttempts, 30_000)
     this.reconnectAttempts++
     this.logger.info('Reconnecting RabbitMQ', { attempt: this.reconnectAttempts, delayMs: delay })
     await new Promise<void>(resolve => setTimeout(resolve, delay))
 
-    await this.connect()
-    if (this.savedHandler && this.savedQueue) {
-      await this.consume(this.savedQueue, this.savedHandler)
+    try {
+      await this.connect()
+      if (this.savedHandler && this.savedQueue) {
+        await this.consume(this.savedQueue, this.savedHandler)
+      }
+    } catch (err) {
+      this.logger.warn('RabbitMQ reconnect failed', { error: String(err) })
+      this.reconnecting = false
+      void this.scheduleReconnect()
     }
   }
 }

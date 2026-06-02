@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import type { Trip } from '~/types/index'
 
 definePageMeta({
@@ -11,15 +12,37 @@ const tripStore = useTripPlannerStore()
 
 const showForm = ref(false)
 
+const hasNegotiating = computed(() =>
+  tripStore.trips.some((t: Trip) => t.status === 'negotiating'),
+)
+
+let pollTimer: ReturnType<typeof setInterval> | null = null
+
+const startPolling = (): void => {
+  if (pollTimer !== null) return
+  pollTimer = setInterval(() => {
+    if (hasNegotiating.value) void tripStore.fetchTrips()
+    else stopPolling()
+  }, 10_000)
+}
+
+const stopPolling = (): void => {
+  if (pollTimer !== null) { clearInterval(pollTimer); pollTimer = null }
+}
+
 const onTripCreated = (_tripId: string): void => {
   showForm.value = false
   void tripStore.fetchTrips()
+  startPolling()
 }
 
 onMounted(async () => {
   authStore.initFromStorage()
   await tripStore.fetchTrips()
+  if (hasNegotiating.value) startPolling()
 })
+
+onUnmounted(() => stopPolling())
 
 const statusColour: Record<Trip['status'], string> = {
   draft:       'var(--fg-3)',
