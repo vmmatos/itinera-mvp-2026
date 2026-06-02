@@ -211,7 +211,7 @@ register_service logistics-agent     http://logistics-agent:3005     /api/logist
 register_service validator           http://validator:3006           /api/validate
 register_service notification        http://notification:3007        /api/notifications
 register_service sharing             http://sharing:3008             /api/share
-register_service ws-relay            http://ws-relay:3009            /stream
+register_service ws-relay            http://ws-relay:3009            /stream           ws
 
 # ---------------------------------------------------------------------------
 # Global plugins
