@@ -72,7 +72,7 @@ const statusColour: Record<Trip['status'], string> = {
         v-if="showForm"
         class="mb-8"
         @success="onTripCreated"
-        @cancel="showForm = false"
+        @cancel="showForm = false; void tripStore.fetchTrips()"
       />
 
       <!-- Dashboard header + CTA -->
