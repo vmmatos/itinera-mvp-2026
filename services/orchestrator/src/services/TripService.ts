@@ -73,6 +73,13 @@ export class TripService extends BaseService {
     return this.toSummary(trip);
   }
 
+  async getTripProposals(tripId: string): Promise<Proposal[]> {
+    return AppDataSource.getRepository(Proposal).find({
+      where: { tripId },
+      order: { createdAt: 'ASC' },
+    });
+  }
+
   startOrchestration(tripId: string): void {
     this.negotiationLoop.run(tripId).catch((err: unknown) => {
       this.logger.error('Orchestration failed', { tripId, error: String(err) });

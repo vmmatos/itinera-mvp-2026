@@ -1,6 +1,6 @@
 import type { Request, Response, NextFunction } from 'express';
 import type { AuthenticatedRequest } from '@itinera/shared';
-import { ok } from '@itinera/shared';
+import { ok, NotFoundError } from '@itinera/shared';
 import { TripService } from '@/services/TripService';
 import { CreateTripSchema, TripIdParamSchema } from '@/validation/trip.schemas';
 
@@ -24,6 +24,21 @@ export class TripController {
       const trip = await this.tripService.createTrip(authedReq.user.sub, input);
       this.tripService.startOrchestration(trip.id);
       res.status(202).json(ok({ tripId: trip.id, status: trip.status, message: 'Trip created' }));
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  getTripProposals = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const authedReq = req as AuthenticatedRequest;
+      const { id } = TripIdParamSchema.parse(req.params);
+      const trip = await this.tripService.getTrip(id, false);
+      if ('ownerId' in trip && trip.ownerId !== authedReq.user.sub && authedReq.user.role !== 'admin') {
+        throw new NotFoundError(`Trip ${id}`);
+      }
+      const proposals = await this.tripService.getTripProposals(id);
+      res.json(ok(proposals));
     } catch (err) {
       next(err);
     }

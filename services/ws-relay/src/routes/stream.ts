@@ -1,6 +1,6 @@
 import { Router } from 'express'
 import type { Request, Response, NextFunction } from 'express'
-import { authMiddleware, requireRole, createLogger } from '@itinera/shared'
+import { authMiddleware, createLogger } from '@itinera/shared'
 import type { AuthenticatedRequest } from '@itinera/shared'
 import type { SSEManager } from '@/services/SSEManager'
 
@@ -12,7 +12,6 @@ export function createStreamRouter(sseManager: SSEManager): Router {
   router.get(
     '/stream',
     authMiddleware,
-    requireRole('admin'),
     (req: Request, res: Response, _next: NextFunction) => {
       const clientId = crypto.randomUUID()
       const tripId = typeof req.query['tripId'] === 'string' ? req.query['tripId'] : undefined

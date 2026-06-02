@@ -6,6 +6,7 @@ export function createTripsRouter(controller: TripController): Router {
 
   router.get('/', controller.listTrips);
   router.post('/', controller.createTrip);
+  router.get('/:id/proposals', controller.getTripProposals);
   router.get('/:id', controller.getTrip);
 
   return router;

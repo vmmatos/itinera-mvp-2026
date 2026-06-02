@@ -1,4 +1,5 @@
 import { BaseService } from '@itinera/shared';
+import jwt from 'jsonwebtoken';
 import { config } from '@/config';
 
 export interface AgentCallResult {
@@ -8,6 +9,18 @@ export interface AgentCallResult {
   tokensUsed: number;
 }
 
+export interface AgentTripContext {
+  budgetTotal?: number | null;
+  budgetCurrency?: string;
+  region?: string | null;
+}
+
+interface AgentEventLike {
+  content?: unknown;
+  reasoning?: string;
+  metrics?: { latencyMs?: number; tokensUsed?: number };
+}
+
 const SERVICE_URLS: Record<string, string> = {
   'preference-agent': config.PREFERENCE_AGENT_URL,
   'orchestrator-agent': config.ORCHESTRATOR_AGENT_URL,
@@ -15,6 +28,23 @@ const SERVICE_URLS: Record<string, string> = {
   logistics: config.LOGISTICS_AGENT_URL,
   validator: config.VALIDATOR_URL,
 };
+
+function buildServiceToken(): string {
+  return jwt.sign(
+    { sub: 'orchestrator', role: 'service', iss: config.JWT_ISSUER ?? 'itinera' },
+    config.JWT_SECRET,
+    { expiresIn: '1h' },
+  );
+}
+
+function toAgentCallResult(event: AgentEventLike | undefined, fallbackMs: number): AgentCallResult {
+  return {
+    content: (event?.content ?? {}) as Record<string, unknown>,
+    reasoning: event?.reasoning,
+    latencyMs: event?.metrics?.latencyMs ?? fallbackMs,
+    tokensUsed: event?.metrics?.tokensUsed ?? 0,
+  };
+}
 
 export class AgentCaller extends BaseService {
   constructor() {
@@ -27,7 +57,10 @@ export class AgentCaller extends BaseService {
     const start = Date.now();
     const response = await fetch(`${baseUrl}${path}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${buildServiceToken()}`,
+      },
       body: JSON.stringify(body),
     });
     if (!response.ok) {
@@ -43,11 +76,13 @@ export class AgentCaller extends BaseService {
     agentName: string,
     round: number,
   ): Promise<AgentCallResult> {
-    return this.post<AgentCallResult>('preference-agent', '/api/v1/preferences/negotiate', {
-      tripId,
-      agentName,
-      round,
-    });
+    const start = Date.now();
+    const resp = await this.post<{ proposals: AgentEventLike[] }>(
+      'preference-agent',
+      '/propose',
+      { tripId, round, agents: [agentName] },
+    );
+    return toAgentCallResult(resp.proposals[0], Date.now() - start);
   }
 
   async callOrchestratorAgent(
@@ -55,35 +90,54 @@ export class AgentCaller extends BaseService {
     round: number,
     proposals: Record<string, unknown>[],
   ): Promise<AgentCallResult> {
-    return this.post<AgentCallResult>('orchestrator-agent', '/api/v1/orchestrate/analyze', {
-      tripId,
-      round,
-      proposals,
-    });
+    const start = Date.now();
+    const resp = await this.post<{ analysis: AgentEventLike }>(
+      'orchestrator-agent',
+      '/analyze',
+      { tripId, round, proposals },
+    );
+    return toAgentCallResult(resp.analysis, Date.now() - start);
   }
 
   async callFinanceAgent(
     tripId: string,
     round: number,
     proposal: Record<string, unknown>,
+    tripContext?: AgentTripContext,
   ): Promise<AgentCallResult> {
-    return this.post<AgentCallResult>('finance', '/api/v1/finance/evaluate', {
-      tripId,
-      round,
-      proposal,
-    });
+    const start = Date.now();
+    const resp = await this.post<{ review: AgentEventLike }>(
+      'finance',
+      '/review',
+      {
+        tripId,
+        round,
+        proposal,
+        budgetTotal: Number(tripContext?.budgetTotal ?? 5000),
+        budgetCurrency: tripContext?.budgetCurrency ?? 'EUR',
+      },
+    );
+    return toAgentCallResult(resp.review, Date.now() - start);
   }
 
   async callLogisticsAgent(
     tripId: string,
     round: number,
     proposal: Record<string, unknown>,
+    tripContext?: AgentTripContext,
   ): Promise<AgentCallResult> {
-    return this.post<AgentCallResult>('logistics', '/api/v1/logistics/evaluate', {
-      tripId,
-      round,
-      proposal,
-    });
+    const start = Date.now();
+    const resp = await this.post<{ validation: AgentEventLike }>(
+      'logistics',
+      '/validate',
+      {
+        tripId,
+        round,
+        proposal,
+        region: tripContext?.region ?? 'unknown',
+      },
+    );
+    return toAgentCallResult(resp.validation, Date.now() - start);
   }
 
   async callValidatorAgent(
@@ -91,10 +145,6 @@ export class AgentCaller extends BaseService {
     round: number,
     proposal: Record<string, unknown>,
   ): Promise<AgentCallResult> {
-    return this.post<AgentCallResult>('validator', '/api/v1/validate', {
-      tripId,
-      round,
-      proposal,
-    });
+    return this.post<AgentCallResult>('validator', '/', { tripId, round, proposal });
   }
 }

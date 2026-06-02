@@ -62,6 +62,7 @@ describe('NegotiationLoop', () => {
     vi.mocked(stateManager.saveProposal).mockResolvedValue(undefined);
     vi.mocked(stateManager.logAgentCall).mockResolvedValue(undefined);
     vi.mocked(stateManager.saveMetric).mockResolvedValue(undefined);
+    vi.mocked(stateManager.getTrip).mockResolvedValue(null);
     vi.mocked(eventPublisher.publish).mockResolvedValue(undefined);
 
     vi.mocked(agentCaller.callPreferenceAgent).mockResolvedValue(AGENT_RESULT);

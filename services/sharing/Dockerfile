@@ -32,6 +32,7 @@ RUN cd services/shared && yarn build
 # --- service source ---
 COPY services/sharing/src ./services/sharing/src
 COPY services/sharing/tsconfig.json ./services/sharing/
+COPY services/sharing/vitest.config.ts ./services/sharing/
 
 WORKDIR /app/services/sharing
 EXPOSE 3008

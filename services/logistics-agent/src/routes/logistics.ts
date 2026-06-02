@@ -9,37 +9,11 @@ import type { TimingValidator, ScheduledActivity, ScheduledTransport } from '@/v
 import type { WeatherAnalyzer } from '@/agents/WeatherAnalyzer';
 import { config } from '@/config';
 
-const TimePattern = /^\d{2}:\d{2}$/;
-
-const ActivitySchema = z.object({
-  name: z.string().min(1),
-  startTime: z.string().regex(TimePattern, 'startTime must be HH:mm'),
-  endTime: z.string().regex(TimePattern, 'endTime must be HH:mm'),
-  location: z.string().min(1),
-  isOutdoor: z.boolean(),
-});
-
-const TransportSchema = z.object({
-  from: z.string().min(1),
-  to: z.string().min(1),
-  startTime: z.string().regex(TimePattern, 'startTime must be HH:mm'),
-  durationMinutes: z.number().int().nonnegative(),
-});
-
-const ItineraryDaySchema = z.object({
-  day: z.number().int().min(1),
-  date: z.string().optional(),
-  activities: z.array(ActivitySchema).default([]),
-  transport: z.array(TransportSchema).default([]),
-});
-
 const ValidateSchema = z.object({
   tripId: z.string().uuid(),
   round: z.number().int().min(1),
-  proposal: z.object({
-    itinerary: z.array(ItineraryDaySchema).min(1),
-  }),
-  region: z.string().min(1),
+  proposal: z.record(z.unknown()),
+  region: z.string().default('unknown'),
   context: z.string().optional().default(''),
 });
 
@@ -72,24 +46,35 @@ export function createLogisticsRouter(
     const allActivities: ScheduledActivity[] = [];
     const allTransport: ScheduledTransport[] = [];
 
-    for (const day of proposal.itinerary) {
-      for (const act of day.activities) {
-        allActivities.push({
-          day: day.day,
-          name: act.name,
-          startTime: act.startTime,
-          endTime: act.endTime,
-          location: act.location,
-        });
+    type RawDay = Record<string, unknown>;
+    const rawItinerary = Array.isArray(proposal['itinerary']) ? (proposal['itinerary'] as RawDay[]) : [];
+
+    for (const day of rawItinerary) {
+      const dayNum = typeof day['day'] === 'number' ? day['day'] : 1;
+      const rawActivities = Array.isArray(day['activities']) ? (day['activities'] as RawDay[]) : [];
+      const rawTransport = Array.isArray(day['transport']) ? (day['transport'] as RawDay[]) : [];
+
+      for (const act of rawActivities) {
+        if (typeof act['name'] === 'string' && typeof act['startTime'] === 'string' && typeof act['endTime'] === 'string') {
+          allActivities.push({
+            day: dayNum,
+            name: act['name'],
+            startTime: act['startTime'],
+            endTime: act['endTime'],
+            location: typeof act['location'] === 'string' ? act['location'] : region,
+          });
+        }
       }
-      for (const leg of day.transport) {
-        allTransport.push({
-          day: day.day,
-          from: leg.from,
-          to: leg.to,
-          startTime: leg.startTime,
-          durationMinutes: leg.durationMinutes,
-        });
+      for (const leg of rawTransport) {
+        if (typeof leg['from'] === 'string' && typeof leg['to'] === 'string' && typeof leg['startTime'] === 'string') {
+          allTransport.push({
+            day: dayNum,
+            from: leg['from'],
+            to: leg['to'],
+            startTime: leg['startTime'],
+            durationMinutes: typeof leg['durationMinutes'] === 'number' ? leg['durationMinutes'] : 0,
+          });
+        }
       }
     }
 
@@ -98,14 +83,14 @@ export function createLogisticsRouter(
     const weatherCacheKey = `weather:${region}:multi`;
     let forecasts = await redis.get(weatherCacheKey);
     if (!forecasts) {
-      forecasts = await weather.getMultiDayForecast(region, proposal.itinerary.length + 1);
+      forecasts = await weather.getMultiDayForecast(region, Math.max(rawItinerary.length, 1) + 1);
       await redis.set(weatherCacheKey, forecasts, config.WEATHER_CACHE_TTL_SECONDS);
     }
 
     const validation = await analyzer.analyze(
       tripId,
       round,
-      proposal.itinerary,
+      rawItinerary,
       forecasts as Awaited<ReturnType<WeatherService['getMultiDayForecast']>>,
       timingResult,
     );
