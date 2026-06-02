@@ -15,6 +15,7 @@ export interface TripSummary {
   name: string;
   status: TripStatus;
   region: string | null;
+  destinations: Array<{ country: string; city?: string; nights: number }>;
   ownerId: string;
   startDate: Date | null;
   endDate: Date | null;
@@ -43,12 +44,20 @@ export class TripService extends BaseService {
     const travellerRepo = AppDataSource.getRepository(Traveller);
 
     const trip = await AppDataSource.transaction(async (manager) => {
+      const destinations = input.destinations ?? [];
+      const totalNights = destinations.reduce((s, d) => s + d.nights, 0);
+      const endDate = input.endDate
+        ?? (input.startDate && totalNights > 0
+          ? new Date(new Date(input.startDate).getTime() + totalNights * 86_400_000).toISOString().slice(0, 10)
+          : undefined);
+
       const newTrip = tripRepo.create({
         name: input.name,
         region: input.region ?? null,
+        destinations,
         ownerId,
         startDate: input.startDate ? new Date(input.startDate) : null,
-        endDate: input.endDate ? new Date(input.endDate) : null,
+        endDate: endDate ? new Date(endDate) : null,
         budgetTotal: input.budgetTotal ?? null,
         budgetCurrency: input.budgetCurrency ?? 'EUR',
         status: 'draft',
@@ -115,6 +124,7 @@ export class TripService extends BaseService {
       name: trip.name,
       status: trip.status as TripStatus,
       region: trip.region,
+      destinations: trip.destinations ?? [],
       ownerId: trip.ownerId,
       startDate: trip.startDate,
       endDate: trip.endDate,

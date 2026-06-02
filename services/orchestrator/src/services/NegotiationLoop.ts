@@ -88,13 +88,39 @@ export class NegotiationLoop extends BaseService {
 
   private buildAgentContext(trip: import('@/entities/Trip').Trip | null): string {
     if (!trip) return '';
-    const lines: string[] = [
-      `TRIP: ${trip.name}`,
-      `DESTINATION (MANDATORY — you MUST plan within this region only): ${trip.region ?? 'unknown'}`,
-      `DATES: ${trip.startDate ? String(trip.startDate).slice(0, 10) : 'TBD'} → ${trip.endDate ? String(trip.endDate).slice(0, 10) : 'TBD'}`,
-      `BUDGET: ${trip.budgetTotal ?? '?'} ${trip.budgetCurrency}`,
-      `GROUP SIZE: ${trip.travellers?.length ?? 1} traveller(s)`,
-    ];
+
+    const destinations = trip.destinations ?? [];
+    const totalNights = destinations.reduce((s, d) => s + d.nights, 0);
+    const budgetPerNight = trip.budgetTotal && totalNights > 0
+      ? Math.round(trip.budgetTotal / totalNights)
+      : null;
+
+    const lines: string[] = [`TRIP: ${trip.name}`];
+
+    if (destinations.length > 1) {
+      lines.push(`\nDESTINATIONS (MANDATORY — you MUST plan exclusively within these places, in this order):`);
+      let day = 1;
+      for (const d of destinations) {
+        const label = d.city ? `${d.city}, ${d.country}` : d.country;
+        lines.push(`  Days ${day}–${day + d.nights - 1}: ${label} (${d.nights} night${d.nights !== 1 ? 's' : ''})`);
+        day += d.nights;
+      }
+      lines.push(`  Total: ${totalNights} nights across ${new Set(destinations.map((d) => d.country)).size} countr${new Set(destinations.map((d) => d.country)).size === 1 ? 'y' : 'ies'}`);
+    } else if (destinations.length === 1) {
+      const d = destinations[0];
+      const label = d.city ? `${d.city}, ${d.country}` : d.country;
+      lines.push(`DESTINATION (MANDATORY — plan exclusively here): ${label} (${d.nights} nights)`);
+    } else {
+      lines.push(`DESTINATION (MANDATORY): ${trip.region ?? 'unknown'}`);
+    }
+
+    lines.push(`\nDATES: ${trip.startDate ? String(trip.startDate).slice(0, 10) : 'TBD'} → ${trip.endDate ? String(trip.endDate).slice(0, 10) : 'TBD'}`);
+    lines.push(`BUDGET: ${trip.budgetTotal ?? '?'} ${trip.budgetCurrency}${budgetPerNight ? ` (≈ ${trip.budgetCurrency} ${budgetPerNight}/night)` : ''}`);
+    lines.push(`GROUP SIZE: ${trip.travellers?.length ?? 1} traveller(s)`);
+
+    if (destinations.length > 1) {
+      lines.push(`\nLOGISTICS NOTE: Plan transit between destinations. Each country segment has a fixed duration — do not extend or skip any leg.`);
+    }
 
     if (trip.travellers?.length) {
       lines.push('\nGROUP PREFERENCES:');

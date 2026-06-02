@@ -43,6 +43,9 @@ export class Trip {
   @Column({ name: 'budget_currency', type: 'varchar', length: 10, default: 'EUR' })
   budgetCurrency!: string;
 
+  @Column({ type: 'jsonb', default: [] })
+  destinations!: Array<{ country: string; city?: string; nights: number }>;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 
