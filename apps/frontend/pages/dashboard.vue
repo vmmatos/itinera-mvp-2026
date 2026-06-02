@@ -11,7 +11,7 @@ const tripStore = useTripPlannerStore()
 
 const showForm = ref(false)
 
-const onTripCreated = (tripId: string): void => {
+const onTripCreated = (_tripId: string): void => {
   showForm.value = false
   void tripStore.fetchTrips()
 }

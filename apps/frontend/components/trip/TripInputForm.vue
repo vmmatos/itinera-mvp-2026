@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onUnmounted } from 'vue'
 import { PERSONA_LABELS, PERSONA_AGENT, AGENT_COLOURS } from '~/types/index'
 import type { Persona, Flexibility, CreateTripInput, TravellerInput } from '~/types/index'
 
@@ -12,7 +12,7 @@ const emit = defineEmits<{
 const authStore = useAuthStore()
 
 // ── Wizard step ───────────────────────────────────────────────
-const step = ref<1 | 2>(1)
+const step = ref<1 | 2 | 3 | 4 | 5>(1)
 
 // ── Step 1: Traveller composition ────────────────────────────
 
@@ -126,9 +126,12 @@ const step2Valid = computed(() =>
   budgetTotal.value > 0,
 )
 
-// ── Submit ────────────────────────────────────────────────────
+// ── Submit → enters step 3 ────────────────────────────────────
 
 const store = useTripPlannerStore()
+const api   = useApi()
+
+const activeTripId = ref<string | null>(null)
 
 const submit = async (): Promise<void> => {
   if (!step1Valid.value || !step2Valid.value) return
@@ -139,7 +142,7 @@ const submit = async (): Promise<void> => {
     startDate:      startDate.value,
     endDate:        endDate.value,
     budgetTotal:    budgetTotal.value,
-    budgetCurrency: 'USD',
+    budgetCurrency: 'EUR',
     travellers:     travellers.value.map((t): TravellerInput => ({
       userId: t.isCurrentUser ? currentUserId.value : undefined,
       preferences: {
@@ -155,10 +158,243 @@ const submit = async (): Promise<void> => {
 
   try {
     const tripId = await store.createTrip(payload)
-    emit('success', tripId)
+    activeTripId.value = tripId
+    step.value = 3
+    startNegotiationPolling(tripId)
   } catch {
     // error surfaced via store.error
   }
+}
+
+// ── Step 3: Negotiate (polling) ───────────────────────────────
+
+interface ProposalEntry {
+  id: string
+  agent: string
+  round: number
+  content: Record<string, unknown>
+  createdAt: string
+}
+
+const liveProposals    = ref<ProposalEntry[]>([])
+const negotiationStatus = ref<string>('negotiating')
+let pollInterval: ReturnType<typeof setInterval> | null = null
+
+const AGENT_COLOUR: Record<string, string> = {
+  alice:        'var(--green)',
+  bob:          'var(--amber)',
+  carlos:       'var(--blue)',
+  diana:        'var(--magenta)',
+  orchestrator: 'var(--green)',
+  finance:      'var(--amber)',
+  logistics:    'var(--blue)',
+  validator:    'var(--magenta)',
+}
+
+const ROUND_LABELS: Record<number, string> = {
+  1: 'Preferences',
+  2: 'Conflict analysis',
+  3: 'Compromise proposal',
+  4: 'Budget review',
+  5: 'Logistics validation',
+  6: 'Final scoring',
+}
+
+const startNegotiationPolling = (tripId: string): void => {
+  const poll = async (): Promise<void> => {
+    try {
+      const [tripResp, propResp] = await Promise.all([
+        api.get<{ success: boolean; data: { status: string } }>(`/api/v1/trips/${tripId}`),
+        api.get<{ success: boolean; data: ProposalEntry[] }>(`/api/v1/trips/${tripId}/proposals`),
+      ])
+      negotiationStatus.value = tripResp.data.data.status
+      liveProposals.value = propResp.data.data
+
+      if (negotiationStatus.value === 'confirmed') {
+        stopPolling()
+        setTimeout(() => { step.value = 4 }, 800)
+      } else if (negotiationStatus.value === 'cancelled') {
+        stopPolling()
+      }
+    } catch { /* ignore transient errors */ }
+  }
+  void poll()
+  pollInterval = setInterval(() => void poll(), 3000)
+}
+
+const stopPolling = (): void => {
+  if (pollInterval !== null) {
+    clearInterval(pollInterval)
+    pollInterval = null
+  }
+}
+
+onUnmounted(() => stopPolling())
+
+// ── Step 4: Itinerary review ──────────────────────────────────
+
+interface ItineraryDay {
+  day:        number
+  date?:      string
+  activities: Array<{ name: string; time?: string; location?: string; notes?: string }>
+  meals?:     Array<{ type: string; name: string }>
+}
+
+function tryParseItinerary(content: Record<string, unknown>): ItineraryDay[] {
+  const tryFromObj = (obj: unknown): ItineraryDay[] => {
+    if (!obj || typeof obj !== 'object') return []
+    const o = obj as Record<string, unknown>
+    const raw = o['itinerary'] ?? o['days'] ?? o['plan'] ?? o['schedule']
+    if (!Array.isArray(raw) || raw.length === 0) return []
+    return (raw as Array<Record<string, unknown>>).map((d, i) => ({
+      day: typeof d['day'] === 'number' ? d['day'] : i + 1,
+      date: typeof d['date'] === 'string' ? d['date'] : undefined,
+      activities: Array.isArray(d['activities'])
+        ? (d['activities'] as Array<Record<string, unknown>>).map((a) => ({
+            name:     String(a['name'] ?? a['activity'] ?? a['title'] ?? '—'),
+            time:     typeof a['time'] === 'string' ? a['time']
+                        : typeof a['startTime'] === 'string' ? a['startTime'] : undefined,
+            location: typeof a['location'] === 'string' ? a['location'] : undefined,
+            notes:    typeof a['notes'] === 'string' ? a['notes']
+                        : typeof a['description'] === 'string' ? a['description'] : undefined,
+          }))
+        : [],
+      meals: Array.isArray(d['meals'])
+        ? (d['meals'] as Array<Record<string, unknown>>).map((m) => ({
+            type: String(m['type'] ?? 'meal'),
+            name: String(m['name'] ?? '—'),
+          }))
+        : undefined,
+    }))
+  }
+
+  // 1. Try structured keys directly
+  const direct = tryFromObj(content)
+  if (direct.length > 0) return direct
+
+  // 2. Try parsing 'raw' field as JSON
+  if (typeof content['raw'] === 'string') {
+    try {
+      const parsed = JSON.parse(content['raw']) as unknown
+      const fromRaw = tryFromObj(parsed)
+      if (fromRaw.length > 0) return fromRaw
+    } catch { /* not JSON */ }
+  }
+
+  return []
+}
+
+const latestByAgent = computed((): Record<string, ProposalEntry> => {
+  const map: Record<string, ProposalEntry> = {}
+  for (const p of liveProposals.value) {
+    const existing = map[p.agent]
+    if (!existing || p.round > existing.round) map[p.agent] = p
+  }
+  return map
+})
+
+const parsedItinerary = computed((): ItineraryDay[] => {
+  // Prefer orchestrator round 3 (compromise proposal) → then any proposal with structured days
+  const ordered = ['orchestrator', 'validator', 'logistics', 'finance', 'alice', 'bob', 'carlos', 'diana']
+  for (const agent of ordered) {
+    const p = latestByAgent.value[agent]
+    if (!p) continue
+    const days = tryParseItinerary(p.content)
+    if (days.length > 0) return days
+  }
+  return []
+})
+
+const validatorSummary = computed(() => {
+  const p = latestByAgent.value['validator']
+  if (!p) return null
+  const c = p.content
+  return {
+    metrics: c['metrics'] as Record<string, unknown> | undefined,
+    scoring: c['scoring'] as Record<string, unknown> | undefined,
+    fairness: typeof c['fairness'] === 'number' ? c['fairness'] : undefined,
+  }
+})
+
+const financeSummary = computed(() => {
+  const p = latestByAgent.value['finance']
+  if (!p) return null
+  const c = p.content
+  const bd = c['costBreakdown'] as Record<string, unknown> | undefined
+  const bv = c['budgetValidation'] as Record<string, unknown> | undefined
+  return { grandTotal: bd?.['grandTotal'], currency: bd?.['currency'], status: bv?.['status'] }
+})
+
+const orchestratorText = computed((): string | null => {
+  const p = latestByAgent.value['orchestrator']
+  if (!p) return null
+  const raw = p.content['raw']
+  if (typeof raw === 'string') return raw.slice(0, 600) + (raw.length > 600 ? '…' : '')
+  return null
+})
+
+const handleAccept = (): void => { step.value = 5 }
+const handleReject = (): void => {
+  stopPolling()
+  emit('cancel')
+}
+
+// ── Step 5: Export ────────────────────────────────────────────
+
+const exportLoading = ref(false)
+const exportError   = ref<string | null>(null)
+
+const buildExportPayload = (): Record<string, unknown> => ({
+  tripId: activeTripId.value,
+  itinerary: {
+    tripName:       tripName.value,
+    tripId:         activeTripId.value,
+    startDate:      startDate.value || undefined,
+    endDate:        endDate.value || undefined,
+    budgetTotal:    budgetTotal.value,
+    budgetCurrency: 'EUR',
+    travellers:     travellers.value.map((t) => ({ name: t.name })),
+    days: parsedItinerary.value.map((d) => ({
+      day:        d.day,
+      date:       d.date,
+      activities: d.activities.map((a) => ({
+        name:     a.name,
+        location: a.location,
+        duration: a.time,
+        notes:    a.notes,
+      })),
+      meals: d.meals?.map((m) => ({ type: m.type, name: m.name })),
+    })),
+  },
+})
+
+const downloadPdf = async (): Promise<void> => {
+  exportLoading.value = true
+  exportError.value = null
+  try {
+    const resp = await api.post(
+      '/api/share/api/v1/export/pdf',
+      buildExportPayload(),
+      { responseType: 'blob' },
+    )
+    const url = URL.createObjectURL(new Blob([resp.data as BlobPart], { type: 'application/pdf' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `itinerary-${activeTripId.value ?? 'trip'}.pdf`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  } catch {
+    exportError.value = 'PDF export failed. Try again.'
+  } finally {
+    exportLoading.value = false
+  }
+}
+
+const goToDashboard = (): void => {
+  stopPolling()
+  emit('success', activeTripId.value ?? '')
 }
 
 // ── Preview derived values ────────────────────────────────────
@@ -202,10 +438,10 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
         <span class="sep">/</span>
         <b>{{ tripName || 'New trip' }}</b>
         <span class="sep">/</span>
-        <span>draft</span>
+        <span>{{ step <= 2 ? 'draft' : step === 3 ? 'negotiating' : step === 4 ? 'review' : 'confirmed' }}</span>
       </div>
       <div style="display:flex;gap:8px;align-items:center">
-        <button class="btn" @click="emit('cancel')">Cancel</button>
+        <button v-if="step <= 2" class="btn" @click="emit('cancel')">Cancel</button>
         <div class="avatar">{{ initials(currentUserName) }}</div>
       </div>
     </div>
@@ -218,11 +454,21 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
       <div class="ustep" :class="{ cur: step === 2, done: step > 2 }">
         <span class="n">02</span> Brief
       </div>
-      <div class="ustep"><span class="n">03</span> Negotiate</div>
-      <div class="ustep"><span class="n">04</span> Itinerary</div>
-      <div class="ustep"><span class="n">05</span> Export</div>
+      <div class="ustep" :class="{ cur: step === 3, done: step > 3 }">
+        <span class="n">03</span> Negotiate
+      </div>
+      <div class="ustep" :class="{ cur: step === 4, done: step > 4 }">
+        <span class="n">04</span> Itinerary
+      </div>
+      <div class="ustep" :class="{ cur: step === 5 }">
+        <span class="n">05</span> Export
+      </div>
       <div style="margin-left:auto;align-self:center" class="helper">
-        step 0{{ step }} · fill in your details
+        step 0{{ step }} ·
+        <span v-if="step <= 2">fill in your details</span>
+        <span v-else-if="step === 3">agents are negotiating…</span>
+        <span v-else-if="step === 4">review the proposal</span>
+        <span v-else>download your itinerary</span>
       </div>
     </div>
 
@@ -549,7 +795,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
           </div>
         </div>
 
-        <div class="suggest" v-if="travellers.filter(t => t.persona).length > 1">
+        <div v-if="travellers.filter(t => t.persona).length > 1" class="suggest">
           <h4>
             Persona mix
             <span style="float:right;font-family:var(--mono);font-size:var(--t-12)">
@@ -569,5 +815,276 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
         </div>
       </div>
     </div>
+
+    <!-- ── Step 3: Negotiate ───────────────────────────────── -->
+    <div v-if="step === 3" class="user-grid">
+      <div class="user-left" style="max-width:100%;flex:1">
+
+        <div style="margin-bottom:var(--s-6)">
+          <div class="sec-eyebrow" style="margin-bottom:6px">Live negotiation</div>
+          <div style="display:flex;align-items:center;gap:var(--s-4)">
+            <h2 style="margin:0;font-size:var(--t-28);font-weight:400;letter-spacing:-0.02em">
+              Agents are building your itinerary
+            </h2>
+            <span v-if="negotiationStatus === 'negotiating'" class="helper pulse-green" style="font-family:var(--mono)">
+              ● live
+            </span>
+            <span v-else-if="negotiationStatus === 'confirmed'" style="color:var(--green);font-family:var(--mono);font-size:var(--t-13)">
+              ✓ confirmed
+            </span>
+            <span v-else-if="negotiationStatus === 'cancelled'" style="color:var(--red);font-family:var(--mono);font-size:var(--t-13)">
+              ✗ cancelled
+            </span>
+          </div>
+        </div>
+
+        <!-- Cancelled state -->
+        <div v-if="negotiationStatus === 'cancelled'" style="padding:var(--s-6);background:rgba(255,93,93,0.06);border:1px solid rgba(255,93,93,0.24);border-radius:var(--r-2);text-align:center">
+          <p style="color:var(--red);font-size:var(--t-15);margin:0 0 var(--s-3)">Negotiation failed</p>
+          <p class="helper" style="margin:0 0 var(--s-4)">The agents could not agree on an itinerary. Please try again.</p>
+          <button class="btn" @click="emit('cancel')">Back to dashboard</button>
+        </div>
+
+        <!-- Live event feed -->
+        <div
+          v-else
+          style="border:var(--hair);border-radius:var(--r-2);background:var(--bg-1);overflow:hidden"
+        >
+          <!-- Header -->
+          <div style="padding:var(--s-3) var(--s-4);border-bottom:var(--hair);display:flex;align-items:center;justify-content:space-between">
+            <span class="helper" style="font-family:var(--mono)">agent activity</span>
+            <span class="helper" style="font-family:var(--mono)">{{ liveProposals.length }} events</span>
+          </div>
+
+          <!-- Empty state -->
+          <div v-if="liveProposals.length === 0" style="padding:var(--s-8);text-align:center">
+            <span class="helper pulse-green">Initialising agents…</span>
+          </div>
+
+          <!-- Event list -->
+          <div v-else style="max-height:400px;overflow-y:auto">
+            <div
+              v-for="p in liveProposals"
+              :key="p.id"
+              style="padding:var(--s-3) var(--s-4);border-bottom:var(--hair);display:flex;align-items:flex-start;gap:var(--s-3)"
+            >
+              <!-- Agent dot -->
+              <span
+                style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-top:5px;flex-shrink:0"
+                :style="`background:${AGENT_COLOUR[p.agent] ?? 'var(--fg-3)'}`"
+              />
+              <!-- Content -->
+              <div style="flex:1;min-width:0">
+                <div style="display:flex;align-items:center;gap:var(--s-2);margin-bottom:3px">
+                  <span
+                    style="font-size:var(--t-12);font-family:var(--mono);font-weight:600"
+                    :style="`color:${AGENT_COLOUR[p.agent] ?? 'var(--fg-2)'}`"
+                  >{{ p.agent }}</span>
+                  <span class="helper" style="font-family:var(--mono)">round {{ p.round }} · {{ ROUND_LABELS[p.round] ?? 'processing' }}</span>
+                </div>
+                <p style="margin:0;font-size:var(--t-13);color:var(--fg-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:500px">
+                  {{ typeof p.content === 'object' && p.content !== null
+                      ? Object.keys(p.content).slice(0,3).join(', ') + (Object.keys(p.content).length > 3 ? '…' : '')
+                      : '—' }}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Round progress -->
+        <div v-if="negotiationStatus === 'negotiating'" style="margin-top:var(--s-4)">
+          <div class="helper" style="margin-bottom:var(--s-2)">
+            Round {{ Math.min(liveProposals.length > 0 ? Math.max(...liveProposals.map(p => p.round)) : 0, 6) }} / 6
+          </div>
+          <div style="height:4px;background:var(--bg-3);border-radius:2px;overflow:hidden">
+            <div
+              style="height:100%;background:var(--green);border-radius:2px;transition:width 0.5s"
+              :style="`width:${Math.min((liveProposals.length > 0 ? Math.max(...liveProposals.map(p => p.round)) : 0) / 6 * 100, 100)}%`"
+            />
+          </div>
+        </div>
+
+        <!-- Auto-advance hint -->
+        <div v-if="negotiationStatus === 'confirmed'" style="margin-top:var(--s-4);padding:var(--s-3) var(--s-4);background:rgba(0,255,136,0.06);border:1px solid rgba(0,255,136,0.24);border-radius:var(--r-2)">
+          <p style="margin:0;font-size:var(--t-13);color:var(--green)">Negotiation complete — moving to itinerary review…</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Step 4: Itinerary ───────────────────────────────── -->
+    <div v-if="step === 4" class="user-grid">
+      <!-- Left: itinerary -->
+      <div class="user-left" style="flex:1">
+
+        <div style="margin-bottom:var(--s-6)">
+          <div class="sec-eyebrow" style="margin-bottom:6px">Proposed itinerary</div>
+          <h2 style="margin:0;font-size:var(--t-28);font-weight:400;letter-spacing:-0.02em">
+            Review what the agents proposed
+          </h2>
+        </div>
+
+        <!-- Structured itinerary days -->
+        <div v-if="parsedItinerary.length > 0" style="display:flex;flex-direction:column;gap:var(--s-3);margin-bottom:var(--s-6)">
+          <div
+            v-for="day in parsedItinerary"
+            :key="day.day"
+            style="border:var(--hair);border-radius:var(--r-2);background:var(--bg-1);overflow:hidden"
+          >
+            <div style="padding:var(--s-3) var(--s-4);border-bottom:var(--hair);display:flex;align-items:center;gap:var(--s-3)">
+              <span style="font-family:var(--mono);font-size:var(--t-12);color:var(--green);font-weight:600">Day {{ day.day }}</span>
+              <span v-if="day.date" class="helper" style="font-family:var(--mono)">{{ day.date }}</span>
+            </div>
+            <div style="padding:var(--s-3) var(--s-4)">
+              <div v-if="day.activities.length === 0" class="helper">No structured activities.</div>
+              <div
+                v-for="(act, i) in day.activities"
+                :key="i"
+                style="display:flex;align-items:flex-start;gap:var(--s-3);padding:var(--s-2) 0;border-bottom:1px solid rgba(255,255,255,0.04)"
+              >
+                <span v-if="act.time" style="font-family:var(--mono);font-size:var(--t-12);color:var(--fg-3);min-width:48px;flex-shrink:0">{{ act.time }}</span>
+                <div>
+                  <p style="margin:0;font-size:var(--t-14);color:var(--fg-1)">{{ act.name }}</p>
+                  <p v-if="act.location" style="margin:0;font-size:var(--t-12);color:var(--fg-3)">{{ act.location }}</p>
+                  <p v-if="act.notes" style="margin:2px 0 0;font-size:var(--t-12);color:var(--fg-3);font-style:italic">{{ act.notes }}</p>
+                </div>
+              </div>
+              <div v-if="day.meals && day.meals.length > 0" style="margin-top:var(--s-2);display:flex;gap:var(--s-2);flex-wrap:wrap">
+                <span v-for="m in day.meals" :key="m.type" class="chip on" style="font-size:var(--t-12)">
+                  {{ m.type }}: {{ m.name }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Orchestrator proposal text fallback -->
+        <div v-else-if="orchestratorText" style="margin-bottom:var(--s-6);border:var(--hair);border-radius:var(--r-2);background:var(--bg-1);padding:var(--s-4)">
+          <div class="helper" style="margin-bottom:var(--s-3)">Agent-proposed itinerary</div>
+          <p style="font-size:var(--t-13);color:var(--fg-2);line-height:1.7;margin:0;white-space:pre-wrap">{{ orchestratorText }}</p>
+        </div>
+
+        <div v-else class="helper" style="margin-bottom:var(--s-6)">Proposal data is processing.</div>
+
+        <!-- Actions -->
+        <div class="user-form-foot">
+          <button class="btn" style="color:var(--red);border-color:rgba(255,93,93,0.32)" @click="handleReject">
+            Reject
+          </button>
+          <button class="btn btn-primary" @click="handleAccept">
+            Accept &amp; Export →
+          </button>
+        </div>
+      </div>
+
+      <!-- Right: agent scores -->
+      <div class="user-right">
+        <div class="preview-head">
+          <span class="ttl">Negotiation results</span>
+        </div>
+
+        <!-- Finance summary -->
+        <div v-if="financeSummary" class="summary-card">
+          <div class="sub">Budget review</div>
+          <div class="kv">
+            <div class="k">Estimated cost</div>
+            <div class="v mono">{{ financeSummary.grandTotal ?? '—' }} {{ financeSummary.currency ?? '' }}</div>
+            <div class="k">Status</div>
+            <div class="v" :style="financeSummary.status === 'within_budget' ? 'color:var(--green)' : 'color:var(--amber)'">
+              {{ financeSummary.status ?? '—' }}
+            </div>
+          </div>
+        </div>
+
+        <!-- Validator scores -->
+        <div v-if="validatorSummary" class="summary-card" style="margin-top:var(--s-3)">
+          <div class="sub">Fairness score</div>
+          <div class="kv">
+            <template v-if="validatorSummary.metrics">
+              <template v-for="(val, key) in validatorSummary.metrics" :key="String(key)">
+                <div class="k">{{ String(key) }}</div>
+                <div class="v mono">{{ val }}</div>
+              </template>
+            </template>
+            <div v-if="typeof validatorSummary.fairness === 'number'" class="k">Fairness</div>
+            <div v-if="typeof validatorSummary.fairness === 'number'" class="v mono" style="color:var(--green)">
+              {{ Math.round(validatorSummary.fairness * 100) }}%
+            </div>
+          </div>
+        </div>
+
+        <!-- Agent participation -->
+        <div class="suggest" style="margin-top:var(--s-3)">
+          <h4>Agents involved</h4>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:var(--s-2)">
+            <span
+              v-for="agent in Object.keys(latestByAgent)"
+              :key="agent"
+              class="chip on"
+              style="font-size:var(--t-12)"
+              :style="`color:${AGENT_COLOUR[agent] ?? 'var(--fg-2)'};border-color:${AGENT_COLOUR[agent] ?? 'var(--fg-3)'}44`"
+            >
+              {{ agent }}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Step 5: Export ──────────────────────────────────── -->
+    <div v-if="step === 5" class="user-grid">
+      <div class="user-left" style="flex:1;max-width:600px">
+
+        <div style="margin-bottom:var(--s-8)">
+          <div class="sec-eyebrow" style="margin-bottom:6px;color:var(--green)">Confirmed</div>
+          <h2 style="margin:0;font-size:var(--t-28);font-weight:400;letter-spacing:-0.02em">
+            {{ tripName }} is ready.
+          </h2>
+          <p style="margin:var(--s-2) 0 0;color:var(--fg-3);font-size:var(--t-14)">
+            {{ region }} · {{ nights }} nights · {{ travellers.length }} traveller{{ travellers.length !== 1 ? 's' : '' }}
+          </p>
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:var(--s-3)">
+          <!-- PDF export -->
+          <div style="border:var(--hair);border-radius:var(--r-2);padding:var(--s-5);background:var(--bg-1)">
+            <div style="margin-bottom:var(--s-3)">
+              <p style="margin:0;font-size:var(--t-15);font-weight:500">Download PDF</p>
+              <p style="margin:4px 0 0;font-size:var(--t-13);color:var(--fg-3)">Full itinerary with day-by-day plan, activities and logistics.</p>
+            </div>
+            <div v-if="exportError" style="font-size:var(--t-13);color:var(--red);margin-bottom:var(--s-3)">{{ exportError }}</div>
+            <button
+              class="btn btn-primary"
+              :disabled="exportLoading"
+              @click="downloadPdf"
+            >
+              {{ exportLoading ? 'Generating…' : '↓ Download PDF' }}
+            </button>
+          </div>
+
+          <!-- Summary card -->
+          <div style="border:var(--hair);border-radius:var(--r-2);padding:var(--s-5);background:var(--bg-1)">
+            <div class="sub" style="margin-bottom:var(--s-3)">Trip summary</div>
+            <div class="kv">
+              <div class="k">Budget</div>
+              <div class="v mono">€{{ budgetTotal.toLocaleString() }}</div>
+              <div class="k">Per person</div>
+              <div class="v mono">€{{ budgetPerPerson.toLocaleString() }}</div>
+              <div class="k">Rounds completed</div>
+              <div class="v mono">{{ liveProposals.length > 0 ? Math.max(...liveProposals.map(p => p.round)) : 6 }}</div>
+              <div class="k">Agents involved</div>
+              <div class="v mono">{{ new Set(liveProposals.map(p => p.agent)).size }}</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="user-form-foot" style="margin-top:var(--s-6)">
+          <button class="btn btn-primary" @click="goToDashboard">
+            ← Back to dashboard
+          </button>
+        </div>
+      </div>
+    </div>
+
   </div>
 </template>
