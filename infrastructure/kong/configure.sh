@@ -172,6 +172,10 @@ register_service() {
     upsert_route "${name}-api" "$name" \
       "paths=[\"${path}\"]" \
       "strip_path=false"
+    # Ensure strip_path is false (PUT may default to true; PATCH enforces it)
+    curl -sf -X PATCH "${KONG_ADMIN}/routes/${name}-api" \
+      -H "Content-Type: application/json" \
+      -d '{"strip_path":false}' > /dev/null
   else
     upsert_route "${name}-api" "$name" \
       "paths=[\"${path}\"]" \
