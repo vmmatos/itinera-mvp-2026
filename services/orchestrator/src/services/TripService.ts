@@ -14,6 +14,7 @@ export interface TripSummary {
   id: string;
   name: string;
   status: TripStatus;
+  region: string | null;
   ownerId: string;
   startDate: Date | null;
   endDate: Date | null;
@@ -44,6 +45,7 @@ export class TripService extends BaseService {
     const trip = await AppDataSource.transaction(async (manager) => {
       const newTrip = tripRepo.create({
         name: input.name,
+        region: input.region ?? null,
         ownerId,
         startDate: input.startDate ? new Date(input.startDate) : null,
         endDate: input.endDate ? new Date(input.endDate) : null,
@@ -57,7 +59,7 @@ export class TripService extends BaseService {
         const travellers = input.travellers.map((t) =>
           travellerRepo.create({
             tripId: savedTrip.id,
-            userId: t.userId,
+            userId: t.userId ?? null,
             preferences: t.preferences ?? {},
           }),
         );
@@ -71,10 +73,25 @@ export class TripService extends BaseService {
     return this.toSummary(trip);
   }
 
+  async getTripProposals(tripId: string): Promise<Proposal[]> {
+    return AppDataSource.getRepository(Proposal).find({
+      where: { tripId },
+      order: { createdAt: 'ASC' },
+    });
+  }
+
   startOrchestration(tripId: string): void {
     this.negotiationLoop.run(tripId).catch((err: unknown) => {
       this.logger.error('Orchestration failed', { tripId, error: String(err) });
     });
+  }
+
+  async listTrips(ownerId: string): Promise<TripSummary[]> {
+    const trips = await AppDataSource.getRepository(Trip).find({
+      where: { ownerId },
+      order: { createdAt: 'DESC' },
+    });
+    return trips.map((t) => this.toSummary(t));
   }
 
   async getTrip(tripId: string, isAdmin: boolean): Promise<TripSummary | TripDebugView> {
@@ -97,6 +114,7 @@ export class TripService extends BaseService {
       id: trip.id,
       name: trip.name,
       status: trip.status as TripStatus,
+      region: trip.region,
       ownerId: trip.ownerId,
       startDate: trip.startDate,
       endDate: trip.endDate,

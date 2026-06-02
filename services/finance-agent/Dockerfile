@@ -18,6 +18,7 @@ RUN cd services/shared && yarn build
 # --- layer: service source ---
 COPY services/finance-agent/src ./services/finance-agent/src
 COPY services/finance-agent/tsconfig.json ./services/finance-agent/
+COPY services/finance-agent/vitest.config.ts ./services/finance-agent/
 
 WORKDIR /app/services/finance-agent
 EXPOSE 3004

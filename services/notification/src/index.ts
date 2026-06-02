@@ -44,8 +44,8 @@ async function start(): Promise<void> {
 }
 
 async function startWithRetry(): Promise<void> {
-  const MAX_ATTEMPTS = 5
-  const RETRY_DELAY_MS = 3000
+  const MAX_ATTEMPTS = 12
+  const RETRY_DELAY_MS = 5000
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
       await start()

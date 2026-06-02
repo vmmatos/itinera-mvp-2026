@@ -172,6 +172,10 @@ register_service() {
     upsert_route "${name}-api" "$name" \
       "paths=[\"${path}\"]" \
       "strip_path=false"
+    # Ensure strip_path is false (PUT may default to true; PATCH enforces it)
+    curl -sf -X PATCH "${KONG_ADMIN}/routes/${name}-api" \
+      -H "Content-Type: application/json" \
+      -d '{"strip_path":false}' > /dev/null
   else
     upsert_route "${name}-api" "$name" \
       "paths=[\"${path}\"]" \
@@ -195,6 +199,11 @@ register_service() {
 
 register_service auth                http://auth:3010                /api/auth
 register_service orchestrator        http://orchestrator:3001        /api/orchestrator
+
+# Public REST API surface: /api/v1 → orchestrator (strip_path=false so /api/v1/trips reaches upstream)
+upsert_route "orchestrator-v1-api" "orchestrator" \
+  "paths=[\"/api/v1\"]" \
+  "strip_path=false"
 register_service preference-agent    http://preference-agent:3002    /api/preferences
 register_service orchestrator-agent  http://orchestrator-agent:3003  /api/consensus
 register_service finance-agent       http://finance-agent:3004       /api/finance
@@ -239,6 +248,13 @@ for svc in \
   ensure_plugin route "${svc}-api" acl \
     '{"allow":["user","admin","service"],"hide_groups_header":true}'
 done
+
+# orchestrator-v1-api: same JWT + ACL as orchestrator-api
+ensure_plugin route "orchestrator-v1-api" jwt \
+  '{"key_claim_name":"iss"}'
+ensure_plugin route "orchestrator-v1-api" acl \
+  '{"allow":["user","admin","service"],"hide_groups_header":true}'
+
 # auth-api is intentionally excluded — login/register/oauth2 are public endpoints
 
 # ---------------------------------------------------------------------------

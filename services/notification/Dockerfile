@@ -18,6 +18,7 @@ RUN cd services/shared && yarn build
 # --- layer: service source ---
 COPY services/notification/src ./services/notification/src
 COPY services/notification/tsconfig.json ./services/notification/
+COPY services/notification/vitest.config.ts ./services/notification/
 
 WORKDIR /app/services/notification
 EXPOSE 3007

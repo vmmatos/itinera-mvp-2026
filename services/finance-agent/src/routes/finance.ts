@@ -2,37 +2,15 @@ import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { ValidationError, NotFoundError } from '@itinera/shared';
-import type { CostCalculator } from '@/agents/CostCalculator';
+import type { CostCalculator, ItineraryDay, CostItem, TransportItem } from '@/agents/CostCalculator';
 import type { BudgetValidator } from '@/agents/BudgetValidator';
 import type { AlternativeFinder } from '@/agents/AlternativeFinder';
 import type { ProposalStorageService } from '@/services/ProposalStorageService';
 
-const CostItemSchema = z.object({
-  name: z.string().min(1),
-  cost: z.number().nonnegative(),
-  currency: z.string().min(1),
-});
-
-const TransportItemSchema = z.object({
-  from: z.string().min(1),
-  to: z.string().min(1),
-  cost: z.number().nonnegative(),
-  currency: z.string().min(1),
-});
-
-const ItineraryDaySchema = z.object({
-  day: z.number().int().min(1),
-  activities: z.array(CostItemSchema),
-  meals: z.array(CostItemSchema),
-  transport: z.array(TransportItemSchema),
-});
-
 const ReviewSchema = z.object({
   tripId: z.string().uuid(),
   round: z.number().int().min(1),
-  proposal: z.object({
-    itinerary: z.array(ItineraryDaySchema).min(1),
-  }),
+  proposal: z.record(z.unknown()),
   budgetTotal: z.number().positive(),
   budgetCurrency: z.string().min(1),
   context: z.string().optional().default(''),
@@ -60,7 +38,15 @@ export function createFinanceRouter(
 
     const { tripId, round, proposal, budgetTotal, budgetCurrency, context } = parsed.data;
 
-    const breakdown = calculator.calculate(proposal.itinerary, budgetCurrency);
+    const rawItinerary = Array.isArray(proposal['itinerary']) ? proposal['itinerary'] : [];
+    const itinerary: ItineraryDay[] = (rawItinerary as Array<Record<string, unknown>>).map((day) => ({
+      day: typeof day['day'] === 'number' ? day['day'] : 1,
+      activities: Array.isArray(day['activities']) ? (day['activities'] as CostItem[]) : [],
+      meals: Array.isArray(day['meals']) ? (day['meals'] as CostItem[]) : [],
+      transport: Array.isArray(day['transport']) ? (day['transport'] as TransportItem[]) : [],
+    }));
+
+    const breakdown = calculator.calculate(itinerary, budgetCurrency);
     const validation = validator.validate(breakdown, budgetTotal, budgetCurrency);
     const review = await finder.findAlternatives(tripId, round, proposal, breakdown, validation, context);
 

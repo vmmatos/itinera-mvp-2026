@@ -15,6 +15,7 @@ RUN cd services/shared && yarn build
 
 COPY services/auth/src ./services/auth/src
 COPY services/auth/tsconfig.json ./services/auth/
+COPY services/auth/vitest.config.ts ./services/auth/
 
 WORKDIR /app/services/auth
 EXPOSE 3010

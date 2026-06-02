@@ -18,6 +18,7 @@ RUN cd services/shared && yarn build
 # --- layer: service source ---
 COPY services/preference-agent/src ./services/preference-agent/src
 COPY services/preference-agent/tsconfig.json ./services/preference-agent/
+COPY services/preference-agent/vitest.config.ts ./services/preference-agent/
 
 WORKDIR /app/services/preference-agent
 EXPOSE 3002

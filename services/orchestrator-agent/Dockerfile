@@ -18,6 +18,7 @@ RUN cd services/shared && yarn build
 # --- layer: service source ---
 COPY services/orchestrator-agent/src ./services/orchestrator-agent/src
 COPY services/orchestrator-agent/tsconfig.json ./services/orchestrator-agent/
+COPY services/orchestrator-agent/vitest.config.ts ./services/orchestrator-agent/
 
 WORKDIR /app/services/orchestrator-agent
 EXPOSE 3003

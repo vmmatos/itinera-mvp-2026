@@ -18,6 +18,7 @@ RUN cd services/shared && yarn build
 # --- layer: service source ---
 COPY services/ws-relay/src ./services/ws-relay/src
 COPY services/ws-relay/tsconfig.json ./services/ws-relay/
+COPY services/ws-relay/vitest.config.ts ./services/ws-relay/
 
 WORKDIR /app/services/ws-relay
 EXPOSE 3009

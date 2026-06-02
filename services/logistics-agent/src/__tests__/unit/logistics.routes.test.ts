@@ -134,17 +134,18 @@ describe('POST /validate', () => {
     expect(res.status).toBe(400);
   });
 
-  it('400 when region is missing', async () => {
+  it('200 when region is missing (defaults to unknown)', async () => {
     const app = buildApp();
     const res = await request(app).post('/validate').send({
       tripId: VALID_UUID,
       round: 1,
       proposal: { itinerary: [VALID_ITINERARY_DAY] },
     });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('validation');
   });
 
-  it('400 when itinerary is empty', async () => {
+  it('200 when itinerary is empty (validates empty schedule)', async () => {
     const app = buildApp();
     const res = await request(app).post('/validate').send({
       tripId: VALID_UUID,
@@ -152,7 +153,8 @@ describe('POST /validate', () => {
       proposal: { itinerary: [] },
       region: 'Paris',
     });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('validation');
   });
 
   it('400 when round is less than 1', async () => {
@@ -166,7 +168,7 @@ describe('POST /validate', () => {
     expect(res.status).toBe(400);
   });
 
-  it('400 when activity startTime format is invalid', async () => {
+  it('200 when activity has invalid startTime format (flexible schema skips malformed entries)', async () => {
     const app = buildApp();
     const res = await request(app).post('/validate').send({
       tripId: VALID_UUID,
@@ -180,7 +182,8 @@ describe('POST /validate', () => {
       },
       region: 'Paris',
     });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('validation');
   });
 
   it('200 returns validation AgentEvent on valid input', async () => {

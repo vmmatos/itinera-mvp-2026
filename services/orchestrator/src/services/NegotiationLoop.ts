@@ -2,6 +2,7 @@ import { BaseService } from '@itinera/shared';
 import type { AgentName } from '@itinera/shared';
 import { StateManager } from '@/services/StateManager';
 import { AgentCaller } from '@/services/AgentCaller';
+import type { AgentTripContext } from '@/services/AgentCaller';
 import { EventPublisher } from '@/services/EventPublisher';
 
 const PREFERENCE_AGENTS: AgentName[] = ['alice', 'bob', 'carlos', 'diana'];
@@ -24,6 +25,13 @@ export class NegotiationLoop extends BaseService {
     try {
       await this.stateManager.transitionStatus(tripId, 'negotiating');
 
+      const trip = await this.stateManager.getTrip(tripId);
+      const tripContext: AgentTripContext = {
+        budgetTotal: trip?.budgetTotal ?? null,
+        budgetCurrency: trip?.budgetCurrency ?? 'EUR',
+        region: trip?.region ?? null,
+      };
+
       let latestProposal: Record<string, unknown> = {};
 
       for (let i = 0; i < ROUNDS.length; i++) {
@@ -42,10 +50,10 @@ export class NegotiationLoop extends BaseService {
             latestProposal = await this.runProposeRound(tripId, round, latestProposal);
             break;
           case 'finance':
-            latestProposal = await this.runFinanceRound(tripId, round, latestProposal);
+            latestProposal = await this.runFinanceRound(tripId, round, latestProposal, tripContext);
             break;
           case 'logistics':
-            latestProposal = await this.runLogisticsRound(tripId, round, latestProposal);
+            latestProposal = await this.runLogisticsRound(tripId, round, latestProposal, tripContext);
             break;
           case 'refine':
             latestProposal = await this.runRefineRound(tripId, round, latestProposal);
@@ -143,9 +151,10 @@ export class NegotiationLoop extends BaseService {
     tripId: string,
     round: number,
     proposal: Record<string, unknown>,
+    tripContext: AgentTripContext,
   ): Promise<Record<string, unknown>> {
     const start = Date.now();
-    const result = await this.agentCaller.callFinanceAgent(tripId, round, proposal);
+    const result = await this.agentCaller.callFinanceAgent(tripId, round, proposal, tripContext);
     await this.stateManager.saveProposal({ tripId, agent: 'finance', round, content: result.content });
     await this.stateManager.logAgentCall({
       tripId,
@@ -163,9 +172,10 @@ export class NegotiationLoop extends BaseService {
     tripId: string,
     round: number,
     proposal: Record<string, unknown>,
+    tripContext: AgentTripContext,
   ): Promise<Record<string, unknown>> {
     const start = Date.now();
-    const result = await this.agentCaller.callLogisticsAgent(tripId, round, proposal);
+    const result = await this.agentCaller.callLogisticsAgent(tripId, round, proposal, tripContext);
     await this.stateManager.saveProposal({ tripId, agent: 'logistics', round, content: result.content });
     await this.stateManager.logAgentCall({
       tripId,

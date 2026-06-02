@@ -7,7 +7,12 @@ const route = useRoute()
 const authStore = useAuthStore()
 
 const mode = ref<Mode>('login')
-const form = reactive({ email: '', password: '', name: '' })
+const form = reactive({
+  email: '',
+  password: '',
+  name: ''
+})
+
 const oauthError = computed(() => {
   const err = route.query['error']
   if (err === 'oauth_failed') return 'Google sign-in failed. Please try again.'

@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS trips (
   id               UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   name             VARCHAR(255)   NOT NULL,
   status           VARCHAR(50)    NOT NULL DEFAULT 'draft',
+  region           VARCHAR(255),
   owner_id         UUID           NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   start_date       DATE,
   end_date         DATE,

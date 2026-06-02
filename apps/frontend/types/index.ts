@@ -59,7 +59,7 @@ export const PERSONA_AGENT: Record<Persona, AgentName> = {
 
 // ── Trip input ────────────────────────────────────────────────
 export interface TravellerInput {
-  userId:      string
+  userId?:     string
   preferences: {
     persona:     Persona
     flexibility: Flexibility

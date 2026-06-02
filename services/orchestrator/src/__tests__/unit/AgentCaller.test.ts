@@ -8,8 +8,14 @@ vi.mock('@itinera/shared', async (importOriginal) => {
   };
 });
 
+vi.mock('jsonwebtoken', () => ({
+  default: { sign: vi.fn().mockReturnValue('mock-service-token') },
+}));
+
 vi.mock('@/config', () => ({
   config: {
+    JWT_SECRET: 'test-secret',
+    JWT_ISSUER: 'itinera',
     PREFERENCE_AGENT_URL: 'http://preference-agent:3002',
     ORCHESTRATOR_AGENT_URL: 'http://orchestrator-agent:3003',
     FINANCE_AGENT_URL: 'http://finance-agent:3004',
@@ -20,7 +26,13 @@ vi.mock('@/config', () => ({
 
 import { AgentCaller } from '@/services/AgentCaller';
 
-const MOCK_RESULT = {
+const AGENT_EVENT = {
+  content: { proposal: 'paris trip' },
+  reasoning: 'good destination',
+  metrics: { latencyMs: 300, tokensUsed: 150 },
+};
+
+const AGENT_RESULT = {
   content: { proposal: 'paris trip' },
   reasoning: 'good destination',
   latencyMs: 300,
@@ -35,10 +47,7 @@ describe('AgentCaller', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     caller = new AgentCaller();
-    fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve(MOCK_RESULT),
-    });
+    fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
   });
 
@@ -46,52 +55,116 @@ describe('AgentCaller', () => {
     vi.unstubAllGlobals();
   });
 
-  it('callPreferenceAgent: posts to correct URL and returns result', async () => {
+  it('callPreferenceAgent: posts to /propose with correct body', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ proposals: [AGENT_EVENT] }),
+    });
+
     const result = await caller.callPreferenceAgent('trip-1', 'alice', 1);
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://preference-agent:3002/api/v1/preferences/negotiate',
+      'http://preference-agent:3002/propose',
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({ tripId: 'trip-1', agentName: 'alice', round: 1 }),
+        body: JSON.stringify({ tripId: 'trip-1', round: 1, agents: ['alice'] }),
+        headers: expect.objectContaining({ Authorization: 'Bearer mock-service-token' }),
       }),
     );
-    expect(result).toEqual(MOCK_RESULT);
+    expect(result.content).toEqual(AGENT_RESULT.content);
+    expect(result.reasoning).toBe(AGENT_RESULT.reasoning);
+    expect(result.tokensUsed).toBe(AGENT_RESULT.tokensUsed);
   });
 
-  it('callOrchestratorAgent: posts to correct URL with proposals', async () => {
+  it('callOrchestratorAgent: posts to /analyze with proposals', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ analysis: AGENT_EVENT }),
+    });
+
     await caller.callOrchestratorAgent('trip-1', 2, [{ dest: 'paris' }]);
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://orchestrator-agent:3003/api/v1/orchestrate/analyze',
+      'http://orchestrator-agent:3003/analyze',
       expect.objectContaining({ method: 'POST' }),
     );
   });
 
-  it('callFinanceAgent: posts to correct URL', async () => {
-    await caller.callFinanceAgent('trip-1', 3, { budget: 5000 });
+  it('callFinanceAgent: posts to /review with budget context', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ review: AGENT_EVENT }),
+    });
+
+    await caller.callFinanceAgent('trip-1', 3, { budget: 5000 }, { budgetTotal: 3000, budgetCurrency: 'EUR' });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://finance-agent:3004/api/v1/finance/evaluate',
-      expect.objectContaining({ method: 'POST' }),
+      'http://finance-agent:3004/review',
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringContaining('"budgetTotal":3000'),
+      }),
     );
   });
 
-  it('callLogisticsAgent: posts to correct URL', async () => {
-    await caller.callLogisticsAgent('trip-1', 4, { destination: 'paris' });
+  it('callFinanceAgent: coerces string budgetTotal to number', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ review: AGENT_EVENT }),
+    });
+
+    await caller.callFinanceAgent('trip-1', 3, {}, { budgetTotal: '3000.00' as unknown as number, budgetCurrency: 'EUR' });
+
+    const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string) as Record<string, unknown>;
+    expect(typeof sentBody['budgetTotal']).toBe('number');
+    expect(sentBody['budgetTotal']).toBe(3000);
+  });
+
+  it('callLogisticsAgent: posts to /validate with region', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ validation: AGENT_EVENT }),
+    });
+
+    await caller.callLogisticsAgent('trip-1', 4, { destination: 'paris' }, { region: 'Paris, France' });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://logistics-agent:3005/api/v1/logistics/evaluate',
-      expect.objectContaining({ method: 'POST' }),
+      'http://logistics-agent:3005/validate',
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringContaining('"region":"Paris, France"'),
+      }),
     );
   });
 
-  it('callValidatorAgent: posts to correct URL', async () => {
-    await caller.callValidatorAgent('trip-1', 5, { destination: 'paris' });
+  it('callValidatorAgent: posts to / with tripId, round, proposal', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(AGENT_RESULT),
+    });
+
+    const result = await caller.callValidatorAgent('trip-1', 5, { destination: 'paris' });
 
     expect(fetchMock).toHaveBeenCalledWith(
-      'http://validator:3006/api/v1/validate',
+      'http://validator:3006/',
       expect.objectContaining({ method: 'POST' }),
+    );
+    expect(result).toEqual(AGENT_RESULT);
+  });
+
+  it('includes Authorization header on all calls', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ proposals: [AGENT_EVENT] }),
+    });
+
+    await caller.callPreferenceAgent('trip-1', 'alice', 1);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer mock-service-token' }),
+      }),
     );
   });
 

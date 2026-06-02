@@ -118,7 +118,7 @@ describe('POST /review', () => {
     expect(res.status).toBe(400);
   });
 
-  it('400 when itinerary is empty array', async () => {
+  it('200 with empty itinerary (calculates zero cost)', async () => {
     const app = buildApp();
     const res = await request(app).post('/review').send({
       tripId: VALID_UUID,
@@ -127,7 +127,8 @@ describe('POST /review', () => {
       budgetTotal: 500,
       budgetCurrency: 'EUR',
     });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('review');
   });
 
   it('400 when budgetTotal is zero', async () => {

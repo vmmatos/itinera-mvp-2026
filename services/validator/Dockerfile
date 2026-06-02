@@ -18,6 +18,7 @@ RUN cd services/shared && yarn build
 # --- layer: service source ---
 COPY services/validator/src ./services/validator/src
 COPY services/validator/tsconfig.json ./services/validator/
+COPY services/validator/vitest.config.ts ./services/validator/
 
 WORKDIR /app/services/validator
 EXPOSE 3006

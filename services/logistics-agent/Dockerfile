@@ -18,6 +18,7 @@ RUN cd services/shared && yarn build
 # --- layer: service source ---
 COPY services/logistics-agent/src ./services/logistics-agent/src
 COPY services/logistics-agent/tsconfig.json ./services/logistics-agent/
+COPY services/logistics-agent/vitest.config.ts ./services/logistics-agent/
 
 WORKDIR /app/services/logistics-agent
 EXPOSE 3005

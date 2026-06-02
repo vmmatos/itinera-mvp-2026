@@ -9,5 +9,8 @@
   "packageManager": "yarn@1.22.22",
   "dependencies": {
     "helmet": "^7.1.0"
+  },
+  "devDependencies": {
+    "@vue/test-utils": "^2.4.6"
   }
 }
