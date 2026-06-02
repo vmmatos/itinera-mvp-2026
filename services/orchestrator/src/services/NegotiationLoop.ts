@@ -32,6 +32,8 @@ export class NegotiationLoop extends BaseService {
         region: trip?.region ?? null,
       };
 
+      const agentContext = this.buildAgentContext(trip);
+
       let latestProposal: Record<string, unknown> = {};
 
       for (let i = 0; i < ROUNDS.length; i++) {
@@ -41,7 +43,7 @@ export class NegotiationLoop extends BaseService {
 
         switch (roundName) {
           case 'preferences':
-            latestProposal = await this.runPreferencesRound(tripId, round);
+            latestProposal = await this.runPreferencesRound(tripId, round, agentContext);
             break;
           case 'analyze':
             latestProposal = await this.runAnalyzeRound(tripId, round, [latestProposal]);
@@ -84,14 +86,42 @@ export class NegotiationLoop extends BaseService {
     }
   }
 
+  private buildAgentContext(trip: import('@/entities/Trip').Trip | null): string {
+    if (!trip) return '';
+    const lines: string[] = [
+      `TRIP: ${trip.name}`,
+      `DESTINATION (MANDATORY — you MUST plan within this region only): ${trip.region ?? 'unknown'}`,
+      `DATES: ${trip.startDate ? String(trip.startDate).slice(0, 10) : 'TBD'} → ${trip.endDate ? String(trip.endDate).slice(0, 10) : 'TBD'}`,
+      `BUDGET: ${trip.budgetTotal ?? '?'} ${trip.budgetCurrency}`,
+      `GROUP SIZE: ${trip.travellers?.length ?? 1} traveller(s)`,
+    ];
+
+    if (trip.travellers?.length) {
+      lines.push('\nGROUP PREFERENCES:');
+      for (const t of trip.travellers) {
+        const p = t.preferences as Record<string, unknown>;
+        lines.push(`  - Persona: ${String(p['persona'] ?? 'general')}, Flexibility: ${String(p['flexibility'] ?? 'medium')}`);
+        if (Array.isArray(p['mustHaves']) && p['mustHaves'].length) {
+          lines.push(`    Must-haves: ${(p['mustHaves'] as string[]).join(', ')}`);
+        }
+        if (Array.isArray(p['dealBreakers']) && p['dealBreakers'].length) {
+          lines.push(`    Deal-breakers: ${(p['dealBreakers'] as string[]).join(', ')}`);
+        }
+      }
+    }
+
+    return lines.join('\n');
+  }
+
   private async runPreferencesRound(
     tripId: string,
     round: number,
+    agentContext: string,
   ): Promise<Record<string, unknown>> {
     const results: Record<string, unknown>[] = [];
     for (const agentName of PREFERENCE_AGENTS) {
       const start = Date.now();
-      const result = await this.agentCaller.callPreferenceAgent(tripId, agentName, round);
+      const result = await this.agentCaller.callPreferenceAgent(tripId, agentName, round, agentContext);
       await this.stateManager.saveProposal({ tripId, agent: agentName, round, content: result.content });
       await this.stateManager.logAgentCall({
         tripId,

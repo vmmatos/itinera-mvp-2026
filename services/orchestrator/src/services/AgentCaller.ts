@@ -75,12 +75,13 @@ export class AgentCaller extends BaseService {
     tripId: string,
     agentName: string,
     round: number,
+    context = '',
   ): Promise<AgentCallResult> {
     const start = Date.now();
     const resp = await this.post<{ proposals: AgentEventLike[] }>(
       'preference-agent',
       '/propose',
-      { tripId, round, agents: [agentName] },
+      { tripId, round, agents: [agentName], context },
     );
     return toAgentCallResult(resp.proposals[0], Date.now() - start);
   }
