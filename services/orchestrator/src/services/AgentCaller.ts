@@ -100,6 +100,21 @@ export class AgentCaller extends BaseService {
     return toAgentCallResult(resp.analysis, Date.now() - start);
   }
 
+  async callOrchestratorPropose(
+    tripId: string,
+    round: number,
+    conflicts: Record<string, unknown>,
+    context = '',
+  ): Promise<AgentCallResult> {
+    const start = Date.now();
+    const resp = await this.post<{ compromise: AgentEventLike }>(
+      'orchestrator-agent',
+      '/propose',
+      { tripId, round, conflicts, context },
+    );
+    return toAgentCallResult(resp.compromise, Date.now() - start);
+  }
+
   async callFinanceAgent(
     tripId: string,
     round: number,

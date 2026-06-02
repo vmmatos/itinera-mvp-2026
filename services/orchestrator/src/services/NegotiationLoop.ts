@@ -49,7 +49,7 @@ export class NegotiationLoop extends BaseService {
             latestProposal = await this.runAnalyzeRound(tripId, round, [latestProposal]);
             break;
           case 'propose':
-            latestProposal = await this.runProposeRound(tripId, round, latestProposal);
+            latestProposal = await this.runProposeRound(tripId, round, latestProposal, agentContext);
             break;
           case 'finance':
             latestProposal = await this.runFinanceRound(tripId, round, latestProposal, tripContext);
@@ -186,16 +186,17 @@ export class NegotiationLoop extends BaseService {
   private async runProposeRound(
     tripId: string,
     round: number,
-    proposal: Record<string, unknown>,
+    conflicts: Record<string, unknown>,
+    agentContext: string,
   ): Promise<Record<string, unknown>> {
     const start = Date.now();
-    const result = await this.agentCaller.callOrchestratorAgent(tripId, round, [proposal]);
+    const result = await this.agentCaller.callOrchestratorPropose(tripId, round, conflicts, agentContext);
     await this.stateManager.saveProposal({ tripId, agent: 'orchestrator', round, content: result.content });
     await this.stateManager.logAgentCall({
       tripId,
       agent: 'orchestrator',
       round,
-      action: 'refine',
+      action: 'propose',
       latencyMs: Date.now() - start,
       tokensUsed: result.tokensUsed,
       reasoning: result.reasoning,

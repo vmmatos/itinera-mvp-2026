@@ -297,12 +297,21 @@ function tryParseItinerary(content: Record<string, unknown>): ItineraryDay[] {
 
   if (typeof content['raw'] === 'string') {
     try {
-      const fromRaw = tryFromObj(JSON.parse(content['raw']) as unknown)
+      // Strip markdown code fences (```json ... ```) before parsing
+      const stripped = content['raw']
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/\s*```\s*$/, '')
+        .trim()
+      const fromRaw = tryFromObj(JSON.parse(stripped) as unknown)
       if (fromRaw.length > 0) return fromRaw
     } catch { /* not JSON */ }
   }
 
   return []
+}
+
+function stripCodeFences(raw: string): string {
+  return raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
 }
 
 const latestByAgent = computed((): Record<string, ProposalEntry> => {
@@ -315,7 +324,16 @@ const latestByAgent = computed((): Record<string, ProposalEntry> => {
 })
 
 const parsedItinerary = computed((): ItineraryDay[] => {
-  // Prefer orchestrator round 3 (compromise proposal) → then any proposal with structured days
+  // Prefer orchestrator round 3 (compromise proposal from /propose endpoint)
+  const orchestratorRound3 = liveProposals.value.find(
+    (p) => p.agent === 'orchestrator' && p.round === 3,
+  )
+  if (orchestratorRound3) {
+    const days = tryParseItinerary(orchestratorRound3.content)
+    if (days.length > 0) return days
+  }
+
+  // Fallback: any proposal with structured itinerary data
   const ordered = ['orchestrator', 'validator', 'logistics', 'finance', 'alice', 'bob', 'carlos', 'diana']
   for (const agent of ordered) {
     const p = latestByAgent.value[agent]
@@ -350,7 +368,10 @@ const orchestratorText = computed((): string | null => {
   const p = latestByAgent.value['orchestrator']
   if (!p) return null
   const raw = p.content['raw']
-  if (typeof raw === 'string') return raw.slice(0, 600) + (raw.length > 600 ? '…' : '')
+  if (typeof raw === 'string') {
+    const clean = stripCodeFences(raw)
+    return clean.slice(0, 800) + (clean.length > 800 ? '…' : '')
+  }
   return null
 })
 
