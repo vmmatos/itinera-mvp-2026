@@ -23,13 +23,13 @@ export class NegotiationLoop extends BaseService {
     this.logger.info('Negotiation loop started', { tripId });
 
     try {
-      const existing = await this.stateManager.getTrip(tripId);
-      if (existing?.status === 'negotiating' || existing?.status === 'confirmed' || existing?.status === 'completed') {
-        this.logger.warn('Negotiation already running or completed, skipping', { tripId, status: existing.status });
+      // Atomic claim: UPDATE SET status='negotiating' WHERE status='draft'
+      // Prevents concurrent runs from both passing a non-atomic read+write guard
+      const claimed = await this.stateManager.claimNegotiating(tripId);
+      if (!claimed) {
+        this.logger.warn('Negotiation already claimed by another process, skipping', { tripId });
         return;
       }
-
-      await this.stateManager.transitionStatus(tripId, 'negotiating');
 
       const trip = await this.stateManager.getTrip(tripId);
       const tripContext: AgentTripContext = {

@@ -58,6 +58,7 @@ describe('NegotiationLoop', () => {
     eventPublisher = new EventPublisher();
     loop = new NegotiationLoop(stateManager, agentCaller, eventPublisher);
 
+    vi.mocked(stateManager.claimNegotiating).mockResolvedValue(true);
     vi.mocked(stateManager.transitionStatus).mockResolvedValue(undefined);
     vi.mocked(stateManager.saveProposal).mockResolvedValue(undefined);
     vi.mocked(stateManager.logAgentCall).mockResolvedValue(undefined);
@@ -76,7 +77,7 @@ describe('NegotiationLoop', () => {
   it('happy path: runs all 6 rounds and transitions to confirmed', async () => {
     await loop.run(TRIP_ID);
 
-    expect(stateManager.transitionStatus).toHaveBeenCalledWith(TRIP_ID, 'negotiating');
+    expect(stateManager.claimNegotiating).toHaveBeenCalledWith(TRIP_ID);
     expect(stateManager.transitionStatus).toHaveBeenCalledWith(TRIP_ID, 'confirmed');
     expect(agentCaller.callPreferenceAgent).toHaveBeenCalledTimes(4);
     expect(agentCaller.callOrchestratorAgent).toHaveBeenCalledTimes(1);     // analyze round
@@ -129,5 +130,14 @@ describe('NegotiationLoop', () => {
       .mockRejectedValueOnce(new Error('db unavailable'));
 
     await expect(loop.run(TRIP_ID)).resolves.toBeUndefined();
+  });
+
+  it('skips run when claimNegotiating returns false (already claimed)', async () => {
+    vi.mocked(stateManager.claimNegotiating).mockResolvedValue(false);
+
+    await loop.run(TRIP_ID);
+
+    expect(agentCaller.callPreferenceAgent).not.toHaveBeenCalled();
+    expect(stateManager.transitionStatus).not.toHaveBeenCalled();
   });
 });
