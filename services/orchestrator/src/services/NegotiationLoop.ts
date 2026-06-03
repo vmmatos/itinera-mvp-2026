@@ -23,6 +23,12 @@ export class NegotiationLoop extends BaseService {
     this.logger.info('Negotiation loop started', { tripId });
 
     try {
+      const existing = await this.stateManager.getTrip(tripId);
+      if (existing?.status === 'negotiating' || existing?.status === 'confirmed' || existing?.status === 'completed') {
+        this.logger.warn('Negotiation already running or completed, skipping', { tripId, status: existing.status });
+        return;
+      }
+
       await this.stateManager.transitionStatus(tripId, 'negotiating');
 
       const trip = await this.stateManager.getTrip(tripId);

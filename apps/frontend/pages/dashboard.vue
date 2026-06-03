@@ -44,6 +44,8 @@ onMounted(async () => {
 
 onUnmounted(() => stopPolling())
 
+useIdleTimeout(() => { void authStore.logout() })
+
 const statusColour: Record<Trip['status'], string> = {
   draft:       'var(--fg-3)',
   negotiating: 'var(--amber)',
@@ -57,7 +59,7 @@ const statusColour: Record<Trip['status'], string> = {
   <div class="min-h-screen bg-bg-0 text-fg-0">
     <!-- Header -->
     <header class="border-b border-line-2 px-6 py-4 flex items-center justify-between">
-      <h1 class="text-18 font-semibold tracking-tight" style="color: var(--green)">itinera</h1>
+      <AppLogo :size="20" />
       <div class="flex items-center gap-4">
         <span class="text-fg-2 text-13">{{ authStore.user?.email }}</span>
         <button class="btn text-13" @click="authStore.logout()">Sign out</button>

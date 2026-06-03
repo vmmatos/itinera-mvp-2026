@@ -67,6 +67,7 @@ describe('NegotiationLoop', () => {
 
     vi.mocked(agentCaller.callPreferenceAgent).mockResolvedValue(AGENT_RESULT);
     vi.mocked(agentCaller.callOrchestratorAgent).mockResolvedValue(AGENT_RESULT);
+    vi.mocked(agentCaller.callOrchestratorPropose).mockResolvedValue(AGENT_RESULT);
     vi.mocked(agentCaller.callFinanceAgent).mockResolvedValue(AGENT_RESULT);
     vi.mocked(agentCaller.callLogisticsAgent).mockResolvedValue(AGENT_RESULT);
     vi.mocked(agentCaller.callValidatorAgent).mockResolvedValue(AGENT_RESULT);
@@ -78,7 +79,8 @@ describe('NegotiationLoop', () => {
     expect(stateManager.transitionStatus).toHaveBeenCalledWith(TRIP_ID, 'negotiating');
     expect(stateManager.transitionStatus).toHaveBeenCalledWith(TRIP_ID, 'confirmed');
     expect(agentCaller.callPreferenceAgent).toHaveBeenCalledTimes(4);
-    expect(agentCaller.callOrchestratorAgent).toHaveBeenCalledTimes(2);
+    expect(agentCaller.callOrchestratorAgent).toHaveBeenCalledTimes(1);     // analyze round
+    expect(agentCaller.callOrchestratorPropose).toHaveBeenCalledTimes(1);  // propose round
     expect(agentCaller.callFinanceAgent).toHaveBeenCalledTimes(1);
     expect(agentCaller.callLogisticsAgent).toHaveBeenCalledTimes(1);
     expect(agentCaller.callValidatorAgent).toHaveBeenCalledTimes(1);

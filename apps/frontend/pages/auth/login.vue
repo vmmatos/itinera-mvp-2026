@@ -56,9 +56,9 @@ const errorMessage = computed(() => oauthError.value ?? authStore.error)
   <div class="w-full max-w-[400px]">
 
     <!-- Wordmark -->
-    <div class="text-center mb-8">
-      <h1 class="text-28 font-bold tracking-tight" style="color: var(--green)">itinera</h1>
-      <p class="text-fg-3 text-13 mt-1">AI-powered group travel planner</p>
+    <div class="text-center mb-8" style="display:flex;flex-direction:column;align-items:center;gap:6px">
+      <AppLogo :size="28" />
+      <p class="text-fg-3 text-13">AI-powered group travel planner</p>
     </div>
 
     <!-- Card -->

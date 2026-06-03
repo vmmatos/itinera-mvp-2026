@@ -26,6 +26,11 @@ export interface ItineraryDay {
   transport?: ItineraryTransport[]
 }
 
+export interface WeatherInfo {
+  alerts: string[]
+  summary?: string
+}
+
 export interface ItineraryData {
   tripName: string
   tripId: string
@@ -35,6 +40,7 @@ export interface ItineraryData {
   budgetCurrency?: string
   travellers?: Array<{ name: string }>
   days: ItineraryDay[]
+  weather?: WeatherInfo
 }
 
 export interface ShareRecord {

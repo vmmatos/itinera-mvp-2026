@@ -122,17 +122,18 @@ describe('WeatherService', () => {
   });
 
   describe('error handling', () => {
-    it('throws when geocoding API returns non-ok status', async () => {
+    it('returns null when geocoding API returns non-ok status', async () => {
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
         ok: false,
         status: 401,
         text: () => Promise.resolve('Unauthorized'),
       }));
 
-      await expect(service.getForecast('Paris')).rejects.toThrow('401');
+      const result = await service.getForecast('Paris');
+      expect(result).toBeNull();
     });
 
-    it('throws when forecast API returns non-ok status', async () => {
+    it('returns null when forecast API returns non-ok status', async () => {
       let callCount = 0;
       vi.stubGlobal('fetch', vi.fn().mockImplementation(() => {
         callCount++;
@@ -142,17 +143,19 @@ describe('WeatherService', () => {
         return Promise.resolve({ ok: false, status: 429, text: () => Promise.resolve('Rate limit') });
       }));
 
-      await expect(service.getForecast('Paris')).rejects.toThrow('429');
+      const result = await service.getForecast('Paris');
+      expect(result).toBeNull();
     });
 
-    it('throws when region is not found by geocoding', async () => {
+    it('returns null when region is not found by geocoding', async () => {
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
         ok: true,
         json: () => Promise.resolve([]),
         text: () => Promise.resolve(''),
       }));
 
-      await expect(service.getForecast('UnknownXYZ123')).rejects.toThrow('not found');
+      const result = await service.getForecast('UnknownXYZ123');
+      expect(result).toBeNull();
     });
   });
 });

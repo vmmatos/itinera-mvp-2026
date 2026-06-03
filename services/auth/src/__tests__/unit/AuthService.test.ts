@@ -139,7 +139,7 @@ describe('AuthService', () => {
       expect(jwt.sign).toHaveBeenCalledWith(
         { sub: user.id, role: user.role, iss: 'itinera', email: user.email, name: user.name },
         'test-secret-at-least-32-chars-long!!',
-        { expiresIn: '8h' },
+        { expiresIn: '15m' },
       );
       expect(token).toBe('mocked.jwt.token');
     });

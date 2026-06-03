@@ -67,7 +67,7 @@ describe('AgentCaller', () => {
       'http://preference-agent:3002/propose',
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({ tripId: 'trip-1', round: 1, agents: ['alice'] }),
+        body: JSON.stringify({ tripId: 'trip-1', round: 1, agents: ['alice'], context: '' }),
         headers: expect.objectContaining({ Authorization: 'Bearer mock-service-token' }),
       }),
     );

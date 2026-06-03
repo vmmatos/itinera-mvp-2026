@@ -1,12 +1,16 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import { randomUUID } from 'crypto';
 import type { DataSource } from 'typeorm';
 import type { Profile as GoogleProfile } from 'passport-google-oauth20';
+import type Redis from 'ioredis';
 import { User } from '@/entities/User';
 import { config } from '@/config';
 import { UnauthorizedError, ConflictError } from '@itinera/shared';
 
 const BCRYPT_ROUNDS = 12;
+const ACCESS_TOKEN_EXPIRY = '15m';
+const REFRESH_TOKEN_TTL = 7 * 24 * 60 * 60; // 7 days in seconds
 
 export interface AuthResult {
   token: string;
@@ -14,7 +18,10 @@ export interface AuthResult {
 }
 
 export class AuthService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly redis?: Redis,
+  ) {}
 
   async login(email: string, password: string): Promise<AuthResult> {
     const repo = this.dataSource.getRepository(User);
@@ -43,6 +50,10 @@ export class AuthService {
     return this.buildResult(user);
   }
 
+  async findUserById(id: string): Promise<User | null> {
+    return this.dataSource.getRepository(User).findOne({ where: { id } });
+  }
+
   async findOrCreateGoogleUser(profile: GoogleProfile): Promise<User> {
     const repo = this.dataSource.getRepository(User);
     const email = profile.emails?.[0]?.value;
@@ -65,14 +76,40 @@ export class AuthService {
     return jwt.sign(
       { sub: user.id, role: user.role, iss: config.JWT_CONSUMER_KEY, email: user.email, name: user.name },
       config.JWT_SECRET,
-      { expiresIn: '8h' },
+      { expiresIn: ACCESS_TOKEN_EXPIRY },
     );
   }
 
-  private buildResult(user: User): AuthResult {
-    return {
-      token: this.generateToken(user),
-      user: { id: user.id, email: user.email, name: user.name, role: user.role },
-    };
+  async generateRefreshToken(userId: string): Promise<string> {
+    const token = randomUUID();
+    if (this.redis) {
+      await this.redis.setex(`auth:refresh:${token}`, REFRESH_TOKEN_TTL, userId);
+    }
+    return token;
+  }
+
+  async rotateRefreshToken(oldToken: string): Promise<{ accessToken: string; refreshToken: string } | null> {
+    if (!this.redis) return null;
+    const userId = await this.redis.getdel(`auth:refresh:${oldToken}`);
+    if (!userId) return null;
+
+    const userRepo = this.dataSource.getRepository(User);
+    const user = await userRepo.findOne({ where: { id: userId } });
+    if (!user) return null;
+
+    const accessToken = this.generateToken(user);
+    const refreshToken = await this.generateRefreshToken(user.id);
+    return { accessToken, refreshToken };
+  }
+
+  async revokeRefreshToken(token: string): Promise<void> {
+    if (this.redis) {
+      await this.redis.del(`auth:refresh:${token}`);
+    }
+  }
+
+  private async buildResult(user: User): Promise<AuthResult> {
+    const token = this.generateToken(user);
+    return { token, user: { id: user.id, email: user.email, name: user.name, role: user.role } };
   }
 }

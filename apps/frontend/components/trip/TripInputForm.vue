@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed, watch, onUnmounted } from 'vue'
 import { PERSONA_LABELS, PERSONA_AGENT, AGENT_COLOURS } from '~/types/index'
-import type { Persona, Flexibility, CreateTripInput, TravellerInput, SatisfactionScore } from '~/types/index'
+import type { Persona, Flexibility, Currency, CreateTripInput, TravellerInput, SatisfactionScore } from '~/types/index'
 
 const emit = defineEmits<{
   success: [tripId: string]
@@ -79,7 +79,9 @@ const tripName    = ref('')
 const region      = ref('')
 const startDate   = ref('')
 const endDate     = ref('')
-const budgetTotal = ref(3000)
+const budgetTotal    = ref(3000)
+const budgetCurrency = ref<Currency>('EUR')
+const currencySymbol = computed(() => budgetCurrency.value === 'EUR' ? '€' : '$')
 const tripFlexibility = ref<Flexibility>('medium')
 
 const mustHaveInput  = ref('')
@@ -91,6 +93,10 @@ const nights = computed(() => {
   if (!startDate.value || !endDate.value) return 0
   const ms = new Date(endDate.value).getTime() - new Date(startDate.value).getTime()
   return Math.max(0, Math.round(ms / 86_400_000))
+})
+
+watch(startDate, (newStart) => {
+  if (endDate.value && endDate.value < newStart) endDate.value = newStart
 })
 
 const budgetPercent = computed(() =>
@@ -142,7 +148,7 @@ const submit = async (): Promise<void> => {
     startDate:      startDate.value,
     endDate:        endDate.value,
     budgetTotal:    budgetTotal.value,
-    budgetCurrency: 'EUR',
+    budgetCurrency: budgetCurrency.value,
     travellers:     travellers.value.map((t): TravellerInput => ({
       userId: t.isCurrentUser ? currentUserId.value : undefined,
       preferences: {
@@ -239,6 +245,18 @@ const decisionEvent = computed(() =>
   streamEvents.value.find(
     (e) => (e.agent === 'orchestrator' || e.agent === 'validator') && e.round === 6,
   ) ?? null,
+)
+
+// Orchestrator events with reasoning — displayed separately in decisions panel
+const orchestratorDecisions = computed(() =>
+  streamEvents.value.filter(
+    (e) => e.agent === 'orchestrator' && e.reasoning,
+  ),
+)
+
+// Non-orchestrator events for the main feed
+const agentOnlyEvents = computed(() =>
+  streamEvents.value.filter((e) => e.agent !== 'orchestrator'),
 )
 
 // ── Step 4: Itinerary review ──────────────────────────────────
@@ -386,7 +404,20 @@ const travellerScores = computed<SatisfactionScore[]>(() => {
 const costCategories = computed<Array<{ label: string; amount: number }>>(() => {
   const fp = liveProposals.value.find((p) => p.agent === 'finance')
   const c = fp?.content
-  const cats = (c?.['costBreakdown'] as Record<string, unknown> | undefined)?.['categories']
+  const bd = c?.['costBreakdown'] as Record<string, unknown> | undefined
+  if (!bd) return []
+
+  // Backend sends byCategory: { activities, meals, transport }
+  const byCat = bd['byCategory'] as Record<string, number> | undefined
+  if (byCat && typeof byCat === 'object') {
+    return Object.entries(byCat)
+      .map(([label, amount]) => ({ label, amount }))
+      .filter((x) => x.amount > 0)
+      .sort((a, b) => b.amount - a.amount)
+  }
+
+  // Fallback: categories array format
+  const cats = bd['categories']
   return Array.isArray(cats)
     ? [...(cats as Array<{ label: string; amount: number }>)].sort((a, b) => b.amount - a.amount)
     : []
@@ -396,6 +427,14 @@ const weatherAlerts = computed<string[]>(() => {
   const lp = liveProposals.value.find((p) => p.agent === 'logistics')
   const c = lp?.content
   return Array.isArray(c?.['weatherAlerts']) ? (c['weatherAlerts'] as string[]) : []
+})
+
+const logisticsWeatherSummary = computed<string | null>(() => {
+  const lp = liveProposals.value.find((p) => p.agent === 'logistics')
+  const c = lp?.content
+  if (!c) return null
+  const summary = c['weatherSummary'] ?? c['summary'] ?? c['overview']
+  return typeof summary === 'string' ? summary.slice(0, 400) : null
 })
 
 // ── Step 4: Share link ────────────────────────────────────────
@@ -442,8 +481,11 @@ const buildExportPayload = (): Record<string, unknown> => ({
     startDate:      startDate.value || undefined,
     endDate:        endDate.value || undefined,
     budgetTotal:    budgetTotal.value,
-    budgetCurrency: 'EUR',
+    budgetCurrency: budgetCurrency.value,
     travellers:     travellers.value.map((t) => ({ name: t.name })),
+    weather: weatherAlerts.value.length > 0
+      ? { alerts: weatherAlerts.value }
+      : undefined,
     days: parsedItinerary.value.map((d) => ({
       day:        d.day,
       date:       d.date,
@@ -515,16 +557,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
     <!-- App bar -->
     <div class="app-bar">
       <div class="crumb">
-        <div class="logo">
-          <svg width="18" height="18" viewBox="0 0 28 28">
-            <circle cx="6" cy="14" r="2.4" stroke="#00ff88" stroke-width="1.2"/>
-            <circle cx="14" cy="6" r="2.4" stroke="#f2f2f2" stroke-width="1.2"/>
-            <circle cx="22" cy="14" r="2.4" stroke="#f2f2f2" stroke-width="1.2"/>
-            <circle cx="14" cy="22" r="2.4" stroke="#f2f2f2" stroke-width="1.2"/>
-            <path d="M8 13 L21 15" stroke="#00ff88" stroke-width="1.2"/>
-          </svg>
-          <span class="word">itinera</span>
-        </div>
+        <AppLogo />
         <span class="sep">/</span>
         <b>{{ tripName || 'New trip' }}</b>
         <span class="sep">/</span>
@@ -552,13 +585,6 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
       </div>
       <div class="ustep" :class="{ cur: step === 5 }">
         <span class="n">05</span> Export
-      </div>
-      <div style="margin-left:auto;align-self:center" class="helper">
-        step 0{{ step }} ·
-        <span v-if="step <= 2">fill in your details</span>
-        <span v-else-if="step === 3">agents are negotiating…</span>
-        <span v-else-if="step === 4">review the proposal</span>
-        <span v-else>download your itinerary</span>
       </div>
     </div>
 
@@ -750,6 +776,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
               type="date"
               class="txt"
               style="width:140px"
+              :min="startDate"
               data-testid="end-date"
             />
             <span v-if="nights > 0" class="helper">{{ nights }} night{{ nights !== 1 ? 's' : '' }}</span>
@@ -759,13 +786,23 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
         <div class="field-row">
           <div class="field-label">Budget / pp</div>
           <div class="field-input" style="width:100%;flex-direction:column;align-items:stretch;gap:var(--s-2)">
+            <div style="display:flex;gap:6px;margin-bottom:4px">
+              <button
+                v-for="c in (['EUR', 'USD'] as Currency[])"
+                :key="c"
+                class="chip"
+                :class="{ on: budgetCurrency === c }"
+                style="height:24px;font-size:11px;padding:0 8px"
+                @click="budgetCurrency = c"
+              >{{ c }}</button>
+            </div>
             <div class="budget">
-              <span class="helper" style="min-width:50px">$500</span>
+              <span class="helper" style="min-width:50px">{{ currencySymbol }}500</span>
               <div class="track" style="position:relative">
                 <div class="fill" :style="`width:${budgetPercent}%`" />
               </div>
-              <span class="helper" style="min-width:60px">$20k</span>
-              <span class="val">${{ budgetTotal.toLocaleString() }} ceiling</span>
+              <span class="helper" style="min-width:60px">{{ currencySymbol }}20k</span>
+              <span class="val">{{ currencySymbol }}{{ budgetTotal.toLocaleString() }} ceiling</span>
             </div>
             <input
               v-model.number="budgetTotal"
@@ -873,7 +910,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
           <h3>{{ region || '—' }}{{ nights > 0 ? ` · ${nights} nights` : '' }} · {{ travellers.length }} travellers</h3>
           <div class="kv">
             <div class="k">target / pp</div>
-            <div class="v"><span class="mono">${{ budgetPerPerson.toLocaleString() }}</span></div>
+            <div class="v"><span class="mono">{{ currencySymbol }}{{ budgetPerPerson.toLocaleString() }}</span></div>
             <div class="k">pace</div>
             <div class="v">{{ tripFlexibility === 'low' ? 'slow' : tripFlexibility === 'medium' ? 'moderate' : 'packed' }}</div>
             <div class="k">est. rounds</div>
@@ -1012,7 +1049,38 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
           <span v-else class="helper">{{ streamEvents.length }} messages</span>
         </div>
 
-        <!-- Decision card — shown once negotiation ends -->
+        <!-- Orchestrator decision card — shown always when available -->
+        <div
+          v-if="orchestratorDecisions.length > 0"
+          style="margin-bottom:var(--s-4)"
+        >
+          <div class="helper" style="margin-bottom:var(--s-2)">Orchestrator decisions</div>
+          <div
+            v-for="evt in orchestratorDecisions"
+            :key="evt.timestamp + evt.round"
+            class="fade-in"
+            style="margin-bottom:4px;padding:var(--s-3) var(--s-4);border-radius:var(--r-2)"
+            :style="evt.type === 'accept'
+              ? 'background:rgba(0,255,136,0.06);border:1px solid rgba(0,255,136,0.24)'
+              : 'background:rgba(91,157,255,0.06);border:1px solid rgba(91,157,255,0.24)'"
+          >
+            <div style="display:flex;align-items:center;gap:var(--s-2);margin-bottom:4px;flex-wrap:wrap">
+              <span style="font-size:var(--t-12);font-family:var(--mono);font-weight:600;color:var(--fg-0)">
+                orchestrator
+              </span>
+              <span class="helper">round {{ evt.round }} · {{ ROUND_LABELS[evt.round] ?? 'processing' }}</span>
+              <span
+                style="font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.06em;padding:1px 6px;border-radius:var(--r-1);background:rgba(255,255,255,0.06);color:var(--fg-2)"
+              >{{ evt.type }}</span>
+            </div>
+            <p
+              v-if="evt.reasoning"
+              style="margin:0;font-size:var(--t-13);color:var(--fg-1);line-height:1.6"
+            >{{ evt.reasoning }}</p>
+          </div>
+        </div>
+
+        <!-- Final decision card -->
         <div
           v-if="negotiationStatus !== 'negotiating' && decisionEvent"
           style="margin-bottom:var(--s-4);padding:var(--s-4);border-radius:var(--r-2)"
@@ -1034,32 +1102,45 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
           </p>
         </div>
 
-        <!-- Empty state -->
+        <!-- Skeleton loader — before any stream events arrive -->
         <div
-          v-if="streamEvents.length === 0"
-          style="padding:var(--s-8);text-align:center"
-        >
-          <span class="helper pulse-green">Waiting for agents…</span>
-        </div>
-
-        <!-- Discussion feed (newest at top) -->
-        <div
-          v-else
-          style="overflow-y:auto;height:60vh;display:flex;flex-direction:column;gap:1px"
+          v-if="streamEvents.length === 0 && negotiationStatus === 'negotiating'"
+          style="display:flex;flex-direction:column;gap:6px"
         >
           <div
-            v-for="evt in streamEvents"
+            v-for="n in 4"
+            :key="n"
+            class="stream-skeleton"
+            style="padding:var(--s-3) var(--s-4);border:var(--hair);border-radius:var(--r-2);background:var(--bg-2)"
+          >
+            <div style="display:flex;gap:var(--s-3);align-items:center">
+              <div class="skel skel-dot" />
+              <div style="flex:1">
+                <div class="skel skel-line" style="width:40%;margin-bottom:6px" />
+                <div class="skel skel-line" style="width:75%" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Agent event feed (newest at top) -->
+        <div
+          v-if="streamEvents.length > 0"
+          style="overflow-y:auto;max-height:55vh;display:flex;flex-direction:column;gap:1px"
+        >
+          <div
+            v-for="evt in agentOnlyEvents"
             :key="evt.timestamp + evt.agent + evt.round"
-            class="fade-in"
+            class="stream-event-slide"
             style="padding:var(--s-3) var(--s-4);border:var(--hair);border-radius:var(--r-2);background:var(--bg-2);display:flex;align-items:flex-start;gap:var(--s-3)"
           >
-            <!-- Agent dot -->
+            <!-- Agent status dot -->
             <span
               style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-top:5px;flex-shrink:0"
+              :class="negotiationStatus === 'negotiating' && evt === streamEvents[0] ? 'pulse-green' : ''"
               :style="`background:${AGENT_COLOUR[evt.agent] ?? 'var(--fg-3)'}`"
             />
             <div style="flex:1;min-width:0">
-              <!-- Header row -->
               <div style="display:flex;align-items:center;gap:var(--s-2);margin-bottom:4px;flex-wrap:wrap">
                 <span
                   style="font-size:var(--t-12);font-family:var(--mono);font-weight:600"
@@ -1071,7 +1152,6 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
                   :style="`background:${AGENT_COLOUR[evt.agent] ?? 'var(--fg-4)'}18;color:${AGENT_COLOUR[evt.agent] ?? 'var(--fg-3)'}`"
                 >{{ evt.type }}</span>
               </div>
-              <!-- Reasoning / content -->
               <p
                 v-if="evt.reasoning"
                 style="margin:0;font-size:var(--t-13);color:var(--fg-1);line-height:1.6;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden"
@@ -1138,7 +1218,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
                     <span
                       v-if="act.cost"
                       style="font-family:var(--mono);font-size:var(--t-12);color:var(--fg-2)"
-                    >€{{ act.cost }}</span>
+                    >{{ financeSummary?.currency ?? currencySymbol }}{{ act.cost }}</span>
                   </div>
                   <p v-if="act.location" style="margin:0;font-size:var(--t-12);color:var(--fg-3)">{{ act.location }}</p>
                   <p v-if="act.notes" style="margin:2px 0 0;font-size:var(--t-12);color:var(--fg-3);font-style:italic">{{ act.notes }}</p>
@@ -1179,15 +1259,21 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
           <span class="ttl">Negotiation results</span>
         </div>
 
-        <!-- Weather alerts (conditional) -->
-        <div v-if="weatherAlerts.length > 0" style="margin-bottom:var(--s-4);display:flex;flex-direction:column;gap:var(--s-2)">
-          <div
-            v-for="(alert, i) in weatherAlerts"
-            :key="i"
-            style="padding:var(--s-3) var(--s-4);background:var(--amber-bg);border:1px solid var(--amber-line);border-radius:var(--r-2);display:flex;align-items:flex-start;gap:var(--s-2)"
-          >
-            <span style="color:var(--amber);flex-shrink:0">⚠</span>
-            <p style="margin:0;font-size:var(--t-13);color:var(--fg-1)">{{ alert }}</p>
+        <!-- Weather section (conditional — only shown when logistics data present) -->
+        <div v-if="weatherAlerts.length > 0 || logisticsWeatherSummary" class="summary-card" style="margin-bottom:var(--s-4)">
+          <div class="sub" style="margin-bottom:var(--s-3)">Weather forecast</div>
+          <p v-if="logisticsWeatherSummary" style="margin:0 0 var(--s-3);font-size:var(--t-13);color:var(--fg-1);line-height:1.6">
+            {{ logisticsWeatherSummary }}
+          </p>
+          <div v-if="weatherAlerts.length > 0" style="display:flex;flex-direction:column;gap:var(--s-2)">
+            <div
+              v-for="(alert, i) in weatherAlerts"
+              :key="i"
+              style="padding:var(--s-2) var(--s-3);background:var(--amber-bg);border:1px solid var(--amber-line);border-radius:var(--r-2);display:flex;align-items:flex-start;gap:var(--s-2)"
+            >
+              <span style="color:var(--amber);flex-shrink:0;font-size:var(--t-12)">⚠</span>
+              <p style="margin:0;font-size:var(--t-13);color:var(--fg-1)">{{ alert }}</p>
+            </div>
           </div>
         </div>
 
@@ -1334,9 +1420,9 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
             <div class="sub" style="margin-bottom:var(--s-3)">Trip summary</div>
             <div class="kv">
               <div class="k">Budget</div>
-              <div class="v mono">€{{ budgetTotal.toLocaleString() }}</div>
+              <div class="v mono">{{ currencySymbol }}{{ budgetTotal.toLocaleString() }}</div>
               <div class="k">Per person</div>
-              <div class="v mono">€{{ budgetPerPerson.toLocaleString() }}</div>
+              <div class="v mono">{{ currencySymbol }}{{ budgetPerPerson.toLocaleString() }}</div>
               <div class="k">Rounds completed</div>
               <div class="v mono">{{ liveProposals.length > 0 ? Math.max(...liveProposals.map(p => p.round)) : 6 }}</div>
               <div class="k">Agents involved</div>

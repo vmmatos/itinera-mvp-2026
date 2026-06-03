@@ -13,7 +13,7 @@ export const CreateTripSchema = z.object({
   startDate:    z.string().date().optional(),
   endDate:      z.string().date().optional(),
   budgetTotal:  z.number().positive().optional(),
-  budgetCurrency: z.string().length(3).default('EUR'),
+  budgetCurrency: z.enum(['EUR', 'USD']).default('EUR'),
   travellers: z
     .array(
       z.object({

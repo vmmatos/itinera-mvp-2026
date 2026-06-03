@@ -72,6 +72,10 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   const logout = async (): Promise<void> => {
+    try {
+      const api = useApi()
+      await api.post('/api/auth/logout')
+    } catch { /* best-effort */ }
     token.value = null
     user.value = null
     localStorage.removeItem('itinera_token')
