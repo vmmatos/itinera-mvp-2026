@@ -128,8 +128,7 @@ services:
       NUXT_PUBLIC_WS_URL: ${NUXT_PUBLIC_WS_URL:-ws://localhost}
       NUXT_PUBLIC_APP_MODE: ${NODE_ENV:-development}
     ports:
-      - "3000:3000"
-      - "24678:24678"
+      - "24678:24678"  # Nuxt HMR websocket — app served via nginx:80, not this port
     volumes:
       - ../apps/frontend:/app
       - frontend-node-modules:/app/node_modules
