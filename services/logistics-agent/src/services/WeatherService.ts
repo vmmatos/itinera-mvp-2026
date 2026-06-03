@@ -45,18 +45,40 @@ export class WeatherService extends BaseService {
     if (match) return match;
 
     const first = forecasts[0];
-    if (!first) throw new Error(`No forecast available for region: ${region}`);
+    if (!first) return null as unknown as WeatherForecast;
     return first;
   }
 
   async getMultiDayForecast(region: string, days: number): Promise<WeatherForecast[]> {
-    const coords = await this.geocode(region);
+    let coords: { lat: number; lon: number } | null = null;
+
+    // Try the region as-is, then try the first comma-separated part as a fallback
+    // (handles multi-language names like "Portugal e Espanha")
+    const candidates = [region, region.split(/[,\s]+(?:e|and|y|et)\s*/i)[0]?.trim() ?? ''].filter(Boolean);
+
+    for (const candidate of candidates) {
+      try {
+        coords = await this.geocode(candidate);
+        break;
+      } catch {
+        this.logger.warn('Geocode failed, trying fallback', { candidate });
+      }
+    }
+
+    if (!coords) {
+      this.logger.warn('Could not geocode region — skipping weather data', { region });
+      return [];
+    }
+
     const url = `${this.baseUrl}/data/2.5/forecast?lat=${coords.lat}&lon=${coords.lon}&appid=${this.apiKey}&units=metric&cnt=${days * 8}`;
 
     const res = await fetch(url);
     if (!res.ok) {
-      const body = await res.text();
-      throw new Error(`OpenWeatherMap forecast error ${res.status}: ${body}`);
+      this.logger.warn('OpenWeatherMap forecast error — skipping weather data', {
+        status: res.status,
+        region,
+      });
+      return [];
     }
 
     const data = (await res.json()) as OWMForecastResponse;

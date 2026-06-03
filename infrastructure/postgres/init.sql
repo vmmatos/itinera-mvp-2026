@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS trips (
   name             VARCHAR(255)   NOT NULL,
   status           VARCHAR(50)    NOT NULL DEFAULT 'draft',
   region           VARCHAR(255),
+  destinations     JSONB          NOT NULL DEFAULT '[]',
   owner_id         UUID           NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   start_date       DATE,
   end_date         DATE,

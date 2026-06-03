@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onUnmounted } from 'vue'
 import { PERSONA_LABELS, PERSONA_AGENT, AGENT_COLOURS } from '~/types/index'
-import type { Persona, Flexibility, CreateTripInput, TravellerInput } from '~/types/index'
+import type { Persona, Flexibility, CreateTripInput, TravellerInput, SatisfactionScore } from '~/types/index'
 
 const emit = defineEmits<{
   success: [tripId: string]
@@ -185,7 +185,7 @@ const AGENT_COLOUR: Record<string, string> = {
   bob:          'var(--amber)',
   carlos:       'var(--blue)',
   diana:        'var(--magenta)',
-  orchestrator: 'var(--green)',
+  orchestrator: 'var(--fg-0)',
   finance:      'var(--amber)',
   logistics:    'var(--blue)',
   validator:    'var(--magenta)',
@@ -231,35 +231,59 @@ const stopPolling = (): void => {
 
 onUnmounted(() => stopPolling())
 
+// ── Step 3: Live discussion (SSE) ─────────────────────────────
+
+const { events: streamEvents, connected: streamConnected } = useAgentStream(activeTripId)
+
+const decisionEvent = computed(() =>
+  streamEvents.value.find(
+    (e) => (e.agent === 'orchestrator' || e.agent === 'validator') && e.round === 6,
+  ) ?? null,
+)
+
 // ── Step 4: Itinerary review ──────────────────────────────────
+
+interface ItineraryActivity {
+  name:          string
+  time?:         string
+  location?:     string
+  notes?:        string
+  cost?:         number
+  weatherAlert?: string
+}
 
 interface ItineraryDay {
   day:        number
   date?:      string
-  activities: Array<{ name: string; time?: string; location?: string; notes?: string }>
+  activities: ItineraryActivity[]
   meals?:     Array<{ type: string; name: string }>
 }
 
 function tryParseItinerary(content: Record<string, unknown>): ItineraryDay[] {
+  const mapActivities = (raw: unknown): ItineraryActivity[] => {
+    if (!Array.isArray(raw)) return []
+    return (raw as Array<Record<string, unknown>>).map((a) => ({
+      name:         String(a['name'] ?? a['activity'] ?? a['title'] ?? '—'),
+      time:         typeof a['time'] === 'string' ? a['time']
+                      : typeof a['startTime'] === 'string' ? a['startTime'] : undefined,
+      location:     typeof a['location'] === 'string' ? a['location'] : undefined,
+      notes:        typeof a['notes'] === 'string' ? a['notes']
+                      : typeof a['description'] === 'string' ? a['description'] : undefined,
+      cost:         typeof a['cost'] === 'number' ? a['cost'] : undefined,
+      weatherAlert: typeof a['weatherAlert'] === 'string' ? a['weatherAlert'] : undefined,
+    }))
+  }
+
   const tryFromObj = (obj: unknown): ItineraryDay[] => {
     if (!obj || typeof obj !== 'object') return []
     const o = obj as Record<string, unknown>
     const raw = o['itinerary'] ?? o['days'] ?? o['plan'] ?? o['schedule']
     if (!Array.isArray(raw) || raw.length === 0) return []
     return (raw as Array<Record<string, unknown>>).map((d, i) => ({
-      day: typeof d['day'] === 'number' ? d['day'] : i + 1,
-      date: typeof d['date'] === 'string' ? d['date'] : undefined,
-      activities: Array.isArray(d['activities'])
-        ? (d['activities'] as Array<Record<string, unknown>>).map((a) => ({
-            name:     String(a['name'] ?? a['activity'] ?? a['title'] ?? '—'),
-            time:     typeof a['time'] === 'string' ? a['time']
-                        : typeof a['startTime'] === 'string' ? a['startTime'] : undefined,
-            location: typeof a['location'] === 'string' ? a['location'] : undefined,
-            notes:    typeof a['notes'] === 'string' ? a['notes']
-                        : typeof a['description'] === 'string' ? a['description'] : undefined,
-          }))
-        : [],
-      meals: Array.isArray(d['meals'])
+      day:        typeof d['day'] === 'number' ? d['day'] : i + 1,
+      date:       typeof d['date'] === 'string' ? d['date'] : undefined,
+      activities: mapActivities(d['activities']),
+      meals:      Array.isArray(d['meals'])
         ? (d['meals'] as Array<Record<string, unknown>>).map((m) => ({
             type: String(m['type'] ?? 'meal'),
             name: String(m['name'] ?? '—'),
@@ -268,20 +292,26 @@ function tryParseItinerary(content: Record<string, unknown>): ItineraryDay[] {
     }))
   }
 
-  // 1. Try structured keys directly
   const direct = tryFromObj(content)
   if (direct.length > 0) return direct
 
-  // 2. Try parsing 'raw' field as JSON
   if (typeof content['raw'] === 'string') {
     try {
-      const parsed = JSON.parse(content['raw']) as unknown
-      const fromRaw = tryFromObj(parsed)
+      // Strip markdown code fences (```json ... ```) before parsing
+      const stripped = content['raw']
+        .replace(/^```(?:json)?\s*/i, '')
+        .replace(/\s*```\s*$/, '')
+        .trim()
+      const fromRaw = tryFromObj(JSON.parse(stripped) as unknown)
       if (fromRaw.length > 0) return fromRaw
     } catch { /* not JSON */ }
   }
 
   return []
+}
+
+function stripCodeFences(raw: string): string {
+  return raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
 }
 
 const latestByAgent = computed((): Record<string, ProposalEntry> => {
@@ -294,7 +324,16 @@ const latestByAgent = computed((): Record<string, ProposalEntry> => {
 })
 
 const parsedItinerary = computed((): ItineraryDay[] => {
-  // Prefer orchestrator round 3 (compromise proposal) → then any proposal with structured days
+  // Prefer orchestrator round 3 (compromise proposal from /propose endpoint)
+  const orchestratorRound3 = liveProposals.value.find(
+    (p) => p.agent === 'orchestrator' && p.round === 3,
+  )
+  if (orchestratorRound3) {
+    const days = tryParseItinerary(orchestratorRound3.content)
+    if (days.length > 0) return days
+  }
+
+  // Fallback: any proposal with structured itinerary data
   const ordered = ['orchestrator', 'validator', 'logistics', 'finance', 'alice', 'bob', 'carlos', 'diana']
   for (const agent of ordered) {
     const p = latestByAgent.value[agent]
@@ -329,9 +368,60 @@ const orchestratorText = computed((): string | null => {
   const p = latestByAgent.value['orchestrator']
   if (!p) return null
   const raw = p.content['raw']
-  if (typeof raw === 'string') return raw.slice(0, 600) + (raw.length > 600 ? '…' : '')
+  if (typeof raw === 'string') {
+    const clean = stripCodeFences(raw)
+    return clean.slice(0, 800) + (clean.length > 800 ? '…' : '')
+  }
   return null
 })
+
+// ── Step 4: Scores, cost breakdown, weather ───────────────────
+
+const travellerScores = computed<SatisfactionScore[]>(() => {
+  const vp = liveProposals.value.find((p) => p.agent === 'validator' && p.round === 6)
+  const c = vp?.content
+  return Array.isArray(c?.['scores']) ? (c['scores'] as SatisfactionScore[]) : []
+})
+
+const costCategories = computed<Array<{ label: string; amount: number }>>(() => {
+  const fp = liveProposals.value.find((p) => p.agent === 'finance')
+  const c = fp?.content
+  const cats = (c?.['costBreakdown'] as Record<string, unknown> | undefined)?.['categories']
+  return Array.isArray(cats)
+    ? [...(cats as Array<{ label: string; amount: number }>)].sort((a, b) => b.amount - a.amount)
+    : []
+})
+
+const weatherAlerts = computed<string[]>(() => {
+  const lp = liveProposals.value.find((p) => p.agent === 'logistics')
+  const c = lp?.content
+  return Array.isArray(c?.['weatherAlerts']) ? (c['weatherAlerts'] as string[]) : []
+})
+
+// ── Step 4: Share link ────────────────────────────────────────
+
+const shareLoading = ref(false)
+const shareCopied  = ref(false)
+const shareError   = ref<string | null>(null)
+
+const handleShare = async (): Promise<void> => {
+  if (!activeTripId.value) return
+  shareLoading.value = true
+  shareError.value = null
+  try {
+    const resp = await api.post<{ success: boolean; data: { shareUrl: string } }>(
+      '/api/share/api/v1/share/generate',
+      { tripId: activeTripId.value },
+    )
+    await navigator.clipboard.writeText(resp.data.data.shareUrl)
+    shareCopied.value = true
+    setTimeout(() => { shareCopied.value = false }, 2000)
+  } catch {
+    shareError.value = 'Failed to generate share link.'
+  } finally {
+    shareLoading.value = false
+  }
+}
 
 const handleAccept = (): void => { step.value = 5 }
 const handleReject = (): void => {
@@ -818,7 +908,9 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
 
     <!-- ── Step 3: Negotiate ───────────────────────────────── -->
     <div v-if="step === 3" class="user-grid">
-      <div class="user-left" style="max-width:100%;flex:1">
+
+      <!-- Left: activity feed -->
+      <div class="user-left">
 
         <div style="margin-bottom:var(--s-6)">
           <div class="sec-eyebrow" style="margin-bottom:6px">Live negotiation</div>
@@ -868,12 +960,10 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
               :key="p.id"
               style="padding:var(--s-3) var(--s-4);border-bottom:var(--hair);display:flex;align-items:flex-start;gap:var(--s-3)"
             >
-              <!-- Agent dot -->
               <span
                 style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-top:5px;flex-shrink:0"
                 :style="`background:${AGENT_COLOUR[p.agent] ?? 'var(--fg-3)'}`"
               />
-              <!-- Content -->
               <div style="flex:1;min-width:0">
                 <div style="display:flex;align-items:center;gap:var(--s-2);margin-bottom:3px">
                   <span
@@ -882,7 +972,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
                   >{{ p.agent }}</span>
                   <span class="helper" style="font-family:var(--mono)">round {{ p.round }} · {{ ROUND_LABELS[p.round] ?? 'processing' }}</span>
                 </div>
-                <p style="margin:0;font-size:var(--t-13);color:var(--fg-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:500px">
+                <p style="margin:0;font-size:var(--t-13);color:var(--fg-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:400px">
                   {{ typeof p.content === 'object' && p.content !== null
                       ? Object.keys(p.content).slice(0,3).join(', ') + (Object.keys(p.content).length > 3 ? '…' : '')
                       : '—' }}
@@ -910,12 +1000,98 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
           <p style="margin:0;font-size:var(--t-13);color:var(--green)">Negotiation complete — moving to itinerary review…</p>
         </div>
       </div>
+
+      <!-- Right: live discussion panel -->
+      <div class="user-right">
+        <div class="preview-head">
+          <span class="ttl">agent discussion</span>
+          <div class="lz" v-if="streamConnected">
+            <span class="pulse" />
+            <span>live</span>
+          </div>
+          <span v-else class="helper">{{ streamEvents.length }} messages</span>
+        </div>
+
+        <!-- Decision card — shown once negotiation ends -->
+        <div
+          v-if="negotiationStatus !== 'negotiating' && decisionEvent"
+          style="margin-bottom:var(--s-4);padding:var(--s-4);border-radius:var(--r-2)"
+          :style="negotiationStatus === 'confirmed'
+            ? 'background:rgba(0,255,136,0.06);border:1px solid rgba(0,255,136,0.24)'
+            : 'background:rgba(255,93,93,0.06);border:1px solid rgba(255,93,93,0.24)'"
+        >
+          <div style="display:flex;align-items:center;gap:var(--s-2);margin-bottom:var(--s-2)">
+            <span
+              style="font-size:var(--t-12);font-family:var(--mono);font-weight:600"
+              :style="negotiationStatus === 'confirmed' ? 'color:var(--green)' : 'color:var(--red)'"
+            >
+              {{ negotiationStatus === 'confirmed' ? '✓ decision' : '✗ decision' }}
+            </span>
+            <span class="helper">{{ decisionEvent.agent }} · round {{ decisionEvent.round }}</span>
+          </div>
+          <p style="margin:0;font-size:var(--t-13);color:var(--fg-1);line-height:1.6">
+            {{ decisionEvent.reasoning ?? 'Negotiation concluded.' }}
+          </p>
+        </div>
+
+        <!-- Empty state -->
+        <div
+          v-if="streamEvents.length === 0"
+          style="padding:var(--s-8);text-align:center"
+        >
+          <span class="helper pulse-green">Waiting for agents…</span>
+        </div>
+
+        <!-- Discussion feed (newest at top) -->
+        <div
+          v-else
+          style="overflow-y:auto;height:60vh;display:flex;flex-direction:column;gap:1px"
+        >
+          <div
+            v-for="evt in streamEvents"
+            :key="evt.timestamp + evt.agent + evt.round"
+            class="fade-in"
+            style="padding:var(--s-3) var(--s-4);border:var(--hair);border-radius:var(--r-2);background:var(--bg-2);display:flex;align-items:flex-start;gap:var(--s-3)"
+          >
+            <!-- Agent dot -->
+            <span
+              style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-top:5px;flex-shrink:0"
+              :style="`background:${AGENT_COLOUR[evt.agent] ?? 'var(--fg-3)'}`"
+            />
+            <div style="flex:1;min-width:0">
+              <!-- Header row -->
+              <div style="display:flex;align-items:center;gap:var(--s-2);margin-bottom:4px;flex-wrap:wrap">
+                <span
+                  style="font-size:var(--t-12);font-family:var(--mono);font-weight:600"
+                  :style="`color:${AGENT_COLOUR[evt.agent] ?? 'var(--fg-2)'}`"
+                >{{ evt.agent }}</span>
+                <span class="helper">round {{ evt.round }} · {{ ROUND_LABELS[evt.round] ?? 'processing' }}</span>
+                <span
+                  style="font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.06em;padding:1px 6px;border-radius:var(--r-1)"
+                  :style="`background:${AGENT_COLOUR[evt.agent] ?? 'var(--fg-4)'}18;color:${AGENT_COLOUR[evt.agent] ?? 'var(--fg-3)'}`"
+                >{{ evt.type }}</span>
+              </div>
+              <!-- Reasoning / content -->
+              <p
+                v-if="evt.reasoning"
+                style="margin:0;font-size:var(--t-13);color:var(--fg-1);line-height:1.6;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden"
+              >{{ evt.reasoning }}</p>
+              <p
+                v-else
+                style="margin:0;font-size:var(--t-13);color:var(--fg-3);font-style:italic"
+              >{{ typeof evt.content === 'object' && evt.content !== null
+                  ? Object.keys(evt.content as Record<string, unknown>).slice(0,4).join(', ')
+                  : '—' }}</p>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- ── Step 4: Itinerary ───────────────────────────────── -->
     <div v-if="step === 4" class="user-grid">
-      <!-- Left: itinerary -->
-      <div class="user-left" style="flex:1">
+      <!-- Left: timeline -->
+      <div class="user-left">
 
         <div style="margin-bottom:var(--s-6)">
           <div class="sec-eyebrow" style="margin-bottom:6px">Proposed itinerary</div>
@@ -924,32 +1100,52 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
           </h2>
         </div>
 
-        <!-- Structured itinerary days -->
+        <!-- Structured itinerary timeline -->
         <div v-if="parsedItinerary.length > 0" style="display:flex;flex-direction:column;gap:var(--s-3);margin-bottom:var(--s-6)">
           <div
             v-for="day in parsedItinerary"
             :key="day.day"
             style="border:var(--hair);border-radius:var(--r-2);background:var(--bg-1);overflow:hidden"
           >
-            <div style="padding:var(--s-3) var(--s-4);border-bottom:var(--hair);display:flex;align-items:center;gap:var(--s-3)">
-              <span style="font-family:var(--mono);font-size:var(--t-12);color:var(--green);font-weight:600">Day {{ day.day }}</span>
-              <span v-if="day.date" class="helper" style="font-family:var(--mono)">{{ day.date }}</span>
+            <!-- Day header -->
+            <div style="padding:var(--s-3) var(--s-4);border-bottom:var(--hair);display:flex;align-items:center;gap:var(--s-3);background:var(--bg-2)">
+              <span style="font-family:var(--mono);font-size:var(--t-12);color:var(--green);font-weight:600;background:var(--green-bg);border:1px solid var(--green-line);padding:2px 8px;border-radius:var(--r-1)">Day {{ day.day }}</span>
+              <span v-if="day.date" class="helper">{{ day.date }}</span>
             </div>
             <div style="padding:var(--s-3) var(--s-4)">
-              <div v-if="day.activities.length === 0" class="helper">No structured activities.</div>
+              <div v-if="day.activities.length === 0" class="helper" style="padding:var(--s-2) 0">No structured activities.</div>
               <div
                 v-for="(act, i) in day.activities"
                 :key="i"
-                style="display:flex;align-items:flex-start;gap:var(--s-3);padding:var(--s-2) 0;border-bottom:1px solid rgba(255,255,255,0.04)"
+                style="display:flex;align-items:flex-start;gap:var(--s-3);padding:var(--s-3) 0;border-bottom:1px solid rgba(255,255,255,0.04)"
               >
-                <span v-if="act.time" style="font-family:var(--mono);font-size:var(--t-12);color:var(--fg-3);min-width:48px;flex-shrink:0">{{ act.time }}</span>
-                <div>
-                  <p style="margin:0;font-size:var(--t-14);color:var(--fg-1)">{{ act.name }}</p>
+                <!-- Time pill -->
+                <span
+                  v-if="act.time"
+                  style="font-family:var(--mono);font-size:var(--t-12);color:var(--green);background:var(--green-bg);padding:2px 6px;border-radius:var(--r-1);min-width:52px;text-align:center;flex-shrink:0;margin-top:1px"
+                >{{ act.time }}</span>
+                <span v-else style="min-width:52px;flex-shrink:0" />
+                <!-- Activity details -->
+                <div style="flex:1;min-width:0">
+                  <div style="display:flex;align-items:center;gap:var(--s-2);flex-wrap:wrap;margin-bottom:2px">
+                    <p style="margin:0;font-size:var(--t-14);color:var(--fg-0);font-weight:500">{{ act.name }}</p>
+                    <!-- Weather alert badge per activity -->
+                    <span
+                      v-if="act.weatherAlert"
+                      style="font-family:var(--mono);font-size:10px;color:var(--amber);background:var(--amber-bg);border:1px solid var(--amber-line);padding:1px 6px;border-radius:var(--r-1)"
+                    >⚠ {{ act.weatherAlert }}</span>
+                    <!-- Cost badge -->
+                    <span
+                      v-if="act.cost"
+                      style="font-family:var(--mono);font-size:var(--t-12);color:var(--fg-2)"
+                    >€{{ act.cost }}</span>
+                  </div>
                   <p v-if="act.location" style="margin:0;font-size:var(--t-12);color:var(--fg-3)">{{ act.location }}</p>
                   <p v-if="act.notes" style="margin:2px 0 0;font-size:var(--t-12);color:var(--fg-3);font-style:italic">{{ act.notes }}</p>
                 </div>
               </div>
-              <div v-if="day.meals && day.meals.length > 0" style="margin-top:var(--s-2);display:flex;gap:var(--s-2);flex-wrap:wrap">
+              <!-- Meals row -->
+              <div v-if="day.meals && day.meals.length > 0" style="margin-top:var(--s-3);display:flex;gap:var(--s-2);flex-wrap:wrap;padding-top:var(--s-2);border-top:1px solid rgba(255,255,255,0.04)">
                 <span v-for="m in day.meals" :key="m.type" class="chip on" style="font-size:var(--t-12)">
                   {{ m.type }}: {{ m.name }}
                 </span>
@@ -977,27 +1173,53 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
         </div>
       </div>
 
-      <!-- Right: agent scores -->
+      <!-- Right: results panel -->
       <div class="user-right">
         <div class="preview-head">
           <span class="ttl">Negotiation results</span>
         </div>
 
-        <!-- Finance summary -->
-        <div v-if="financeSummary" class="summary-card">
-          <div class="sub">Budget review</div>
-          <div class="kv">
-            <div class="k">Estimated cost</div>
-            <div class="v mono">{{ financeSummary.grandTotal ?? '—' }} {{ financeSummary.currency ?? '' }}</div>
-            <div class="k">Status</div>
-            <div class="v" :style="financeSummary.status === 'within_budget' ? 'color:var(--green)' : 'color:var(--amber)'">
-              {{ financeSummary.status ?? '—' }}
+        <!-- Weather alerts (conditional) -->
+        <div v-if="weatherAlerts.length > 0" style="margin-bottom:var(--s-4);display:flex;flex-direction:column;gap:var(--s-2)">
+          <div
+            v-for="(alert, i) in weatherAlerts"
+            :key="i"
+            style="padding:var(--s-3) var(--s-4);background:var(--amber-bg);border:1px solid var(--amber-line);border-radius:var(--r-2);display:flex;align-items:flex-start;gap:var(--s-2)"
+          >
+            <span style="color:var(--amber);flex-shrink:0">⚠</span>
+            <p style="margin:0;font-size:var(--t-13);color:var(--fg-1)">{{ alert }}</p>
+          </div>
+        </div>
+
+        <!-- ScoresCard: per-traveller satisfaction -->
+        <div v-if="travellerScores.length > 0" class="summary-card" style="margin-bottom:var(--s-4)">
+          <div class="sub">Traveller satisfaction</div>
+          <div style="display:flex;flex-direction:column;gap:var(--s-3);padding-top:var(--s-3)">
+            <div v-for="score in travellerScores" :key="score.travellerId" style="display:flex;flex-direction:column;gap:var(--s-2)">
+              <div style="display:flex;align-items:center;justify-content:space-between">
+                <div style="display:flex;align-items:center;gap:var(--s-2)">
+                  <span style="font-size:var(--t-13);color:var(--fg-0)">{{ score.name }}</span>
+                  <span
+                    class="chip on"
+                    style="font-size:10px;height:20px;padding:0 6px"
+                    :style="`color:${AGENT_COLOUR[PERSONA_AGENT[score.persona]] ?? 'var(--fg-2)'};border-color:${AGENT_COLOUR[PERSONA_AGENT[score.persona]] ?? 'var(--fg-3)'}44`"
+                  >{{ PERSONA_LABELS[score.persona] }}</span>
+                </div>
+                <span style="font-family:var(--mono);font-size:var(--t-12);color:var(--green)">{{ Math.round(score.postScore * 100) }}%</span>
+              </div>
+              <!-- Score bar -->
+              <div style="height:4px;background:var(--bg-3);border-radius:2px;overflow:hidden">
+                <div
+                  style="height:100%;background:var(--green);border-radius:2px;transition:width 0.5s"
+                  :style="`width:${Math.round(score.postScore * 100)}%`"
+                />
+              </div>
             </div>
           </div>
         </div>
 
-        <!-- Validator scores -->
-        <div v-if="validatorSummary" class="summary-card" style="margin-top:var(--s-3)">
+        <!-- ScoresCard fallback: fairness only -->
+        <div v-else-if="validatorSummary" class="summary-card" style="margin-bottom:var(--s-4)">
           <div class="sub">Fairness score</div>
           <div class="kv">
             <template v-if="validatorSummary.metrics">
@@ -1013,8 +1235,36 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
           </div>
         </div>
 
-        <!-- Agent participation -->
-        <div class="suggest" style="margin-top:var(--s-3)">
+        <!-- CostBreakdown -->
+        <div v-if="costCategories.length > 0" class="summary-card" style="margin-bottom:var(--s-4)">
+          <div class="sub">Cost breakdown</div>
+          <div class="kv" style="padding-top:var(--s-3)">
+            <template v-for="cat in costCategories" :key="cat.label">
+              <div class="k">{{ cat.label }}</div>
+              <div class="v mono">{{ financeSummary?.currency ?? '€' }}{{ cat.amount.toLocaleString() }}</div>
+            </template>
+          </div>
+          <div v-if="financeSummary?.grandTotal" style="display:flex;justify-content:space-between;align-items:center;padding-top:var(--s-3);margin-top:var(--s-3);border-top:var(--hair)">
+            <span style="font-family:var(--mono);font-size:var(--t-12);color:var(--fg-2);text-transform:uppercase;letter-spacing:.06em">Total</span>
+            <span style="font-family:var(--mono);font-size:var(--t-14);color:var(--fg-0);font-weight:600">{{ financeSummary.currency ?? '€' }}{{ String(financeSummary.grandTotal) }}</span>
+          </div>
+        </div>
+
+        <!-- CostBreakdown fallback: finance summary only -->
+        <div v-else-if="financeSummary" class="summary-card" style="margin-bottom:var(--s-4)">
+          <div class="sub">Budget review</div>
+          <div class="kv">
+            <div class="k">Estimated cost</div>
+            <div class="v mono">{{ financeSummary.grandTotal ?? '—' }} {{ financeSummary.currency ?? '' }}</div>
+            <div class="k">Status</div>
+            <div class="v" :style="financeSummary.status === 'within_budget' ? 'color:var(--green)' : 'color:var(--amber)'">
+              {{ financeSummary.status ?? '—' }}
+            </div>
+          </div>
+        </div>
+
+        <!-- Agents involved -->
+        <div class="suggest" style="margin-bottom:var(--s-4)">
           <h4>Agents involved</h4>
           <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:var(--s-2)">
             <span
@@ -1023,10 +1273,27 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
               class="chip on"
               style="font-size:var(--t-12)"
               :style="`color:${AGENT_COLOUR[agent] ?? 'var(--fg-2)'};border-color:${AGENT_COLOUR[agent] ?? 'var(--fg-3)'}44`"
-            >
-              {{ agent }}
-            </span>
+            >{{ agent }}</span>
           </div>
+        </div>
+
+        <!-- Export & Share actions -->
+        <div style="display:flex;flex-direction:column;gap:var(--s-2);padding-top:var(--s-4);border-top:var(--hair)">
+          <button
+            class="btn btn-primary"
+            style="width:100%;justify-content:center"
+            :disabled="exportLoading"
+            @click="downloadPdf"
+          >{{ exportLoading ? 'Generating…' : '↓ Export PDF' }}</button>
+          <button
+            class="btn"
+            style="width:100%;justify-content:center"
+            :disabled="shareLoading"
+            @click="handleShare"
+          >{{ shareCopied ? '✓ Copied!' : shareLoading ? 'Generating…' : '⎘ Share link' }}</button>
+          <p v-if="exportError || shareError" style="margin:0;font-size:var(--t-12);color:var(--red)">
+            {{ exportError ?? shareError }}
+          </p>
         </div>
       </div>
     </div>

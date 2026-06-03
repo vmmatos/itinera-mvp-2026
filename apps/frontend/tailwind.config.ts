@@ -10,19 +10,27 @@ export default {
   ],
   theme: {
     extend: {
+      // ── Colours (from design system) ──────────────────────────
       colors: {
+        // Backgrounds
         'bg-0': '#0a0a0a',
         'bg-1': '#111111',
         'bg-2': '#161616',
         'bg-3': '#1c1c1c',
+
+        // Foregrounds
         'fg-0': '#f2f2f2',
         'fg-1': '#c9c9c9',
         'fg-2': '#a1a1a1',
         'fg-3': '#666666',
         'fg-4': '#3a3a3a',
+
+        // Lines / borders
         'line-1': '#1f1f1f',
         'line-2': '#272727',
         'line-3': '#333333',
+
+        // Accent — electric green
         green: {
           DEFAULT: '#00ff88',
           dim:     '#00cc6e',
@@ -30,6 +38,8 @@ export default {
           bg:      'rgba(0,255,136,0.08)',
           line:    'rgba(0,255,136,0.32)',
         },
+
+        // Agent colours (each agent has a distinct accent)
         amber: {
           DEFAULT: '#ffb547',
           bg:      'rgba(255,181,71,0.08)',
@@ -47,6 +57,8 @@ export default {
         },
         red: '#ff5d5d',
       },
+
+      // ── Typography ────────────────────────────────────────────
       fontFamily: {
         sans: ['Geist', 'Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'],
         mono: ['Geist Mono', 'ui-monospace', 'JetBrains Mono', 'Menlo', 'monospace'],
@@ -55,7 +67,7 @@ export default {
         '12': ['11px', { lineHeight: '1.5' }],
         '13': ['12px', { lineHeight: '1.5' }],
         '14': ['13px', { lineHeight: '1.5' }],
-        '15': ['14px', { lineHeight: '1.5' }],
+        '15': ['14px', { lineHeight: '1.5' }],  // base
         '16': ['15px', { lineHeight: '1.5' }],
         '18': ['17px', { lineHeight: '1.4' }],
         '22': ['21px', { lineHeight: '1.3' }],
@@ -63,6 +75,8 @@ export default {
         '40': ['38px', { lineHeight: '1.1' }],
         '64': ['60px', { lineHeight: '1.0' }],
       },
+
+      // ── Spacing (4px base grid) ────────────────────────────────
       spacing: {
         '1':  '4px',
         '2':  '8px',
@@ -77,10 +91,23 @@ export default {
         '20': '80px',
         '24': '96px',
       },
+
+      // ── Border radius ─────────────────────────────────────────
       borderRadius: {
-        'sm': '2px',
-        'md': '4px',
-        'lg': '6px',
+        'sm': '2px',   // --r-1
+        'md': '4px',   // --r-2
+        'lg': '6px',   // --r-3
+      },
+
+      // ── Border widths ─────────────────────────────────────────
+      borderWidth: {
+        DEFAULT: '1px',
+        'hair': '1px',
+      },
+
+      // ── Background opacity helpers ────────────────────────────
+      backgroundOpacity: {
+        '8': '0.08',
       },
     },
   },

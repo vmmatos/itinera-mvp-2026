@@ -83,8 +83,14 @@ export function createLogisticsRouter(
     const weatherCacheKey = `weather:${region}:multi`;
     let forecasts = await redis.get(weatherCacheKey);
     if (!forecasts) {
-      forecasts = await weather.getMultiDayForecast(region, Math.max(rawItinerary.length, 1) + 1);
-      await redis.set(weatherCacheKey, forecasts, config.WEATHER_CACHE_TTL_SECONDS);
+      try {
+        forecasts = await weather.getMultiDayForecast(region, Math.max(rawItinerary.length, 1) + 1);
+        if (Array.isArray(forecasts) && forecasts.length > 0) {
+          await redis.set(weatherCacheKey, forecasts, config.WEATHER_CACHE_TTL_SECONDS);
+        }
+      } catch {
+        forecasts = [];
+      }
     }
 
     const validation = await analyzer.analyze(

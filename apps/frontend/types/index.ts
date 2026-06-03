@@ -58,6 +58,12 @@ export const PERSONA_AGENT: Record<Persona, AgentName> = {
 }
 
 // ── Trip input ────────────────────────────────────────────────
+export interface Destination {
+  country: string
+  city?:   string
+  nights:  number
+}
+
 export interface TravellerInput {
   userId?:     string
   preferences: {
@@ -73,9 +79,10 @@ export interface TravellerInput {
 
 export interface CreateTripInput {
   name:           string
-  region:         string
-  startDate:      string   // YYYY-MM-DD
-  endDate:        string   // YYYY-MM-DD
+  destinations:   Destination[]
+  region?:        string        // derived from destinations if not set
+  startDate:      string        // YYYY-MM-DD
+  endDate?:       string        // YYYY-MM-DD — auto-calculated from sum of nights
   budgetTotal:    number
   budgetCurrency: string
   travellers:     TravellerInput[]

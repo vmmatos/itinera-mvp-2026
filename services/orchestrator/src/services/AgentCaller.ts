@@ -75,12 +75,13 @@ export class AgentCaller extends BaseService {
     tripId: string,
     agentName: string,
     round: number,
+    context = '',
   ): Promise<AgentCallResult> {
     const start = Date.now();
     const resp = await this.post<{ proposals: AgentEventLike[] }>(
       'preference-agent',
       '/propose',
-      { tripId, round, agents: [agentName] },
+      { tripId, round, agents: [agentName], context },
     );
     return toAgentCallResult(resp.proposals[0], Date.now() - start);
   }
@@ -97,6 +98,21 @@ export class AgentCaller extends BaseService {
       { tripId, round, proposals },
     );
     return toAgentCallResult(resp.analysis, Date.now() - start);
+  }
+
+  async callOrchestratorPropose(
+    tripId: string,
+    round: number,
+    conflicts: Record<string, unknown>,
+    context = '',
+  ): Promise<AgentCallResult> {
+    const start = Date.now();
+    const resp = await this.post<{ compromise: AgentEventLike }>(
+      'orchestrator-agent',
+      '/propose',
+      { tripId, round, conflicts, context },
+    );
+    return toAgentCallResult(resp.compromise, Date.now() - start);
   }
 
   async callFinanceAgent(

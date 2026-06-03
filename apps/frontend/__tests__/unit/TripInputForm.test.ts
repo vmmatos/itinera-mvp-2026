@@ -153,7 +153,7 @@ describe('TripInputForm', () => {
 
   // ── Submit: happy path ───────────────────────────────────────
 
-  it('calls createTrip with correct payload and emits success', async () => {
+  it('calls createTrip with correct payload and advances to step 3', async () => {
     mockCreateTrip.mockResolvedValueOnce('new-trip-42')
 
     const wrapper = mountForm()
@@ -173,10 +173,11 @@ describe('TripInputForm', () => {
     expect(payload.region).toBe('Spain')
     expect(payload.startDate).toBe('2026-08-01')
     expect(payload.endDate).toBe('2026-08-08')
-    expect(payload.budgetCurrency).toBe('USD')
+    expect(payload.budgetCurrency).toBe('EUR')
     expect(payload.travellers[0].preferences.persona).toBe('culture')
 
-    expect(wrapper.emitted('success')).toEqual([['new-trip-42']])
+    // submit → step 3 (negotiate); success is emitted later via goToDashboard
+    expect(wrapper.text()).toContain('Agents are building your itinerary')
   })
 
   // ── Submit: error path ───────────────────────────────────────
