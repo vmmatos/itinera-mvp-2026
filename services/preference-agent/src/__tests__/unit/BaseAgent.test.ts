@@ -63,11 +63,11 @@ describe('BaseAgent', () => {
     vi.mocked(publisher.publish).mockResolvedValue(undefined);
   });
 
-  it('propose: cache miss calls Claude and stores proposal', async () => {
+  it('propose: cache miss calls Claude, publishes event (orchestrator owns DB save)', async () => {
     const event = await agent.propose('trip-123', 1, 'Trip to Europe');
 
     expect(anthropic.complete).toHaveBeenCalledOnce();
-    expect(storage.save).toHaveBeenCalledOnce();
+    expect(storage.save).not.toHaveBeenCalled(); // orchestrator saves proposals, not the agent
     expect(publisher.publish).toHaveBeenCalledOnce();
     expect(redis.set).toHaveBeenCalledOnce();
     expect(event.agent).toBe('alice');
