@@ -94,10 +94,8 @@ export abstract class BaseAgent extends BaseService {
       tokensUsed,
     });
 
-    await Promise.all([
-      this.storage.save(event),
-      this.publisher.publish(buildRoutingKey(this.agentName, action), event),
-    ]);
+    // Orchestrator is responsible for persisting proposals — don't double-save here
+    await this.publisher.publish(buildRoutingKey(this.agentName, action), event);
 
     this.logger.info('Agent call complete', {
       agent: this.agentName,
