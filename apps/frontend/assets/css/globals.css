@@ -772,7 +772,6 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   align-items: center;
   padding-top: var(--s-6);
   margin-top: var(--s-6);
-  border-top: var(--hair);
 }
 
 /* Meta/helper text */
