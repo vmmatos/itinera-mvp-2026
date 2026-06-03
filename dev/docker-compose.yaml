@@ -142,6 +142,8 @@ services:
     image: nginx:1.27-alpine
     container_name: itinera-ingress
     restart: unless-stopped
+    # Skip entrypoint init scripts — they fail when conf is read-only
+    command: ["nginx", "-g", "daemon off;"]
     ports:
       - "80:80"
     volumes:
@@ -150,11 +152,11 @@ services:
       - web
       - kong
     healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost/"]
+      test: ["CMD", "nginx", "-t"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 10s
+      start_period: 5s
 
   ## ── Auth ─────────────────────────────────────────────────────────────────────
   auth:
