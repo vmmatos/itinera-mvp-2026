@@ -1042,11 +1042,10 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
       <div class="user-right">
         <div class="preview-head">
           <span class="ttl">agent discussion</span>
-          <div class="lz" v-if="streamConnected">
+          <div class="lz" v-if="streamConnected && streamEvents.length > 0">
             <span class="pulse" />
             <span>live</span>
           </div>
-          <span v-else class="helper">{{ streamEvents.length }} messages</span>
         </div>
 
         <!-- Orchestrator decision card — shown always when available -->
