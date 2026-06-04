@@ -10,11 +10,17 @@ definePageMeta({
 const authStore = useAuthStore()
 const tripStore = useTripPlannerStore()
 
-const showForm = ref(false)
+const showForm     = ref(false)
+const viewTripId   = ref<string | null>(null)
 
 const hasNegotiating = computed(() =>
   tripStore.trips.some((t: Trip) => t.status === 'negotiating'),
 )
+
+const openTrip = (trip: Trip): void => {
+  viewTripId.value = trip.id
+  showForm.value = true
+}
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
@@ -69,12 +75,13 @@ const statusColour: Record<Trip['status'], string> = {
     <!-- Main -->
     <main class="max-w-5xl mx-auto px-6 py-10">
 
-      <!-- Trip input form (inline) -->
+      <!-- Trip input form (inline) — new or reopen existing -->
       <TripInputForm
         v-if="showForm"
         class="mb-8"
+        :view-trip-id="viewTripId ?? undefined"
         @success="onTripCreated"
-        @cancel="showForm = false; void tripStore.fetchTrips()"
+        @cancel="showForm = false; viewTripId = null; void tripStore.fetchTrips()"
       />
 
       <!-- Dashboard header + CTA -->
@@ -115,12 +122,18 @@ const statusColour: Record<Trip['status'], string> = {
                 {{ trip.region }} · {{ trip.startDate }} → {{ trip.endDate }}
               </p>
             </div>
-            <span
-              class="badge font-mono"
-              :style="`color:${statusColour[trip.status]};background:transparent;border-color:${statusColour[trip.status]}33`"
-            >
-              {{ trip.status }}
-            </span>
+            <div style="display:flex;align-items:center;gap:12px">
+              <button
+                v-if="trip.status === 'confirmed' || trip.status === 'completed'"
+                class="btn text-13"
+                style="padding:4px 12px;font-size:12px"
+                @click="openTrip(trip)"
+              >View results</button>
+              <span
+                class="badge font-mono"
+                :style="`color:${statusColour[trip.status]};background:transparent;border-color:${statusColour[trip.status]}33`"
+              >{{ trip.status }}</span>
+            </div>
           </div>
         </div>
 
