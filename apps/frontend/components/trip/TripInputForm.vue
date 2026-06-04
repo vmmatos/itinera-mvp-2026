@@ -134,6 +134,15 @@ const step2Valid = computed(() =>
   budgetTotal.value > 0,
 )
 
+// ── Validation attempt flags ──────────────────────────────────
+const step1Attempted = ref(false)
+const step2Attempted = ref(false)
+
+const goToStep2 = (): void => {
+  step1Attempted.value = true
+  if (step1Valid.value) { step1Attempted.value = false; step.value = 2 }
+}
+
 // ── Submit → enters step 3 ────────────────────────────────────
 
 const store = useTripPlannerStore()
@@ -166,6 +175,7 @@ const submit = async (): Promise<void> => {
       preferences: {
         persona:      t.persona!,
         flexibility:  t.flexibility,
+        pace:         tripFlexibility.value,
         dietary:      [],
         constraints:  [],
         mustHaves:    mustHaves.value,
@@ -182,6 +192,13 @@ const submit = async (): Promise<void> => {
   } catch {
     // error surfaced via store.error
   }
+}
+
+const attemptSubmit = async (): Promise<void> => {
+  step2Attempted.value = true
+  if (!step2Valid.value) return
+  step2Attempted.value = false
+  await submit()
 }
 
 // ── Step 3: Negotiate (polling) ───────────────────────────────
@@ -730,7 +747,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
             v-for="t in travellers"
             :key="t.id"
             data-testid="traveller-card"
-            style="border: var(--hair); background: var(--bg-1); border-radius: var(--r-2); padding: var(--s-4);"
+            :style="`background:var(--bg-1);border-radius:var(--r-2);padding:var(--s-4);border:1px solid ${step1Attempted && (!t.name.trim() || !t.persona) ? 'var(--red)' : 'var(--line-2)'}`"
           >
             <!-- Name row -->
             <div style="display:flex;align-items:center;gap:var(--s-3);margin-bottom:var(--s-3)">
@@ -747,6 +764,12 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
                   {{ t.name }}
                   <span class="role">organiser</span>
                 </span>
+                <p
+                  v-if="step1Attempted && !t.isCurrentUser && !t.name.trim()"
+                  style="color:var(--red);font-size:var(--t-12);margin:2px 0 0;font-family:var(--mono)"
+                >
+                  Name is required
+                </p>
               </div>
               <button
                 v-if="!t.isCurrentUser"
@@ -774,6 +797,12 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
                   <span class="pc-agent">{{ p.agent }}</span>
                 </button>
               </div>
+              <p
+                v-if="step1Attempted && !t.persona"
+                style="color:var(--red);font-size:var(--t-12);margin:4px 0 0;font-family:var(--mono)"
+              >
+                Select a persona to continue
+              </p>
             </div>
 
             <!-- Flexibility row -->
@@ -808,8 +837,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
           <span class="helper">{{ travellers.length }} traveller{{ travellers.length !== 1 ? 's' : '' }}</span>
           <button
             class="btn btn-primary"
-            :disabled="!step1Valid"
-            @click="step = 2"
+            @click="goToStep2"
           >
             Next <span style="margin-left:4px">→</span>
           </button>
@@ -862,25 +890,37 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
 
         <div class="field-row">
           <div class="field-label">Trip name</div>
-          <div class="field-input" style="width:100%">
+          <div class="field-input" style="width:100%;flex-direction:column;align-items:stretch">
             <input
               v-model="tripName"
               class="txt full lg"
               placeholder="e.g. Cusco run · Jun 2026"
               data-testid="trip-name"
             />
+            <p
+              v-if="step2Attempted && !tripName.trim()"
+              style="color:var(--red);font-size:var(--t-12);margin:4px 0 0;font-family:var(--mono)"
+            >
+              Trip name is required
+            </p>
           </div>
         </div>
 
         <div class="field-row">
           <div class="field-label">Destination</div>
-          <div class="field-input" style="width:100%">
+          <div class="field-input" style="width:100%;flex-direction:column;align-items:stretch">
             <input
               v-model="region"
               class="txt full"
               placeholder="e.g. Cusco + Sacred Valley, Peru"
               data-testid="region"
             />
+            <p
+              v-if="step2Attempted && !region.trim()"
+              style="color:var(--red);font-size:var(--t-12);margin:4px 0 0;font-family:var(--mono)"
+            >
+              Destination is required
+            </p>
           </div>
         </div>
 
@@ -905,6 +945,18 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
             />
             <span v-if="nights > 0" class="helper">{{ nights }} night{{ nights !== 1 ? 's' : '' }}</span>
           </div>
+          <p
+            v-if="step2Attempted && !startDate"
+            style="color:var(--red);font-size:var(--t-12);margin:4px 0 0;font-family:var(--mono)"
+          >
+            Select a start date
+          </p>
+          <p
+            v-else-if="step2Attempted && (!endDate || nights <= 0)"
+            style="color:var(--red);font-size:var(--t-12);margin:4px 0 0;font-family:var(--mono)"
+          >
+            End date must be after start date
+          </p>
         </div>
 
         <div class="field-row">
@@ -1006,14 +1058,19 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
         </div>
 
         <div class="user-form-foot">
-          <span class="helper">{{ step2Valid ? 'ready' : 'fill required fields' }}</span>
+          <span
+            class="helper"
+            :style="step2Attempted && !step2Valid ? 'color:var(--red)' : ''"
+          >
+            {{ step2Attempted && !step2Valid ? 'fix errors above' : step2Valid ? 'ready' : '' }}
+          </span>
           <div style="display:flex;gap:8px">
             <button class="btn" @click="step = 1">Back</button>
             <button
               class="btn btn-primary"
-              :disabled="!step2Valid || store.loading"
+              :disabled="store.loading"
               data-testid="submit-btn"
-              @click="submit"
+              @click="attemptSubmit"
             >
               {{ store.loading ? 'Starting…' : 'Start negotiation' }}
               <span style="margin-left:4px">→</span>
