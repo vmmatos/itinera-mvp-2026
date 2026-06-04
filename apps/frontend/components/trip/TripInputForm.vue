@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed, watch, onUnmounted, onMounted } from 'vue'
 import { PERSONA_LABELS, PERSONA_AGENT, AGENT_COLOURS } from '~/types/index'
-import type { Persona, Flexibility, CreateTripInput, TravellerInput, SatisfactionScore } from '~/types/index'
+import type { Persona, Flexibility, Currency, CreateTripInput, TravellerInput, SatisfactionScore, AgentStreamEvent } from '~/types/index'
+
+const props = withDefaults(defineProps<{ viewTripId?: string }>(), { viewTripId: undefined })
 
 const emit = defineEmits<{
   success: [tripId: string]
@@ -79,7 +81,9 @@ const tripName    = ref('')
 const region      = ref('')
 const startDate   = ref('')
 const endDate     = ref('')
-const budgetTotal = ref(3000)
+const budgetTotal    = ref(3000)
+const budgetCurrency = ref<Currency>('EUR')
+const currencySymbol = computed(() => budgetCurrency.value === 'EUR' ? '€' : '$')
 const tripFlexibility = ref<Flexibility>('medium')
 
 const mustHaveInput  = ref('')
@@ -91,6 +95,10 @@ const nights = computed(() => {
   if (!startDate.value || !endDate.value) return 0
   const ms = new Date(endDate.value).getTime() - new Date(startDate.value).getTime()
   return Math.max(0, Math.round(ms / 86_400_000))
+})
+
+watch(startDate, (newStart) => {
+  if (endDate.value && endDate.value < newStart) endDate.value = newStart
 })
 
 const budgetPercent = computed(() =>
@@ -133,6 +141,16 @@ const api   = useApi()
 
 const activeTripId = ref<string | null>(null)
 
+// Reopen existing confirmed trip directly at step 4
+onMounted(() => {
+  if (props.viewTripId) {
+    activeTripId.value = props.viewTripId
+    negotiationStatus.value = 'confirmed'
+    step.value = 4
+    startNegotiationPolling(props.viewTripId)
+  }
+})
+
 const submit = async (): Promise<void> => {
   if (!step1Valid.value || !step2Valid.value) return
 
@@ -142,7 +160,7 @@ const submit = async (): Promise<void> => {
     startDate:      startDate.value,
     endDate:        endDate.value,
     budgetTotal:    budgetTotal.value,
-    budgetCurrency: 'EUR',
+    budgetCurrency: budgetCurrency.value,
     travellers:     travellers.value.map((t): TravellerInput => ({
       userId: t.isCurrentUser ? currentUserId.value : undefined,
       preferences: {
@@ -235,13 +253,71 @@ onUnmounted(() => stopPolling())
 
 const { events: streamEvents, connected: streamConnected } = useAgentStream(activeTripId)
 
+// Merge SSE events (preferred — have reasoning) with DB proposals (fallback — always available).
+// Race condition: agents publish before SSE connects → ws-relay drops missed messages.
+// DB polling via liveProposals ensures the panel always has data.
+const discussionEvents = computed((): AgentStreamEvent[] => {
+  if (streamEvents.value.length > 0) return streamEvents.value
+  return [...liveProposals.value]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .map((p): AgentStreamEvent => ({
+      tripId:    activeTripId.value ?? '',
+      type:      'propose',
+      agent:     p.agent as AgentStreamEvent['agent'],
+      round:     p.round,
+      timestamp: p.createdAt,
+      content:   p.content,
+    }))
+})
+
 const decisionEvent = computed(() =>
-  streamEvents.value.find(
+  discussionEvents.value.find(
     (e) => (e.agent === 'orchestrator' || e.agent === 'validator') && e.round === 6,
   ) ?? null,
 )
 
+// Orchestrator events — displayed separately in decisions panel
+const orchestratorDecisions = computed(() =>
+  discussionEvents.value.filter((e) => e.agent === 'orchestrator'),
+)
+
+// Non-orchestrator events for the main feed
+const agentOnlyEvents = computed(() =>
+  discussionEvents.value.filter((e) => e.agent !== 'orchestrator'),
+)
+
 // ── Step 4: Itinerary review ──────────────────────────────────
+
+type TimeSlot = 'morning' | 'afternoon' | 'evening' | 'unscheduled'
+const TIME_SLOT_LABELS: Record<TimeSlot, string> = {
+  morning:     '🌅 Morning',
+  afternoon:   '☀️ Afternoon',
+  evening:     '🌙 Evening',
+  unscheduled: '📍 Activities',
+}
+const TIME_SLOT_ORDER: TimeSlot[] = ['morning', 'afternoon', 'evening', 'unscheduled']
+
+function getTimeSlot(time?: string): TimeSlot {
+  if (!time) return 'unscheduled'
+  const t = time.toLowerCase()
+  if (t.includes('morn')) return 'morning'
+  if (t.includes('after') || t.includes('noon')) return 'afternoon'
+  if (t.includes('even') || t.includes('night')) return 'evening'
+  const hourMatch = t.match(/^(\d{1,2})[:h]/)
+  if (hourMatch) {
+    const h = parseInt(hourMatch[1], 10)
+    if (h >= 6 && h < 12) return 'morning'
+    if (h >= 12 && h < 18) return 'afternoon'
+    if (h >= 18 || h < 6) return 'evening'
+  }
+  return 'unscheduled'
+}
+
+function weatherEmoji(risk: string): string {
+  if (risk === 'high') return '🌧️'
+  if (risk === 'medium') return '🌤️'
+  return '☀️'
+}
 
 interface ItineraryActivity {
   name:          string
@@ -250,6 +326,7 @@ interface ItineraryActivity {
   notes?:        string
   cost?:         number
   weatherAlert?: string
+  satisfies?:    string[]
 }
 
 interface ItineraryDay {
@@ -257,61 +334,6 @@ interface ItineraryDay {
   date?:      string
   activities: ItineraryActivity[]
   meals?:     Array<{ type: string; name: string }>
-}
-
-function tryParseItinerary(content: Record<string, unknown>): ItineraryDay[] {
-  const mapActivities = (raw: unknown): ItineraryActivity[] => {
-    if (!Array.isArray(raw)) return []
-    return (raw as Array<Record<string, unknown>>).map((a) => ({
-      name:         String(a['name'] ?? a['activity'] ?? a['title'] ?? '—'),
-      time:         typeof a['time'] === 'string' ? a['time']
-                      : typeof a['startTime'] === 'string' ? a['startTime'] : undefined,
-      location:     typeof a['location'] === 'string' ? a['location'] : undefined,
-      notes:        typeof a['notes'] === 'string' ? a['notes']
-                      : typeof a['description'] === 'string' ? a['description'] : undefined,
-      cost:         typeof a['cost'] === 'number' ? a['cost'] : undefined,
-      weatherAlert: typeof a['weatherAlert'] === 'string' ? a['weatherAlert'] : undefined,
-    }))
-  }
-
-  const tryFromObj = (obj: unknown): ItineraryDay[] => {
-    if (!obj || typeof obj !== 'object') return []
-    const o = obj as Record<string, unknown>
-    const raw = o['itinerary'] ?? o['days'] ?? o['plan'] ?? o['schedule']
-    if (!Array.isArray(raw) || raw.length === 0) return []
-    return (raw as Array<Record<string, unknown>>).map((d, i) => ({
-      day:        typeof d['day'] === 'number' ? d['day'] : i + 1,
-      date:       typeof d['date'] === 'string' ? d['date'] : undefined,
-      activities: mapActivities(d['activities']),
-      meals:      Array.isArray(d['meals'])
-        ? (d['meals'] as Array<Record<string, unknown>>).map((m) => ({
-            type: String(m['type'] ?? 'meal'),
-            name: String(m['name'] ?? '—'),
-          }))
-        : undefined,
-    }))
-  }
-
-  const direct = tryFromObj(content)
-  if (direct.length > 0) return direct
-
-  if (typeof content['raw'] === 'string') {
-    try {
-      // Strip markdown code fences (```json ... ```) before parsing
-      const stripped = content['raw']
-        .replace(/^```(?:json)?\s*/i, '')
-        .replace(/\s*```\s*$/, '')
-        .trim()
-      const fromRaw = tryFromObj(JSON.parse(stripped) as unknown)
-      if (fromRaw.length > 0) return fromRaw
-    } catch { /* not JSON */ }
-  }
-
-  return []
-}
-
-function stripCodeFences(raw: string): string {
-  return raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
 }
 
 const latestByAgent = computed((): Record<string, ProposalEntry> => {
@@ -323,24 +345,115 @@ const latestByAgent = computed((): Record<string, ProposalEntry> => {
   return map
 })
 
+function extractJson(raw: string): unknown | null {
+  // 1. Direct parse
+  try { return JSON.parse(raw) } catch { /* */ }
+  // 2. Strip ``` fences with simple replace (most reliable)
+  const stripped = raw
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```\s*$/i, '')
+    .trim()
+  try { return JSON.parse(stripped) } catch { /* */ }
+  // 3. Grab first { ... } block (greedy — handles extra text around JSON)
+  const m = raw.match(/\{[\s\S]*\}/)
+  if (m) { try { return JSON.parse(m[0]) } catch { /* */ } }
+  return null
+}
+
+function buildDays(obj: unknown): ItineraryDay[] {
+  if (!obj || typeof obj !== 'object') return []
+  const o = obj as Record<string, unknown>
+  const arr = o['itinerary'] ?? o['days'] ?? o['plan'] ?? o['schedule']
+  if (!Array.isArray(arr) || arr.length === 0) return []
+  return (arr as Array<Record<string, unknown>>).map((d, i) => ({
+    day:  typeof d['day'] === 'number' ? d['day'] : i + 1,
+    date: typeof d['date'] === 'string' ? d['date'] : undefined,
+    activities: Array.isArray(d['activities'])
+      ? (d['activities'] as Array<Record<string, unknown>>).map((a) => ({
+          name:         String(a['name'] ?? a['activity'] ?? a['title'] ?? '—'),
+          time:         typeof a['time'] === 'string' ? a['time'] : typeof a['startTime'] === 'string' ? a['startTime'] : undefined,
+          location:     typeof a['location'] === 'string' ? a['location'] : undefined,
+          notes:        typeof a['notes'] === 'string' ? a['notes'] : typeof a['description'] === 'string' ? a['description'] : undefined,
+          cost:         typeof a['cost'] === 'number' ? a['cost'] : undefined,
+          weatherAlert: typeof a['weatherAlert'] === 'string' ? a['weatherAlert'] : undefined,
+          satisfies:    Array.isArray(a['satisfies']) ? (a['satisfies'] as string[]) : undefined,
+        }))
+      : [],
+    meals: Array.isArray(d['meals'])
+      ? (d['meals'] as Array<Record<string, unknown>>).map((m) => ({ type: String(m['type'] ?? 'meal'), name: String(m['name'] ?? '—') }))
+      : undefined,
+  }))
+}
+
+
 const parsedItinerary = computed((): ItineraryDay[] => {
-  // Prefer orchestrator round 3 (compromise proposal from /propose endpoint)
-  const orchestratorRound3 = liveProposals.value.find(
-    (p) => p.agent === 'orchestrator' && p.round === 3,
-  )
-  if (orchestratorRound3) {
-    const days = tryParseItinerary(orchestratorRound3.content)
-    if (days.length > 0) return days
+  // Try every possible way to extract ItineraryDay[] from a proposal
+  const tryExtract = (content: Record<string, unknown>): ItineraryDay[] => {
+    // 1. Content has itinerary key directly
+    const d1 = buildDays(content)
+    if (d1.length > 0) return d1
+
+    // 2. Content has { raw: "string" } — try several parse strategies
+    const rawVal = content['raw']
+    if (typeof rawVal !== 'string') return []
+    const r = rawVal as string
+
+    // 2a. Strip code fences then parse (works when Claude's JSON is complete)
+    const stripped = r.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim()
+    try { const d = buildDays(JSON.parse(stripped) as unknown); if (d.length > 0) return d } catch { /* */ }
+
+    // 2b. Direct parse of raw string (no fences)
+    try { const d = buildDays(JSON.parse(r) as unknown); if (d.length > 0) return d } catch { /* */ }
+
+    // 2c. String-aware extraction of "itinerary": [...] — handles [] inside string values
+    //     and partial JSON by collecting complete objects individually
+    const itKey = r.indexOf('"itinerary"')
+    if (itKey !== -1) {
+      const arrStart = r.indexOf('[', itKey)
+      if (arrStart !== -1) {
+        const items: unknown[] = []
+        let pos = arrStart + 1
+        while (pos < r.length) {
+          while (pos < r.length && /[ \t\r\n,]/.test(r[pos]!)) pos++
+          if (pos >= r.length || r[pos] === ']') break
+          if (r[pos] !== '{') break
+          let depth = 0; let objEnd = -1; let inStr = false; let esc = false
+          for (let j = pos; j < r.length; j++) {
+            const ch = r[j]!
+            if (esc) { esc = false; continue }
+            if (ch === '\\' && inStr) { esc = true; continue }
+            if (ch === '"') { inStr = !inStr; continue }
+            if (!inStr) {
+              if (ch === '{') depth++
+              else if (ch === '}') { depth--; if (depth === 0) { objEnd = j + 1; break } }
+            }
+          }
+          if (objEnd === -1) break
+          try { items.push(JSON.parse(r.slice(pos, objEnd))) } catch { /* skip malformed */ }
+          pos = objEnd
+        }
+        if (items.length > 0) {
+          const d = buildDays({ itinerary: items })
+          if (d.length > 0) return d
+        }
+      }
+    }
+
+    return []
   }
 
-  // Fallback: any proposal with structured itinerary data
-  const ordered = ['orchestrator', 'validator', 'logistics', 'finance', 'alice', 'bob', 'carlos', 'diana']
-  for (const agent of ordered) {
-    const p = latestByAgent.value[agent]
-    if (!p) continue
-    const days = tryParseItinerary(p.content)
-    if (days.length > 0) return days
+  // Prefer orchestrator proposals, highest round first
+  for (const p of [...liveProposals.value].filter(x => x.agent === 'orchestrator').sort((a, b) => b.round - a.round)) {
+    const d = tryExtract(p.content)
+    if (d.length > 0) return d
   }
+
+  // Fallback: any other agent
+  for (const agent of ['validator', 'logistics', 'finance', 'alice', 'bob', 'carlos', 'diana'] as const) {
+    const p = latestByAgent.value[agent]
+    if (p) { const d = tryExtract(p.content); if (d.length > 0) return d }
+  }
+
   return []
 })
 
@@ -348,10 +461,15 @@ const validatorSummary = computed(() => {
   const p = latestByAgent.value['validator']
   if (!p) return null
   const c = p.content
+  const fairness  = c['fairness']   as Record<string, unknown> | undefined
+  const scoring   = c['scoring']    as Record<string, unknown> | undefined
+  const constr    = c['constraints'] as Record<string, unknown> | undefined
+  const metrics   = c['metrics']    as Record<string, unknown> | undefined
   return {
-    metrics: c['metrics'] as Record<string, unknown> | undefined,
-    scoring: c['scoring'] as Record<string, unknown> | undefined,
-    fairness: typeof c['fairness'] === 'number' ? c['fairness'] : undefined,
+    fairnessScore:     typeof fairness?.['fairnessScore']    === 'number' ? fairness['fairnessScore']    as number : null,
+    overallScore:      typeof scoring?.['overallScore']      === 'number' ? scoring['overallScore']      as number : null,
+    constraintsPassed: constr?.['passed'] === true ? true : constr?.['passed'] === false ? false : null as boolean | null,
+    rounds:            typeof metrics?.['convergenceRounds'] === 'number' ? metrics['convergenceRounds'] as number : null,
   }
 })
 
@@ -362,17 +480,6 @@ const financeSummary = computed(() => {
   const bd = c['costBreakdown'] as Record<string, unknown> | undefined
   const bv = c['budgetValidation'] as Record<string, unknown> | undefined
   return { grandTotal: bd?.['grandTotal'], currency: bd?.['currency'], status: bv?.['status'] }
-})
-
-const orchestratorText = computed((): string | null => {
-  const p = latestByAgent.value['orchestrator']
-  if (!p) return null
-  const raw = p.content['raw']
-  if (typeof raw === 'string') {
-    const clean = stripCodeFences(raw)
-    return clean.slice(0, 800) + (clean.length > 800 ? '…' : '')
-  }
-  return null
 })
 
 // ── Step 4: Scores, cost breakdown, weather ───────────────────
@@ -386,7 +493,18 @@ const travellerScores = computed<SatisfactionScore[]>(() => {
 const costCategories = computed<Array<{ label: string; amount: number }>>(() => {
   const fp = liveProposals.value.find((p) => p.agent === 'finance')
   const c = fp?.content
-  const cats = (c?.['costBreakdown'] as Record<string, unknown> | undefined)?.['categories']
+  const bd = c?.['costBreakdown'] as Record<string, unknown> | undefined
+  if (!bd) return []
+
+  const byCat = bd['byCategory'] as Record<string, number> | undefined
+  if (byCat && typeof byCat === 'object') {
+    return Object.entries(byCat)
+      .map(([label, amount]) => ({ label, amount }))
+      .filter((x) => x.amount > 0)
+      .sort((a, b) => b.amount - a.amount)
+  }
+
+  const cats = bd['categories']
   return Array.isArray(cats)
     ? [...(cats as Array<{ label: string; amount: number }>)].sort((a, b) => b.amount - a.amount)
     : []
@@ -396,6 +514,46 @@ const weatherAlerts = computed<string[]>(() => {
   const lp = liveProposals.value.find((p) => p.agent === 'logistics')
   const c = lp?.content
   return Array.isArray(c?.['weatherAlerts']) ? (c['weatherAlerts'] as string[]) : []
+})
+
+const logisticsWeatherSummary = computed<string | null>(() => {
+  const lp = liveProposals.value.find((p) => p.agent === 'logistics')
+  const c = lp?.content
+  if (!c) return null
+  const summary = c['weatherSummary'] ?? c['summary'] ?? c['overview']
+  return typeof summary === 'string' ? summary.slice(0, 200) : null
+})
+
+// Per-day weather cards — structured when dayAssessments present, fallback to overallRisk per itinerary day
+interface WeatherCard { day: number; date?: string; risk: string; label: string }
+
+const dayWeatherCards = computed<WeatherCard[]>(() => {
+  const lp = liveProposals.value.find((p) => p.agent === 'logistics')
+  const c = lp?.content
+  if (!c) return []
+
+  const assessments = c['dayAssessments']
+  if (Array.isArray(assessments) && assessments.length > 0) {
+    return (assessments as Array<Record<string, unknown>>).map((d) => {
+      const risk = typeof d['weatherRisk'] === 'string' ? d['weatherRisk'] as string : 'low'
+      return {
+        day:   typeof d['day'] === 'number' ? d['day'] as number : 0,
+        date:  typeof d['date'] === 'string' ? d['date'] as string : undefined,
+        risk,
+        label: risk === 'high' ? 'stormy' : risk === 'medium' ? 'cloudy' : 'clear',
+      }
+    })
+  }
+
+  // Fallback: use overallRisk for each day in the parsed itinerary
+  const overallRisk = typeof c['overallRisk'] === 'string' ? c['overallRisk'] as string : null
+  if (!overallRisk || parsedItinerary.value.length === 0) return []
+  return parsedItinerary.value.map((d) => ({
+    day:   d.day,
+    date:  d.date,
+    risk:  overallRisk,
+    label: overallRisk === 'high' ? 'stormy' : overallRisk === 'medium' ? 'cloudy' : 'clear',
+  }))
 })
 
 // ── Step 4: Share link ────────────────────────────────────────
@@ -424,7 +582,12 @@ const handleShare = async (): Promise<void> => {
 }
 
 const handleAccept = (): void => { step.value = 5 }
-const handleReject = (): void => {
+const handleReject = async (): Promise<void> => {
+  if (activeTripId.value) {
+    try {
+      await api.patch(`/api/v1/trips/${activeTripId.value}/status`, { status: 'cancelled' })
+    } catch { /* best-effort — proceed regardless */ }
+  }
   stopPolling()
   emit('cancel')
 }
@@ -442,8 +605,11 @@ const buildExportPayload = (): Record<string, unknown> => ({
     startDate:      startDate.value || undefined,
     endDate:        endDate.value || undefined,
     budgetTotal:    budgetTotal.value,
-    budgetCurrency: 'EUR',
+    budgetCurrency: budgetCurrency.value,
     travellers:     travellers.value.map((t) => ({ name: t.name })),
+    weather: weatherAlerts.value.length > 0
+      ? { alerts: weatherAlerts.value }
+      : undefined,
     days: parsedItinerary.value.map((d) => ({
       day:        d.day,
       date:       d.date,
@@ -515,16 +681,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
     <!-- App bar -->
     <div class="app-bar">
       <div class="crumb">
-        <div class="logo">
-          <svg width="18" height="18" viewBox="0 0 28 28">
-            <circle cx="6" cy="14" r="2.4" stroke="#00ff88" stroke-width="1.2"/>
-            <circle cx="14" cy="6" r="2.4" stroke="#f2f2f2" stroke-width="1.2"/>
-            <circle cx="22" cy="14" r="2.4" stroke="#f2f2f2" stroke-width="1.2"/>
-            <circle cx="14" cy="22" r="2.4" stroke="#f2f2f2" stroke-width="1.2"/>
-            <path d="M8 13 L21 15" stroke="#00ff88" stroke-width="1.2"/>
-          </svg>
-          <span class="word">itinera</span>
-        </div>
+        <AppLogo />
         <span class="sep">/</span>
         <b>{{ tripName || 'New trip' }}</b>
         <span class="sep">/</span>
@@ -552,13 +709,6 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
       </div>
       <div class="ustep" :class="{ cur: step === 5 }">
         <span class="n">05</span> Export
-      </div>
-      <div style="margin-left:auto;align-self:center" class="helper">
-        step 0{{ step }} ·
-        <span v-if="step <= 2">fill in your details</span>
-        <span v-else-if="step === 3">agents are negotiating…</span>
-        <span v-else-if="step === 4">review the proposal</span>
-        <span v-else>download your itinerary</span>
       </div>
     </div>
 
@@ -750,6 +900,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
               type="date"
               class="txt"
               style="width:140px"
+              :min="startDate"
               data-testid="end-date"
             />
             <span v-if="nights > 0" class="helper">{{ nights }} night{{ nights !== 1 ? 's' : '' }}</span>
@@ -759,13 +910,23 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
         <div class="field-row">
           <div class="field-label">Budget / pp</div>
           <div class="field-input" style="width:100%;flex-direction:column;align-items:stretch;gap:var(--s-2)">
+            <div style="display:flex;gap:6px;margin-bottom:4px">
+              <button
+                v-for="c in (['EUR', 'USD'] as Currency[])"
+                :key="c"
+                class="chip"
+                :class="{ on: budgetCurrency === c }"
+                style="height:24px;font-size:11px;padding:0 8px"
+                @click="budgetCurrency = c"
+              >{{ c }}</button>
+            </div>
             <div class="budget">
-              <span class="helper" style="min-width:50px">$500</span>
+              <span class="helper" style="min-width:50px">{{ currencySymbol }}500</span>
               <div class="track" style="position:relative">
                 <div class="fill" :style="`width:${budgetPercent}%`" />
               </div>
-              <span class="helper" style="min-width:60px">$20k</span>
-              <span class="val">${{ budgetTotal.toLocaleString() }} ceiling</span>
+              <span class="helper" style="min-width:60px">{{ currencySymbol }}20k</span>
+              <span class="val">{{ currencySymbol }}{{ budgetTotal.toLocaleString() }} ceiling</span>
             </div>
             <input
               v-model.number="budgetTotal"
@@ -873,7 +1034,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
           <h3>{{ region || '—' }}{{ nights > 0 ? ` · ${nights} nights` : '' }} · {{ travellers.length }} travellers</h3>
           <div class="kv">
             <div class="k">target / pp</div>
-            <div class="v"><span class="mono">${{ budgetPerPerson.toLocaleString() }}</span></div>
+            <div class="v"><span class="mono">{{ currencySymbol }}{{ budgetPerPerson.toLocaleString() }}</span></div>
             <div class="k">pace</div>
             <div class="v">{{ tripFlexibility === 'low' ? 'slow' : tripFlexibility === 'medium' ? 'moderate' : 'packed' }}</div>
             <div class="k">est. rounds</div>
@@ -918,10 +1079,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
             <h2 style="margin:0;font-size:var(--t-28);font-weight:400;letter-spacing:-0.02em">
               Agents are building your itinerary
             </h2>
-            <span v-if="negotiationStatus === 'negotiating'" class="helper pulse-green" style="font-family:var(--mono)">
-              ● live
-            </span>
-            <span v-else-if="negotiationStatus === 'confirmed'" style="color:var(--green);font-family:var(--mono);font-size:var(--t-13)">
+            <span v-if="negotiationStatus === 'confirmed'" style="color:var(--green);font-family:var(--mono);font-size:var(--t-13)">
               ✓ confirmed
             </span>
             <span v-else-if="negotiationStatus === 'cancelled'" style="color:var(--red);font-family:var(--mono);font-size:var(--t-13)">
@@ -1005,14 +1163,48 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
       <div class="user-right">
         <div class="preview-head">
           <span class="ttl">agent discussion</span>
-          <div class="lz" v-if="streamConnected">
+          <div class="lz" v-if="streamConnected && streamEvents.length > 0">
             <span class="pulse" />
             <span>live</span>
           </div>
-          <span v-else class="helper">{{ streamEvents.length }} messages</span>
         </div>
 
-        <!-- Decision card — shown once negotiation ends -->
+        <!-- Orchestrator decision card — shown always when available -->
+        <div
+          v-if="orchestratorDecisions.length > 0"
+          style="margin-bottom:var(--s-4)"
+        >
+          <div class="helper" style="margin-bottom:var(--s-2)">Orchestrator decisions</div>
+          <div
+            v-for="evt in orchestratorDecisions"
+            :key="evt.timestamp + evt.round"
+            class="fade-in"
+            style="margin-bottom:4px;padding:var(--s-3) var(--s-4);border-radius:var(--r-2)"
+            :style="evt.type === 'accept'
+              ? 'background:rgba(0,255,136,0.06);border:1px solid rgba(0,255,136,0.24)'
+              : 'background:rgba(91,157,255,0.06);border:1px solid rgba(91,157,255,0.24)'"
+          >
+            <div style="display:flex;align-items:center;gap:var(--s-2);margin-bottom:4px;flex-wrap:wrap">
+              <span style="font-size:var(--t-12);font-family:var(--mono);font-weight:600;color:var(--fg-0)">
+                orchestrator
+              </span>
+              <span class="helper">round {{ evt.round }} · {{ ROUND_LABELS[evt.round] ?? 'processing' }}</span>
+              <span
+                style="font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.06em;padding:1px 6px;border-radius:var(--r-1);background:rgba(255,255,255,0.06);color:var(--fg-2)"
+              >{{ evt.type }}</span>
+            </div>
+            <p
+              v-if="evt.reasoning"
+              style="margin:0;font-size:var(--t-13);color:var(--fg-1);line-height:1.6"
+            >{{ evt.reasoning }}</p>
+            <p
+              v-else-if="typeof evt.content === 'object' && evt.content !== null"
+              style="margin:0;font-size:var(--t-13);color:var(--fg-3);font-style:italic"
+            >{{ Object.keys(evt.content as Record<string, unknown>).slice(0, 5).join(', ') }}</p>
+          </div>
+        </div>
+
+        <!-- Final decision card -->
         <div
           v-if="negotiationStatus !== 'negotiating' && decisionEvent"
           style="margin-bottom:var(--s-4);padding:var(--s-4);border-radius:var(--r-2)"
@@ -1034,32 +1226,45 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
           </p>
         </div>
 
-        <!-- Empty state -->
+        <!-- Skeleton loader — before any events arrive (SSE or DB) -->
         <div
-          v-if="streamEvents.length === 0"
-          style="padding:var(--s-8);text-align:center"
-        >
-          <span class="helper pulse-green">Waiting for agents…</span>
-        </div>
-
-        <!-- Discussion feed (newest at top) -->
-        <div
-          v-else
-          style="overflow-y:auto;height:60vh;display:flex;flex-direction:column;gap:1px"
+          v-if="discussionEvents.length === 0 && negotiationStatus === 'negotiating'"
+          style="display:flex;flex-direction:column;gap:6px"
         >
           <div
-            v-for="evt in streamEvents"
+            v-for="n in 4"
+            :key="n"
+            class="stream-skeleton"
+            style="padding:var(--s-3) var(--s-4);border:var(--hair);border-radius:var(--r-2);background:var(--bg-2)"
+          >
+            <div style="display:flex;gap:var(--s-3);align-items:center">
+              <div class="skel skel-dot" />
+              <div style="flex:1">
+                <div class="skel skel-line" style="width:40%;margin-bottom:6px" />
+                <div class="skel skel-line" style="width:75%" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Agent event feed (newest at top) -->
+        <div
+          v-if="discussionEvents.length > 0"
+          style="overflow-y:auto;max-height:55vh;display:flex;flex-direction:column;gap:1px"
+        >
+          <div
+            v-for="evt in agentOnlyEvents"
             :key="evt.timestamp + evt.agent + evt.round"
-            class="fade-in"
+            class="stream-event-slide"
             style="padding:var(--s-3) var(--s-4);border:var(--hair);border-radius:var(--r-2);background:var(--bg-2);display:flex;align-items:flex-start;gap:var(--s-3)"
           >
-            <!-- Agent dot -->
+            <!-- Agent status dot -->
             <span
               style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-top:5px;flex-shrink:0"
+              :class="negotiationStatus === 'negotiating' && evt === discussionEvents[0] ? 'pulse-green' : ''"
               :style="`background:${AGENT_COLOUR[evt.agent] ?? 'var(--fg-3)'}`"
             />
             <div style="flex:1;min-width:0">
-              <!-- Header row -->
               <div style="display:flex;align-items:center;gap:var(--s-2);margin-bottom:4px;flex-wrap:wrap">
                 <span
                   style="font-size:var(--t-12);font-family:var(--mono);font-weight:600"
@@ -1071,7 +1276,6 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
                   :style="`background:${AGENT_COLOUR[evt.agent] ?? 'var(--fg-4)'}18;color:${AGENT_COLOUR[evt.agent] ?? 'var(--fg-3)'}`"
                 >{{ evt.type }}</span>
               </div>
-              <!-- Reasoning / content -->
               <p
                 v-if="evt.reasoning"
                 style="margin:0;font-size:var(--t-13);color:var(--fg-1);line-height:1.6;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden"
@@ -1112,38 +1316,39 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
               <span style="font-family:var(--mono);font-size:var(--t-12);color:var(--green);font-weight:600;background:var(--green-bg);border:1px solid var(--green-line);padding:2px 8px;border-radius:var(--r-1)">Day {{ day.day }}</span>
               <span v-if="day.date" class="helper">{{ day.date }}</span>
             </div>
-            <div style="padding:var(--s-3) var(--s-4)">
+            <div style="padding:var(--s-2) var(--s-4) var(--s-3)">
               <div v-if="day.activities.length === 0" class="helper" style="padding:var(--s-2) 0">No structured activities.</div>
-              <div
-                v-for="(act, i) in day.activities"
-                :key="i"
-                style="display:flex;align-items:flex-start;gap:var(--s-3);padding:var(--s-3) 0;border-bottom:1px solid rgba(255,255,255,0.04)"
-              >
-                <!-- Time pill -->
-                <span
-                  v-if="act.time"
-                  style="font-family:var(--mono);font-size:var(--t-12);color:var(--green);background:var(--green-bg);padding:2px 6px;border-radius:var(--r-1);min-width:52px;text-align:center;flex-shrink:0;margin-top:1px"
-                >{{ act.time }}</span>
-                <span v-else style="min-width:52px;flex-shrink:0" />
-                <!-- Activity details -->
-                <div style="flex:1;min-width:0">
-                  <div style="display:flex;align-items:center;gap:var(--s-2);flex-wrap:wrap;margin-bottom:2px">
-                    <p style="margin:0;font-size:var(--t-14);color:var(--fg-0);font-weight:500">{{ act.name }}</p>
-                    <!-- Weather alert badge per activity -->
-                    <span
-                      v-if="act.weatherAlert"
-                      style="font-family:var(--mono);font-size:10px;color:var(--amber);background:var(--amber-bg);border:1px solid var(--amber-line);padding:1px 6px;border-radius:var(--r-1)"
-                    >⚠ {{ act.weatherAlert }}</span>
-                    <!-- Cost badge -->
-                    <span
-                      v-if="act.cost"
-                      style="font-family:var(--mono);font-size:var(--t-12);color:var(--fg-2)"
-                    >€{{ act.cost }}</span>
-                  </div>
-                  <p v-if="act.location" style="margin:0;font-size:var(--t-12);color:var(--fg-3)">{{ act.location }}</p>
-                  <p v-if="act.notes" style="margin:2px 0 0;font-size:var(--t-12);color:var(--fg-3);font-style:italic">{{ act.notes }}</p>
-                </div>
-              </div>
+              <template v-else>
+                <template v-for="slot in TIME_SLOT_ORDER" :key="slot">
+                  <template v-if="day.activities.filter(a => getTimeSlot(a.time) === slot).length > 0">
+                    <!-- Time-of-day header -->
+                    <div style="display:flex;align-items:center;gap:var(--s-2);padding:var(--s-2) 0 4px;margin-top:var(--s-3)">
+                      <span style="font-family:var(--mono);font-size:10px;color:var(--fg-3);letter-spacing:.06em;text-transform:uppercase">{{ TIME_SLOT_LABELS[slot] }}</span>
+                      <div style="flex:1;height:1px;background:rgba(255,255,255,0.06)" />
+                    </div>
+                    <!-- Activities in this slot -->
+                    <div
+                      v-for="(act, i) in day.activities.filter(a => getTimeSlot(a.time) === slot)"
+                      :key="i"
+                      style="padding:var(--s-2) var(--s-3);margin-bottom:2px;border-radius:var(--r-1);background:var(--bg-2);border:1px solid rgba(255,255,255,0.04)"
+                    >
+                      <div style="display:flex;align-items:center;gap:var(--s-2);flex-wrap:wrap;margin-bottom:2px">
+                        <p style="margin:0;font-size:var(--t-14);color:var(--fg-0);font-weight:500">{{ act.name }}</p>
+                        <span
+                          v-if="act.weatherAlert"
+                          style="font-family:var(--mono);font-size:10px;color:var(--amber);background:var(--amber-bg);border:1px solid var(--amber-line);padding:1px 6px;border-radius:var(--r-1)"
+                        >⚠ {{ act.weatherAlert }}</span>
+                        <span
+                          v-if="act.cost"
+                          style="font-family:var(--mono);font-size:var(--t-12);color:var(--fg-2)"
+                        >{{ financeSummary?.currency ?? currencySymbol }}{{ act.cost }}</span>
+                      </div>
+                      <p v-if="act.location" style="margin:0;font-size:var(--t-12);color:var(--fg-3)">{{ act.location }}</p>
+                      <p v-if="act.notes" style="margin:2px 0 0;font-size:var(--t-12);color:var(--fg-3);font-style:italic">{{ act.notes }}</p>
+                    </div>
+                  </template>
+                </template>
+              </template>
               <!-- Meals row -->
               <div v-if="day.meals && day.meals.length > 0" style="margin-top:var(--s-3);display:flex;gap:var(--s-2);flex-wrap:wrap;padding-top:var(--s-2);border-top:1px solid rgba(255,255,255,0.04)">
                 <span v-for="m in day.meals" :key="m.type" class="chip on" style="font-size:var(--t-12)">
@@ -1152,12 +1357,6 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
               </div>
             </div>
           </div>
-        </div>
-
-        <!-- Orchestrator proposal text fallback -->
-        <div v-else-if="orchestratorText" style="margin-bottom:var(--s-6);border:var(--hair);border-radius:var(--r-2);background:var(--bg-1);padding:var(--s-4)">
-          <div class="helper" style="margin-bottom:var(--s-3)">Agent-proposed itinerary</div>
-          <p style="font-size:var(--t-13);color:var(--fg-2);line-height:1.7;margin:0;white-space:pre-wrap">{{ orchestratorText }}</p>
         </div>
 
         <div v-else class="helper" style="margin-bottom:var(--s-6)">Proposal data is processing.</div>
@@ -1179,15 +1378,46 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
           <span class="ttl">Negotiation results</span>
         </div>
 
-        <!-- Weather alerts (conditional) -->
-        <div v-if="weatherAlerts.length > 0" style="margin-bottom:var(--s-4);display:flex;flex-direction:column;gap:var(--s-2)">
+        <!-- Weather forecast — per-day icon grid -->
+        <div v-if="dayWeatherCards.length > 0 || logisticsWeatherSummary" class="summary-card" style="margin-bottom:var(--s-4)">
+          <div class="sub" style="margin-bottom:var(--s-3)">Weather forecast</div>
+
+          <!-- Day-by-day icon grid -->
           <div
-            v-for="(alert, i) in weatherAlerts"
-            :key="i"
-            style="padding:var(--s-3) var(--s-4);background:var(--amber-bg);border:1px solid var(--amber-line);border-radius:var(--r-2);display:flex;align-items:flex-start;gap:var(--s-2)"
+            v-if="dayWeatherCards.length > 0"
+            style="display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:var(--s-2);margin-bottom:var(--s-3)"
           >
-            <span style="color:var(--amber);flex-shrink:0">⚠</span>
-            <p style="margin:0;font-size:var(--t-13);color:var(--fg-1)">{{ alert }}</p>
+            <div
+              v-for="card in dayWeatherCards"
+              :key="card.day"
+              style="display:flex;flex-direction:column;align-items:center;padding:var(--s-3) var(--s-2);background:var(--bg-2);border:var(--hair);border-radius:var(--r-2);gap:2px"
+            >
+              <span style="font-size:20px;line-height:1.2">{{ weatherEmoji(card.risk) }}</span>
+              <span style="font-family:var(--mono);font-size:10px;color:var(--fg-0);font-weight:600">Day {{ card.day }}</span>
+              <span v-if="card.date" style="font-family:var(--mono);font-size:9px;color:var(--fg-3)">{{ card.date.slice(5) }}</span>
+              <span
+                style="font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:.04em"
+                :style="card.risk === 'high' ? 'color:var(--red)' : card.risk === 'medium' ? 'color:var(--amber)' : 'color:var(--green)'"
+              >{{ card.label }}</span>
+            </div>
+          </div>
+
+          <!-- Summary text (truncated) -->
+          <p
+            v-if="logisticsWeatherSummary"
+            style="margin:0;font-size:var(--t-12);color:var(--fg-3);line-height:1.5"
+          >{{ logisticsWeatherSummary }}</p>
+
+          <!-- High-risk alerts -->
+          <div v-if="weatherAlerts.length > 0" style="display:flex;flex-direction:column;gap:var(--s-2);margin-top:var(--s-3)">
+            <div
+              v-for="(alert, i) in weatherAlerts"
+              :key="i"
+              style="padding:var(--s-2) var(--s-3);background:var(--amber-bg);border:1px solid var(--amber-line);border-radius:var(--r-2);display:flex;align-items:flex-start;gap:var(--s-2)"
+            >
+              <span style="color:var(--amber);flex-shrink:0;font-size:var(--t-12)">⚠</span>
+              <p style="margin:0;font-size:var(--t-12);color:var(--fg-1)">{{ alert }}</p>
+            </div>
           </div>
         </div>
 
@@ -1218,20 +1448,56 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
           </div>
         </div>
 
-        <!-- ScoresCard fallback: fairness only -->
+        <!-- Validator results: fairness + satisfaction + constraints -->
         <div v-else-if="validatorSummary" class="summary-card" style="margin-bottom:var(--s-4)">
-          <div class="sub">Fairness score</div>
-          <div class="kv">
-            <template v-if="validatorSummary.metrics">
-              <template v-for="(val, key) in validatorSummary.metrics" :key="String(key)">
-                <div class="k">{{ String(key) }}</div>
-                <div class="v mono">{{ val }}</div>
-              </template>
-            </template>
-            <div v-if="typeof validatorSummary.fairness === 'number'" class="k">Fairness</div>
-            <div v-if="typeof validatorSummary.fairness === 'number'" class="v mono" style="color:var(--green)">
-              {{ Math.round(validatorSummary.fairness * 100) }}%
+          <div class="sub" style="margin-bottom:var(--s-3)">Negotiation quality</div>
+
+          <!-- Fairness score bar -->
+          <div v-if="validatorSummary.fairnessScore !== null" style="margin-bottom:var(--s-3)">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+              <span style="font-size:var(--t-12);color:var(--fg-2)">Fairness</span>
+              <span
+                style="font-family:var(--mono);font-size:var(--t-12);font-weight:600"
+                :style="validatorSummary.fairnessScore >= 70 ? 'color:var(--green)' : 'color:var(--amber)'"
+              >{{ validatorSummary.fairnessScore }}%</span>
             </div>
+            <div style="height:5px;background:var(--bg-3);border-radius:3px;overflow:hidden">
+              <div
+                style="height:100%;border-radius:3px;transition:width .5s"
+                :style="`width:${validatorSummary.fairnessScore}%;background:${validatorSummary.fairnessScore >= 70 ? 'var(--green)' : 'var(--amber)'}`"
+              />
+            </div>
+          </div>
+
+          <!-- Overall satisfaction bar -->
+          <div v-if="validatorSummary.overallScore !== null" style="margin-bottom:var(--s-3)">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+              <span style="font-size:var(--t-12);color:var(--fg-2)">Satisfaction</span>
+              <span
+                style="font-family:var(--mono);font-size:var(--t-12);font-weight:600"
+                :style="validatorSummary.overallScore >= 70 ? 'color:var(--green)' : 'color:var(--amber)'"
+              >{{ validatorSummary.overallScore }}%</span>
+            </div>
+            <div style="height:5px;background:var(--bg-3);border-radius:3px;overflow:hidden">
+              <div
+                style="height:100%;border-radius:3px;transition:width .5s"
+                :style="`width:${validatorSummary.overallScore}%;background:${validatorSummary.overallScore >= 70 ? 'var(--green)' : 'var(--amber)'}`"
+              />
+            </div>
+          </div>
+
+          <!-- Constraints + rounds -->
+          <div class="kv" style="margin-top:var(--s-2)">
+            <template v-if="validatorSummary.constraintsPassed !== null">
+              <div class="k">Constraints</div>
+              <div class="v mono" :style="validatorSummary.constraintsPassed ? 'color:var(--green)' : 'color:var(--red)'">
+                {{ validatorSummary.constraintsPassed ? '✓ passed' : '✗ issues' }}
+              </div>
+            </template>
+            <template v-if="validatorSummary.rounds !== null">
+              <div class="k">Rounds</div>
+              <div class="v mono">{{ validatorSummary.rounds }}</div>
+            </template>
           </div>
         </div>
 
@@ -1252,13 +1518,24 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
 
         <!-- CostBreakdown fallback: finance summary only -->
         <div v-else-if="financeSummary" class="summary-card" style="margin-bottom:var(--s-4)">
-          <div class="sub">Budget review</div>
-          <div class="kv">
+          <div class="sub" style="margin-bottom:var(--s-3)">Budget review</div>
+          <!-- Status pill -->
+          <div v-if="financeSummary.status" style="margin-bottom:var(--s-3)">
+            <span
+              style="font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.06em;padding:3px 10px;border-radius:var(--r-1);font-weight:600"
+              :style="financeSummary.status === 'within_budget'
+                ? 'background:rgba(0,255,136,0.08);color:var(--green);border:1px solid rgba(0,255,136,0.3)'
+                : 'background:rgba(255,163,0,0.08);color:var(--amber);border:1px solid rgba(255,163,0,0.3)'"
+            >{{ financeSummary.status === 'within_budget' ? '✓ Within budget' : '⚠ Over budget' }}</span>
+          </div>
+          <!-- Cost line — only if a real value was calculated -->
+          <div class="kv" style="margin-top:var(--s-2)">
             <div class="k">Estimated cost</div>
-            <div class="v mono">{{ financeSummary.grandTotal ?? '—' }} {{ financeSummary.currency ?? '' }}</div>
-            <div class="k">Status</div>
-            <div class="v" :style="financeSummary.status === 'within_budget' ? 'color:var(--green)' : 'color:var(--amber)'">
-              {{ financeSummary.status ?? '—' }}
+            <div class="v mono">
+              <template v-if="financeSummary.grandTotal && Number(financeSummary.grandTotal) > 0">
+                {{ financeSummary.currency ?? '€' }}{{ Number(financeSummary.grandTotal).toLocaleString() }}
+              </template>
+              <span v-else class="helper">Not itemised</span>
             </div>
           </div>
         </div>
@@ -1334,9 +1611,9 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
             <div class="sub" style="margin-bottom:var(--s-3)">Trip summary</div>
             <div class="kv">
               <div class="k">Budget</div>
-              <div class="v mono">€{{ budgetTotal.toLocaleString() }}</div>
+              <div class="v mono">{{ currencySymbol }}{{ budgetTotal.toLocaleString() }}</div>
               <div class="k">Per person</div>
-              <div class="v mono">€{{ budgetPerPerson.toLocaleString() }}</div>
+              <div class="v mono">{{ currencySymbol }}{{ budgetPerPerson.toLocaleString() }}</div>
               <div class="k">Rounds completed</div>
               <div class="v mono">{{ liveProposals.length > 0 ? Math.max(...liveProposals.map(p => p.round)) : 6 }}</div>
               <div class="k">Agents involved</div>

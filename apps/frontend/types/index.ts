@@ -3,6 +3,8 @@
 //  Mirrors @itinera/shared but safe to import in Nuxt pages
 // ─────────────────────────────────────────────────────────────
 
+export type Currency = 'EUR' | 'USD'
+
 export type TripStatus =
   | 'draft'
   | 'negotiating'
@@ -84,7 +86,7 @@ export interface CreateTripInput {
   startDate:      string        // YYYY-MM-DD
   endDate?:       string        // YYYY-MM-DD — auto-calculated from sum of nights
   budgetTotal:    number
-  budgetCurrency: string
+  budgetCurrency: Currency
   travellers:     TravellerInput[]
 }
 
@@ -109,7 +111,7 @@ export interface DayPlan {
 export interface FinalPlan {
   days:            DayPlan[]
   totalCost:       number
-  currency:        string
+  currency:        Currency
   weatherAlerts:   string[]
   bookingRequired: string[]
 }
@@ -139,7 +141,7 @@ export interface Trip {
   startDate:      string
   endDate:        string
   budgetTotal:    number
-  budgetCurrency: string
+  budgetCurrency: Currency
   finalPlan?:     FinalPlan
   createdAt:      string
   updatedAt:      string

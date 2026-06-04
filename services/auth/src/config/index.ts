@@ -10,6 +10,8 @@ const EnvSchema = z.object({
   POSTGRES_DB: z.string().default('itinera'),
   POSTGRES_USER: z.string().default('itinera'),
   POSTGRES_PASSWORD: z.string().min(1),
+  REDIS_HOST: z.string().default('localhost'),
+  REDIS_PORT: z.coerce.number().default(6379),
   JWT_SECRET: z.string().min(1),
   JWT_ISSUER: z.string().optional(),
   JWT_CONSUMER_KEY: z.string().default('itinera'),
@@ -17,8 +19,8 @@ const EnvSchema = z.object({
   GOOGLE_CLIENT_SECRET: z.string().optional(),
   GOOGLE_CALLBACK_URL: z
     .string()
-    .default('http://localhost:8000/api/auth/oauth2/google/callback'),
-  FRONTEND_URL: z.string().default('http://localhost:3000'),
+    .default('http://localhost/api/auth/oauth2/google/callback'),
+  FRONTEND_URL: z.string().default('http://localhost'),
 });
 
 const parsed = EnvSchema.safeParse(process.env);

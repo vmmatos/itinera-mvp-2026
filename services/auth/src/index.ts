@@ -2,6 +2,8 @@ import 'reflect-metadata';
 import express from 'express';
 import helmet from 'helmet';
 import passport from 'passport';
+import cookieParser from 'cookie-parser';
+import Redis from 'ioredis';
 import { requestLogger, createLogger } from '@itinera/shared';
 import { AppDataSource } from '@/data-source';
 import { config } from '@/config';
@@ -14,14 +16,19 @@ const app = express();
 app.use(helmet());
 app.use(requestLogger);
 app.use(express.json({ limit: '1mb' }));
+app.use(cookieParser());
 app.use(passport.initialize());
 
 async function start(): Promise<void> {
+  const redis = new Redis({ host: config.REDIS_HOST, port: config.REDIS_PORT, lazyConnect: true });
+  await redis.connect();
+  logger.info('Redis connected');
+
   await AppDataSource.initialize();
   logger.info('Database connected');
 
-  const authService = new AuthService(AppDataSource);
-  registerRoutes(app, authService);
+  const authService = new AuthService(AppDataSource, redis);
+  registerRoutes(app, authService, redis);
 
   const server = app.listen(config.PORT, () => {
     logger.info('Auth service started', { port: config.PORT });
@@ -30,6 +37,7 @@ async function start(): Promise<void> {
   const shutdown = async (): Promise<void> => {
     logger.info('Shutting down auth service');
     await AppDataSource.destroy();
+    redis.disconnect();
     server.close(() => {
       logger.info('Auth service stopped');
       process.exit(0);

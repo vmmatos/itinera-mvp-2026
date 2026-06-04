@@ -13,7 +13,7 @@ export const CreateTripSchema = z.object({
   startDate:    z.string().date().optional(),
   endDate:      z.string().date().optional(),
   budgetTotal:  z.number().positive().optional(),
-  budgetCurrency: z.string().length(3).default('EUR'),
+  budgetCurrency: z.enum(['EUR', 'USD']).default('EUR'),
   travellers: z
     .array(
       z.object({
@@ -35,4 +35,9 @@ export const TripIdParamSchema = z.object({
   id: z.string().uuid(),
 });
 
+export const UpdateTripStatusSchema = z.object({
+  status: z.enum(['cancelled', 'confirmed']),
+});
+
 export type CreateTripInput = z.infer<typeof CreateTripSchema>;
+export type UpdateTripStatusInput = z.infer<typeof UpdateTripStatusSchema>;

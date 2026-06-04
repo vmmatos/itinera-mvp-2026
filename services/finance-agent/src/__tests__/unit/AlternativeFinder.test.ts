@@ -105,9 +105,9 @@ describe('AlternativeFinder', () => {
       expect(anthropic.complete).not.toHaveBeenCalled();
     });
 
-    it('stores event when within budget', async () => {
+    it('does not store event (orchestrator owns persistence)', async () => {
       await finder.findAlternatives(VALID_TRIP_ID, 1, MOCK_PROPOSAL, MOCK_BREAKDOWN, WITHIN_BUDGET_VALIDATION, '');
-      expect(storage.save).toHaveBeenCalledOnce();
+      expect(storage.save).not.toHaveBeenCalled();
     });
 
     it('publishes event when within budget', async () => {

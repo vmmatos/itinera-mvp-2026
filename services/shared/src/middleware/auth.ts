@@ -25,8 +25,20 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
   try {
     const issuer = getIssuer();
     const options = issuer ? { issuer } : {};
-    const payload = jwt.verify(token, getSecret(), options) as JwtPayload;
-    (req as AuthenticatedRequest).user = payload;
+    const raw = jwt.verify(token, getSecret(), options) as Record<string, unknown>;
+
+    if (typeof raw['sub'] !== 'string' || typeof raw['role'] !== 'string') {
+      next(new UnauthorizedError('Malformed token payload'));
+      return;
+    }
+
+    const validRoles: string[] = ['user', 'admin', 'service'];
+    if (!validRoles.includes(raw['role'])) {
+      next(new UnauthorizedError('Token contains invalid role'));
+      return;
+    }
+
+    (req as AuthenticatedRequest).user = raw as unknown as JwtPayload;
     next();
   } catch {
     next(new UnauthorizedError('Invalid or expired token'));

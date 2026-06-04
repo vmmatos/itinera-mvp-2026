@@ -38,10 +38,27 @@ export class StateManager extends BaseService {
     super('state-manager');
   }
 
-  async transitionStatus(tripId: string, status: TripStatus): Promise<void> {
-    const result = await AppDataSource.getRepository(Trip).update({ id: tripId }, { status });
-    if (result.affected === 0) throw new NotFoundError(`Trip ${tripId}`);
+  async transitionStatus(tripId: string, status: TripStatus, fromStatus?: TripStatus): Promise<void> {
+    const where = fromStatus ? { id: tripId, status: fromStatus } : { id: tripId };
+    const result = await AppDataSource.getRepository(Trip).update(where, { status });
+    if (result.affected === 0) {
+      if (fromStatus) {
+        // Another process already transitioned away from fromStatus — not an error
+        this.logger.warn('Status transition skipped — already moved', { tripId, fromStatus, toStatus: status });
+        return;
+      }
+      throw new NotFoundError(`Trip ${tripId}`);
+    }
     this.logger.info('Trip status updated', { tripId, status });
+  }
+
+  // Atomically claim a trip for negotiation. Returns false if already claimed.
+  async claimNegotiating(tripId: string): Promise<boolean> {
+    const result = await AppDataSource.getRepository(Trip).update(
+      { id: tripId, status: 'draft' as TripStatus },
+      { status: 'negotiating' as TripStatus },
+    );
+    return (result.affected ?? 0) > 0;
   }
 
   async getTrip(tripId: string): Promise<Trip | null> {

@@ -2,7 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import type { AuthenticatedRequest } from '@itinera/shared';
 import { ok, NotFoundError } from '@itinera/shared';
 import { TripService } from '@/services/TripService';
-import { CreateTripSchema, TripIdParamSchema } from '@/validation/trip.schemas';
+import { CreateTripSchema, TripIdParamSchema, UpdateTripStatusSchema } from '@/validation/trip.schemas';
 
 export class TripController {
   constructor(private readonly tripService: TripService) {}
@@ -51,6 +51,18 @@ export class TripController {
       const isAdmin = authedReq.user.role === 'admin' && req.query['view'] === 'debug';
       const trip = await this.tripService.getTrip(id, isAdmin);
       res.json(ok(trip));
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  updateTripStatus = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const authedReq = req as AuthenticatedRequest;
+      const { id } = TripIdParamSchema.parse(req.params);
+      const { status } = UpdateTripStatusSchema.parse(req.body);
+      await this.tripService.updateTripStatus(id, authedReq.user.sub, status);
+      res.json(ok({ tripId: id, status }));
     } catch (err) {
       next(err);
     }

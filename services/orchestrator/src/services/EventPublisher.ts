@@ -45,8 +45,12 @@ export class EventPublisher extends BaseService {
     this.channel = null;
 
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      this.logger.error('RabbitMQ max reconnect attempts reached — exiting');
-      process.exit(1);
+      this.logger.error('RabbitMQ max reconnect attempts reached — will retry in 60s');
+      this.reconnecting = false;
+      this.reconnectAttempts = 0;
+      await new Promise<void>(resolve => setTimeout(resolve, 60_000));
+      void this.scheduleReconnect();
+      return;
     }
 
     const delay = Math.min(1000 * 2 ** this.reconnectAttempts, 30_000);

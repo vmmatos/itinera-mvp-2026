@@ -3,8 +3,6 @@
    Design tokens extracted from Claude Design artefact
 ───────────────────────────────────────────────────────────── */
 
-@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@300;400;500;600&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -377,6 +375,17 @@ html, body {
 
 .fade-in {
   animation: fade-in 0.2s ease forwards;
+}
+
+/* ── Date input — calendar icon visible on dark bg ─────────── */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1);
+  opacity: 0.6;
+  cursor: pointer;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator:hover {
+  opacity: 1;
 }
 
 /* ── Trip input wizard ──────────────────────────────────────── */
@@ -763,7 +772,6 @@ html, body {
   align-items: center;
   padding-top: var(--s-6);
   margin-top: var(--s-6);
-  border-top: var(--hair);
 }
 
 /* Meta/helper text */
@@ -816,3 +824,154 @@ html, body {
 .persona-card.selected-bob    .pc-agent { color: var(--amber);   }
 .persona-card.selected-carlos .pc-agent { color: var(--blue);    }
 .persona-card.selected-diana  .pc-agent { color: var(--magenta); }
+
+/* ── Stream event animations ────────────────────────────────── */
+@keyframes slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.stream-event-slide {
+  animation: slide-in 0.18s ease forwards;
+}
+
+/* Skeleton shimmer */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+
+.skel {
+  background: linear-gradient(
+    90deg,
+    var(--bg-3) 25%,
+    var(--line-2) 50%,
+    var(--bg-3) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+  border-radius: var(--r-1);
+}
+
+.skel-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.skel-line {
+  height: 10px;
+}
+
+/* ── Responsive — tablet (≤768px) ──────────────────────────── */
+@media (max-width: 768px) {
+  .user-grid {
+    grid-template-columns: 1fr;
+    min-height: unset;
+  }
+
+  .user-left {
+    padding: var(--s-5);
+    border-right: none;
+    border-bottom: var(--hair);
+  }
+
+  .user-right {
+    padding: var(--s-5);
+  }
+
+  .app-bar {
+    padding: var(--s-3) var(--s-4);
+  }
+
+  .usteps {
+    padding: 0 var(--s-4);
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .usteps::-webkit-scrollbar { display: none; }
+
+  .ustep {
+    padding: var(--s-3) var(--s-3);
+    font-size: 10px;
+    white-space: nowrap;
+  }
+
+  .field-row {
+    grid-template-columns: 1fr;
+    gap: var(--s-2);
+  }
+
+  .field-label {
+    padding-top: 0;
+  }
+
+  .pref-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .summary-card {
+    padding: var(--s-4);
+  }
+}
+
+/* ── Responsive — mobile (≤480px) ──────────────────────────── */
+@media (max-width: 480px) {
+  .user-left,
+  .user-right {
+    padding: var(--s-4);
+  }
+
+  .app-bar {
+    padding: var(--s-2) var(--s-3);
+  }
+
+  .crumb {
+    font-size: 11px;
+  }
+
+  .crumb b,
+  .crumb > span:last-child {
+    display: none;
+  }
+
+  h2 {
+    font-size: var(--t-22) !important;
+  }
+
+  .field-input {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .field-input input[type="date"] {
+    width: 100% !important;
+  }
+
+  .user-form-foot {
+    flex-direction: column;
+    gap: var(--s-3);
+    align-items: stretch;
+  }
+
+  .user-form-foot > div {
+    justify-content: flex-end;
+  }
+
+  .pref-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .gcard {
+    grid-template-columns: 28px 1fr auto;
+  }
+}

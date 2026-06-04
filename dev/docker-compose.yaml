@@ -128,8 +128,7 @@ services:
       NUXT_PUBLIC_WS_URL: ${NUXT_PUBLIC_WS_URL:-ws://localhost}
       NUXT_PUBLIC_APP_MODE: ${NODE_ENV:-development}
     ports:
-      - "3000:3000"
-      - "24678:24678"
+      - "24678:24678"  # Nuxt HMR websocket — app served via nginx:80, not this port
     volumes:
       - ../apps/frontend:/app
       - frontend-node-modules:/app/node_modules
@@ -142,7 +141,8 @@ services:
     image: nginx:1.27-alpine
     container_name: itinera-ingress
     restart: unless-stopped
-    profiles: [services]
+    # Skip entrypoint init scripts — they fail when conf is read-only
+    command: ["nginx", "-g", "daemon off;"]
     ports:
       - "80:80"
     volumes:
@@ -150,6 +150,12 @@ services:
     depends_on:
       - web
       - kong
+    healthcheck:
+      test: ["CMD", "nginx", "-t"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
   ## ── Auth ─────────────────────────────────────────────────────────────────────
   auth:
@@ -168,17 +174,21 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
       JWT_SECRET: ${JWT_SECRET}
       JWT_ISSUER: ${JWT_ISSUER}
       JWT_CONSUMER_KEY: ${JWT_CONSUMER_KEY:-itinera}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
-      GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL:-http://localhost:8000/api/auth/oauth2/google/callback}
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      GOOGLE_CALLBACK_URL: ${GOOGLE_CALLBACK_URL:-http://localhost/api/auth/oauth2/google/callback}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
     ports:
       - "${AUTH_PORT:-3010}:${AUTH_PORT:-3010}"
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       kong:
         condition: service_healthy

@@ -3,6 +3,7 @@ definePageMeta({ layout: 'auth' })
 
 const route = useRoute()
 const authStore = useAuthStore()
+const config = useRuntimeConfig()
 
 interface JwtTokenPayload {
   sub: string
@@ -19,14 +20,19 @@ const decodeJwt = (token: string): JwtTokenPayload => {
   return JSON.parse(atob(base64)) as JwtTokenPayload
 }
 
-onMounted(() => {
-  const token = route.query['token'] as string | undefined
-  if (!token) {
-    navigateTo('/auth/login?error=oauth_failed', { replace: true })
+onMounted(async () => {
+  const code = route.query['code'] as string | undefined
+  if (!code) {
+    await navigateTo('/auth/login?error=oauth_failed', { replace: true })
     return
   }
 
   try {
+    const resp = await $fetch<{ success: boolean; data: { token: string } }>(
+      `${config.public.apiBase}/api/auth/exchange`,
+      { method: 'POST', body: { code } },
+    )
+    const token = resp.data.token
     const payload = decodeJwt(token)
     authStore.setFromOAuth({
       token,
@@ -34,12 +40,12 @@ onMounted(() => {
         id: payload.sub,
         email: payload.email,
         name: payload.name,
-        role: payload.role
+        role: payload.role,
       },
     })
-    navigateTo('/', { replace: true })
+    await navigateTo('/', { replace: true })
   } catch {
-    navigateTo('/auth/login?error=oauth_failed', { replace: true })
+    await navigateTo('/auth/login?error=oauth_failed', { replace: true })
   }
 })
 </script>
