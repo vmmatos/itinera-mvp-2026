@@ -63,7 +63,7 @@ describe('ProposalRefiner', () => {
     const event = await refiner.refine(VALID_TRIP_ID, 1, MOCK_PROPOSAL, MOCK_FEEDBACK, 'context');
 
     expect(anthropic.complete).toHaveBeenCalledOnce();
-    expect(storage.save).toHaveBeenCalledOnce();
+    expect(storage.save).not.toHaveBeenCalled();
     expect(publisher.publish).toHaveBeenCalledOnce();
     expect(event.agent).toBe('orchestrator');
     expect(event.round).toBe(1);

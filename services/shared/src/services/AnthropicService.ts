@@ -48,7 +48,7 @@ export class AnthropicService extends BaseService {
 
     const response = await this.client.messages.create({
       model: this.model,
-      max_tokens: 2048,
+      max_tokens: 4096,
       system: systemPrompt,
       messages,
     });

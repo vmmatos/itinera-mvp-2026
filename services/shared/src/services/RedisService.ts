@@ -32,16 +32,19 @@ export class RedisService extends BaseService {
   }
 
   async get<T>(key: string): Promise<T | null> {
+    if (!this.isConnected()) return null;
     const raw = await this.client.get(key);
     if (raw === null) return null;
     return JSON.parse(raw) as T;
   }
 
   async set(key: string, value: unknown, ttlSeconds: number): Promise<void> {
+    if (!this.isConnected()) return;
     await this.client.set(key, JSON.stringify(value), 'EX', ttlSeconds);
   }
 
   async del(key: string): Promise<void> {
+    if (!this.isConnected()) return;
     await this.client.del(key);
   }
 

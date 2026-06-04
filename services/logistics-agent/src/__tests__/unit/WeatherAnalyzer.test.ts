@@ -100,7 +100,7 @@ describe('WeatherAnalyzer', () => {
     const event = await analyzer.analyze(VALID_TRIP_ID, 1, MOCK_ITINERARY, MOCK_FORECASTS, MOCK_TIMING);
 
     expect(anthropic.complete).toHaveBeenCalledOnce();
-    expect(storage.save).toHaveBeenCalledOnce();
+    expect(storage.save).not.toHaveBeenCalled();
     expect(publisher.publish).toHaveBeenCalledOnce();
     expect(redis.set).toHaveBeenCalledOnce();
     expect(event.agent).toBe('logistics');

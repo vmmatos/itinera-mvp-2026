@@ -29,12 +29,10 @@ vi.mock('@/config', () => ({
 
 vi.mock('@/services/StateManager');
 vi.mock('@/services/AgentCaller');
-vi.mock('@/services/EventPublisher');
 
 import { NegotiationLoop } from '@/services/NegotiationLoop';
 import { StateManager } from '@/services/StateManager';
 import { AgentCaller } from '@/services/AgentCaller';
-import { EventPublisher } from '@/services/EventPublisher';
 
 const AGENT_RESULT = {
   content: { destination: 'paris' },
@@ -48,15 +46,13 @@ const TRIP_ID = '550e8400-e29b-41d4-a716-446655440000';
 describe('NegotiationLoop', () => {
   let stateManager: StateManager;
   let agentCaller: AgentCaller;
-  let eventPublisher: EventPublisher;
   let loop: NegotiationLoop;
 
   beforeEach(() => {
     vi.clearAllMocks();
     stateManager = new StateManager();
     agentCaller = new AgentCaller();
-    eventPublisher = new EventPublisher();
-    loop = new NegotiationLoop(stateManager, agentCaller, eventPublisher);
+    loop = new NegotiationLoop(stateManager, agentCaller);
 
     vi.mocked(stateManager.claimNegotiating).mockResolvedValue(true);
     vi.mocked(stateManager.transitionStatus).mockResolvedValue(undefined);
@@ -64,7 +60,6 @@ describe('NegotiationLoop', () => {
     vi.mocked(stateManager.logAgentCall).mockResolvedValue(undefined);
     vi.mocked(stateManager.saveMetric).mockResolvedValue(undefined);
     vi.mocked(stateManager.getTrip).mockResolvedValue(null);
-    vi.mocked(eventPublisher.publish).mockResolvedValue(undefined);
 
     vi.mocked(agentCaller.callPreferenceAgent).mockResolvedValue(AGENT_RESULT);
     vi.mocked(agentCaller.callOrchestratorAgent).mockResolvedValue(AGENT_RESULT);
@@ -87,11 +82,10 @@ describe('NegotiationLoop', () => {
     expect(agentCaller.callValidatorAgent).toHaveBeenCalledTimes(1);
   });
 
-  it('saves a metric and publishes an event after each round', async () => {
+  it('saves a metric after each round', async () => {
     await loop.run(TRIP_ID);
 
     expect(stateManager.saveMetric).toHaveBeenCalledTimes(6);
-    expect(eventPublisher.publish).toHaveBeenCalledTimes(6);
   });
 
   it('logs each agent call with latencyMs and tokensUsed', async () => {

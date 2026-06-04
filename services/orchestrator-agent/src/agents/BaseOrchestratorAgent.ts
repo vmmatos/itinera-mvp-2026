@@ -34,7 +34,16 @@ export abstract class BaseOrchestratorAgent extends BaseService {
     try {
       parsedContent = JSON.parse(content);
     } catch {
-      parsedContent = { raw: content };
+      // Claude sometimes wraps JSON in code fences — strip and retry before falling back to raw
+      const stripped = content
+        .replace(/^```(?:json)?\s*/im, '')
+        .replace(/\s*```\s*$/m, '')
+        .trim();
+      try {
+        parsedContent = JSON.parse(stripped);
+      } catch {
+        parsedContent = { raw: content };
+      }
     }
 
     const event = this.buildAgentEvent(tripId, round, action, parsedContent, content, {
@@ -42,10 +51,8 @@ export abstract class BaseOrchestratorAgent extends BaseService {
       tokensUsed,
     });
 
-    await Promise.all([
-      this.storage.save(event),
-      this.publisher.publish(buildRoutingKey(this.agentName, action), event),
-    ]);
+    // Orchestrator is responsible for persisting proposals — don't double-save here
+    await this.publisher.publish(buildRoutingKey(this.agentName, action), event);
 
     this.logger.info('Orchestrator agent call complete', {
       agent: this.agentName,

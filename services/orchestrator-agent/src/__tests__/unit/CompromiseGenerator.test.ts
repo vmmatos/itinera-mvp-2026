@@ -67,7 +67,7 @@ describe('CompromiseGenerator', () => {
     const event = await generator.generateCompromise(VALID_TRIP_ID, 1, MOCK_CONFLICTS, 'Trip to Paris');
 
     expect(anthropic.complete).toHaveBeenCalledOnce();
-    expect(storage.save).toHaveBeenCalledOnce();
+    expect(storage.save).not.toHaveBeenCalled();
     expect(publisher.publish).toHaveBeenCalledOnce();
     expect(redis.set).toHaveBeenCalledOnce();
     expect(event.agent).toBe('orchestrator');

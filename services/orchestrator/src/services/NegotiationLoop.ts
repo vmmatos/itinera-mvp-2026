@@ -3,7 +3,6 @@ import type { AgentName } from '@itinera/shared';
 import { StateManager } from '@/services/StateManager';
 import { AgentCaller } from '@/services/AgentCaller';
 import type { AgentTripContext } from '@/services/AgentCaller';
-import { EventPublisher } from '@/services/EventPublisher';
 
 const PREFERENCE_AGENTS: AgentName[] = ['alice', 'bob', 'carlos', 'diana'];
 
@@ -14,7 +13,6 @@ export class NegotiationLoop extends BaseService {
   constructor(
     private readonly stateManager: StateManager,
     private readonly agentCaller: AgentCaller,
-    private readonly eventPublisher: EventPublisher,
   ) {
     super('negotiation-loop');
   }
@@ -72,15 +70,6 @@ export class NegotiationLoop extends BaseService {
           tripId,
           round,
           metadata: { roundName, proposal: latestProposal },
-        });
-
-        await this.eventPublisher.publish('orchestrator', 'propose', {
-          tripId,
-          type: `orchestrator.round.${roundName}`,
-          agent: 'orchestrator',
-          round,
-          timestamp: new Date().toISOString(),
-          content: latestProposal,
         });
       }
 
@@ -150,22 +139,23 @@ export class NegotiationLoop extends BaseService {
     round: number,
     agentContext: string,
   ): Promise<Record<string, unknown>> {
-    const results: Record<string, unknown>[] = [];
-    for (const agentName of PREFERENCE_AGENTS) {
-      const start = Date.now();
-      const result = await this.agentCaller.callPreferenceAgent(tripId, agentName, round, agentContext);
-      await this.stateManager.saveProposal({ tripId, agent: agentName, round, content: result.content });
-      await this.stateManager.logAgentCall({
-        tripId,
-        agent: agentName,
-        round,
-        action: 'propose',
-        latencyMs: Date.now() - start,
-        tokensUsed: result.tokensUsed,
-        reasoning: result.reasoning,
-      });
-      results.push(result.content);
-    }
+    const results = await Promise.all(
+      PREFERENCE_AGENTS.map(async (agentName) => {
+        const start = Date.now();
+        const result = await this.agentCaller.callPreferenceAgent(tripId, agentName, round, agentContext);
+        await this.stateManager.saveProposal({ tripId, agent: agentName, round, content: result.content });
+        await this.stateManager.logAgentCall({
+          tripId,
+          agent: agentName,
+          round,
+          action: 'propose',
+          latencyMs: Date.now() - start,
+          tokensUsed: result.tokensUsed,
+          reasoning: result.reasoning,
+        });
+        return result.content;
+      }),
+    );
     return { preferences: results };
   }
 

@@ -86,7 +86,15 @@ export abstract class BaseAgent extends BaseService {
     try {
       parsedContent = JSON.parse(content);
     } catch {
-      parsedContent = { raw: content };
+      const stripped = content
+        .replace(/^```(?:json)?\s*/im, '')
+        .replace(/\s*```\s*$/m, '')
+        .trim();
+      try {
+        parsedContent = JSON.parse(stripped);
+      } catch {
+        parsedContent = { raw: content };
+      }
     }
 
     const event = this.buildAgentEvent(tripId, round, action, parsedContent, content, {
