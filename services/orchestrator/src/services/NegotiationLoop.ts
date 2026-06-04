@@ -111,6 +111,9 @@ export class NegotiationLoop extends BaseService {
 
     lines.push(`\nDATES: ${trip.startDate ? String(trip.startDate).slice(0, 10) : 'TBD'} → ${trip.endDate ? String(trip.endDate).slice(0, 10) : 'TBD'}`);
     lines.push(`BUDGET: ${trip.budgetTotal ?? '?'} ${trip.budgetCurrency}${budgetPerNight ? ` (≈ ${trip.budgetCurrency} ${budgetPerNight}/night)` : ''}`);
+    const rawPace = (trip.travellers?.[0]?.preferences as Record<string, unknown>)?.['pace'];
+    const paceLabel = rawPace === 'low' ? 'slow' : rawPace === 'high' ? 'packed' : 'moderate';
+    lines.push(`PACE: ${paceLabel} (${rawPace === 'low' ? 'relaxed schedule, few activities/day' : rawPace === 'high' ? 'full schedule, many activities/day' : '2–3 activities/day'})`);
     lines.push(`GROUP SIZE: ${trip.travellers?.length ?? 1} traveller(s)`);
 
     if (destinations.length > 1) {

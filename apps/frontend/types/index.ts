@@ -69,12 +69,13 @@ export interface Destination {
 export interface TravellerInput {
   userId?:     string
   preferences: {
-    persona:     Persona
-    flexibility: Flexibility
+    persona:      Persona
+    flexibility:  Flexibility
+    pace?:        Flexibility
     budgetLimit?: number
-    dietary:     string[]
-    constraints: string[]
-    mustHaves:   string[]
+    dietary:      string[]
+    constraints:  string[]
+    mustHaves:    string[]
     dealBreakers: string[]
   }
 }
