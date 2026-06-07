@@ -69,6 +69,17 @@ onUnmounted(() => { stopPolling() })
 </script>
 
 <template>
+  <div class="min-h-screen bg-bg-0 text-fg-0">
+  <header class="border-b border-line-2 px-6 flex items-center justify-between" style="height:44px">
+    <AppLogo :size="20" />
+    <div class="flex items-center gap-4">
+      <NuxtLink to="/admin" class="btn text-13">← All trips</NuxtLink>
+      <NuxtLink to="/dashboard" class="btn text-13">Dashboard</NuxtLink>
+      <span class="text-fg-2 text-13">{{ authStore.user?.email }}</span>
+      <button class="btn text-13" @click="authStore.logout()">Sign out</button>
+    </div>
+  </header>
+
   <div class="view on admin">
     <AdminBar
       :trip="trip"
@@ -114,6 +125,7 @@ onUnmounted(() => { stopPolling() })
         :live-events="visibleEvents"
       />
     </template>
+  </div>
   </div>
 </template>
 
