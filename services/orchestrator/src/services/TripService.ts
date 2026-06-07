@@ -17,6 +17,8 @@ export interface TripSummary {
   region: string | null;
   destinations: Array<{ country: string; city?: string; nights: number }>;
   ownerId: string;
+  ownerName?: string;
+  ownerEmail?: string;
   startDate: Date | null;
   endDate: Date | null;
   budgetTotal: number | null;
@@ -107,7 +109,7 @@ export class TripService extends BaseService {
   async listTrips(ownerId: string, isAdmin = false): Promise<TripSummary[]> {
     const repo = AppDataSource.getRepository(Trip);
     const trips = isAdmin
-      ? await repo.find({ order: { createdAt: 'DESC' } })
+      ? await repo.find({ relations: { owner: true }, order: { createdAt: 'DESC' } })
       : await repo.find({ where: { ownerId }, order: { createdAt: 'DESC' } });
     return trips.map((t) => this.toSummary(t));
   }
@@ -135,6 +137,8 @@ export class TripService extends BaseService {
       region: trip.region,
       destinations: trip.destinations ?? [],
       ownerId: trip.ownerId,
+      ownerName: trip.owner?.name,
+      ownerEmail: trip.owner?.email,
       startDate: trip.startDate,
       endDate: trip.endDate,
       budgetTotal: trip.budgetTotal,

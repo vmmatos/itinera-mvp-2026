@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import type { Trip } from '~/types/index'
 
 definePageMeta({
@@ -13,6 +13,17 @@ const api = useApi()
 const trips = ref<Trip[]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
+const search = ref('')
+
+const filteredTrips = computed(() => {
+  const q = search.value.trim().toLowerCase()
+  if (!q) return trips.value
+  return trips.value.filter((t) => {
+    const name = (t.ownerName ?? '').toLowerCase()
+    const email = (t.ownerEmail ?? '').toLowerCase()
+    return name.includes(q) || email.includes(q)
+  })
+})
 
 const fetchTrips = async (): Promise<void> => {
   loading.value = true
@@ -53,26 +64,47 @@ onMounted(() => {
 
     <div v-if="loading" class="state">loading trips…</div>
     <div v-else-if="error" class="state error">{{ error }}</div>
-    <div v-else-if="trips.length === 0" class="state">no trips found</div>
 
-    <div v-else class="trip-list">
-      <NuxtLink
-        v-for="trip in trips"
-        :key="trip.id"
-        :to="`/admin/${trip.id}`"
-        class="trip-card"
-      >
-        <div class="trip-name">{{ trip.name }}</div>
-        <div class="trip-meta">
-          <span class="id helper">{{ trip.id.slice(0, 8) }}</span>
-          <span
-            :class="['badge', trip.status === 'negotiating' ? 'badge-green' : 'badge-blue']"
-          >{{ trip.status }}</span>
-          <span class="helper">{{ trip.region }}</span>
-          <span class="helper">{{ trip.startDate }}</span>
-        </div>
-      </NuxtLink>
-    </div>
+    <template v-else>
+      <div class="search-row">
+        <input
+          v-model="search"
+          type="text"
+          class="search-input"
+          placeholder="search by user name or email…"
+          autocomplete="off"
+        />
+        <span class="search-count helper">
+          {{ filteredTrips.length }} / {{ trips.length }} trips
+        </span>
+      </div>
+
+      <div v-if="filteredTrips.length === 0" class="state">no trips found</div>
+
+      <div v-else class="trip-list">
+        <NuxtLink
+          v-for="trip in filteredTrips"
+          :key="trip.id"
+          :to="`/admin/${trip.id}`"
+          class="trip-card"
+        >
+          <div class="trip-card-top">
+            <span class="trip-name">{{ trip.name }}</span>
+            <span v-if="trip.ownerName || trip.ownerEmail" class="trip-owner">
+              {{ trip.ownerName ?? '' }}<template v-if="trip.ownerName && trip.ownerEmail"> · </template>{{ trip.ownerEmail ?? '' }}
+            </span>
+          </div>
+          <div class="trip-meta">
+            <span class="id helper">{{ trip.id.slice(0, 8) }}</span>
+            <span
+              :class="['badge', trip.status === 'negotiating' ? 'badge-green' : 'badge-blue']"
+            >{{ trip.status }}</span>
+            <span class="helper">{{ trip.region }}</span>
+            <span class="helper">{{ trip.startDate }}</span>
+          </div>
+        </NuxtLink>
+      </div>
+    </template>
   </div>
   </div>
 </template>
@@ -120,6 +152,29 @@ h1 {
   padding: var(--s-6) 0;
 }
 .state.error { color: #ff5d5d; }
+.search-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-4);
+  margin-bottom: var(--s-4);
+}
+.search-input {
+  flex: 1;
+  background: var(--bg-1);
+  border: var(--hair);
+  color: var(--fg-0);
+  font-family: var(--mono);
+  font-size: var(--t-13);
+  padding: var(--s-2) var(--s-3);
+  outline: none;
+  transition: border-color 0.12s;
+}
+.search-input:focus { border-color: var(--line-3); }
+.search-input::placeholder { color: var(--fg-3); }
+.search-count {
+  white-space: nowrap;
+  font-size: var(--t-12);
+}
 .trip-list { display: flex; flex-direction: column; gap: var(--s-2); }
 .trip-card {
   display: flex;
@@ -132,10 +187,20 @@ h1 {
   transition: background 0.12s;
 }
 .trip-card:hover { background: var(--bg-2); border-color: var(--line-3); }
+.trip-card-top {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s-3);
+}
 .trip-name {
   font-size: var(--t-15);
   font-weight: 500;
   color: var(--fg-0);
+}
+.trip-owner {
+  font-family: var(--mono);
+  font-size: var(--t-12);
+  color: var(--amber);
 }
 .trip-meta {
   display: flex;
