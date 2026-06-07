@@ -6,4 +6,15 @@ export default defineNuxtRouteMiddleware((to) => {
   if (!token) {
     return navigateTo('/auth/login', { replace: true })
   }
+
+  if (to.path.startsWith('/admin')) {
+    let role: string | null = null
+    try {
+      const stored = localStorage.getItem('itinera_user')
+      if (stored) role = (JSON.parse(stored) as { role?: string }).role ?? null
+    } catch { /* ignore */ }
+    if (role !== 'admin') {
+      return navigateTo('/dashboard', { replace: true })
+    }
+  }
 })

@@ -270,13 +270,13 @@ describe('Scenario 003 — Alice+Bob+Carlos+Diana, Sintra+Cascais, 2 days, €30
       expect(publisher.publish).toHaveBeenCalledWith('agent.finance.propose', expect.any(Object));
     });
 
-    it('saves to storage once', async () => {
+    it('publishes event to RabbitMQ once', async () => {
       const breakdown = calculator.calculate(OVER_BUDGET_ITINERARY, BUDGET_CURRENCY);
       const validation = validator.validate(breakdown, BUDGET_TOTAL, BUDGET_CURRENCY);
 
       await alternativeFinder.findAlternatives(TRIP_ID, 1, OVER_BUDGET_ITINERARY, breakdown, validation, TRIP_CONTEXT);
 
-      expect(storage.save).toHaveBeenCalledOnce();
+      expect(publisher.publish).toHaveBeenCalledOnce();
     });
 
     it('wraps non-JSON Claude response as { raw: string }', async () => {

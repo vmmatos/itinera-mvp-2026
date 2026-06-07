@@ -174,10 +174,10 @@ describe('Scenario 002 — Alice+Bob+Carlos+Diana, Sintra+Cascais, 2 days, €60
       );
     });
 
-    it('saves proposal to storage on cache miss', async () => {
+    it('publishes event to RabbitMQ on cache miss', async () => {
       await analyzer.analyze(TRIP_ID, 1, ALL_PROPOSALS);
 
-      expect(storage.save).toHaveBeenCalledOnce();
+      expect(publisher.publish).toHaveBeenCalledOnce();
     });
 
     it('cache hit returns cached event without calling Claude', async () => {
@@ -303,11 +303,11 @@ describe('Scenario 002 — Alice+Bob+Carlos+Diana, Sintra+Cascais, 2 days, €60
       );
     });
 
-    it('saves compromise proposal to storage', async () => {
+    it('publishes compromise event to RabbitMQ', async () => {
       const conflictAnalysis = JSON.parse(CONVERGENCE_ANALYSIS_RESPONSE);
       await generator.generateCompromise(TRIP_ID, 3, conflictAnalysis, TRIP_CONTEXT);
 
-      expect(storage.save).toHaveBeenCalledOnce();
+      expect(publisher.publish).toHaveBeenCalledOnce();
     });
 
     it('conflict analysis context and destination are included in Claude prompt', async () => {
