@@ -104,9 +104,9 @@ export class TripService extends BaseService {
     return this.toSummary(trip);
   }
 
-  async listTrips(ownerId: string): Promise<TripSummary[]> {
+  async listTrips(ownerId: string, isAdmin = false): Promise<TripSummary[]> {
     const trips = await AppDataSource.getRepository(Trip).find({
-      where: { ownerId },
+      where: isAdmin ? undefined : { ownerId },
       order: { createdAt: 'DESC' },
     });
     return trips.map((t) => this.toSummary(t));

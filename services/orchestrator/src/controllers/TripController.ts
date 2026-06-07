@@ -10,7 +10,8 @@ export class TripController {
   listTrips = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
       const authedReq = req as AuthenticatedRequest;
-      const trips = await this.tripService.listTrips(authedReq.user.sub);
+      const isAdmin = authedReq.user.role === 'admin';
+      const trips = await this.tripService.listTrips(authedReq.user.sub, isAdmin);
       res.json(ok(trips));
     } catch (err) {
       next(err);
