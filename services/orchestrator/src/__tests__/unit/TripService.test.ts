@@ -108,7 +108,6 @@ describe('TripService.listTrips', () => {
     const result = await service.listTrips(ADMIN_ID, true);
 
     expect(mockFind).toHaveBeenCalledWith({
-      where: undefined,
       order: { createdAt: 'DESC' },
     });
     expect(result).toHaveLength(2);
