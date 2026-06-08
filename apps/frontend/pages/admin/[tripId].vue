@@ -70,15 +70,25 @@ onUnmounted(() => { stopPolling() })
 
 <template>
   <div class="min-h-screen bg-bg-0 text-fg-0">
-  <header class="border-b border-line-2 px-6 flex items-center justify-between" style="height:44px">
-    <AppLogo :size="20" />
-    <div class="flex items-center gap-4">
-      <NuxtLink to="/admin" class="btn text-13">← All trips</NuxtLink>
-      <NuxtLink to="/dashboard" class="btn text-13">Dashboard</NuxtLink>
-      <span class="text-fg-2 text-13">{{ authStore.user?.email }}</span>
-      <button class="btn text-13" @click="authStore.logout()">Sign out</button>
-    </div>
-  </header>
+    <header class="border-b border-line-2 px-6 py-4 flex items-center justify-between">
+      <AppLogo :size="20" />
+      <div class="flex items-center gap-4">
+        <span class="text-fg-2 text-13">{{ authStore.user?.email }}</span>
+        <NuxtLink
+          to="/admin"
+          class="btn text-13"
+          style="font-family:var(--mono);color:var(--green);border-color:var(--green-line)">
+          ← All trips
+        </NuxtLink>
+        <NuxtLink
+          to="/dashboard"
+          class="btn text-13"
+          style="font-family:var(--mono);color:var(--amber);border-color:var(--amber-line)">
+          ← Dashboard
+        </NuxtLink>
+        <button class="btn text-13" @click="authStore.logout()">Sign out</button>
+      </div>
+    </header>
 
   <div class="view on admin">
     <AdminBar
@@ -100,19 +110,19 @@ onUnmounted(() => { stopPolling() })
 
     <template v-else>
       <div class="admin-cols">
-        <NegotiationPanel
+        <AdminNegotiationPanel
           :proposals="proposals"
           :live-events="visibleEvents"
           :paused="paused"
         />
 
-        <TimelinePanel
+        <AdminTimelinePanel
           :proposals="proposals"
           :agent-logs="agentLogs"
           :trip-name="debugData?.name ?? ''"
         />
 
-        <MetricsPanel
+        <AdminMetricsPanel
           :metrics="metrics"
           :scores="scores"
           :agent-logs="agentLogs"
@@ -120,7 +130,7 @@ onUnmounted(() => { stopPolling() })
         />
       </div>
 
-      <AgentActivityLog
+      <AdminAgentActivityLog
         :agent-logs="agentLogs"
         :live-events="visibleEvents"
       />
@@ -139,8 +149,8 @@ onUnmounted(() => { stopPolling() })
 .admin-cols {
   display: grid;
   grid-template-columns: 340px 1fr 360px;
+  grid-template-rows: 1fr;
   min-height: 0;
-  flex: 1;
   overflow: hidden;
 }
 .center-state {

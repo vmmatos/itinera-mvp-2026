@@ -29,7 +29,7 @@ const fetchTrips = async (): Promise<void> => {
   loading.value = true
   error.value = null
   try {
-    const res = await api.get<{ success: true; data: Trip[] }>('/api/v1/trips')
+    const res = await api.get<{ success: true; data: Trip[] }>('/api/v1/trips?view=admin')
     trips.value = res.data.data ?? []
   } catch (e: unknown) {
     error.value = e instanceof Error ? e.message : 'Failed to load trips'
@@ -46,14 +46,19 @@ onMounted(() => {
 
 <template>
   <div class="min-h-screen bg-bg-0 text-fg-0">
-  <header class="border-b border-line-2 px-6 flex items-center justify-between" style="height:44px">
-    <AppLogo :size="20" />
-    <div class="flex items-center gap-4">
-      <NuxtLink to="/dashboard" class="btn text-13">← Dashboard</NuxtLink>
-      <span class="text-fg-2 text-13">{{ authStore.user?.email }}</span>
-      <button class="btn text-13" @click="authStore.logout()">Sign out</button>
-    </div>
-  </header>
+  <header class="border-b border-line-2 px-6 py-4 flex items-center justify-between">
+      <AppLogo :size="20" />
+      <div class="flex items-center gap-4">
+        <span class="text-fg-2 text-13">{{ authStore.user?.email }}</span>
+        <NuxtLink
+          to="/dashboard"
+          class="btn text-13"
+          style="font-family:var(--mono);color:var(--amber);border-color:var(--amber-line)">
+          ← Dashboard
+        </NuxtLink>
+        <button class="btn text-13" @click="authStore.logout()">Sign out</button>
+      </div>
+    </header>
 
   <div class="admin-index">
     <div class="admin-index-head">
