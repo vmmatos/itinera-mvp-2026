@@ -4,7 +4,7 @@ import type { AgentStreamEvent } from '~/types/index'
 
 const RECONNECT_DELAY_MS = 3000
 
-export function useAgentStream(tripId: Ref<string | null>) {
+export function useAgentStream(tripId: Ref<string | null>, role?: string) {
   const events = ref<AgentStreamEvent[]>([])
   const connected = ref(false)
 
@@ -26,7 +26,9 @@ export function useAgentStream(tripId: Ref<string | null>) {
 
     let response: Response
     try {
-      response = await fetch(`${wsUrl}/stream?tripId=${encodeURIComponent(id)}`, {
+      const params = new URLSearchParams({ tripId: id })
+      if (role) params.set('role', role)
+      response = await fetch(`${wsUrl}/stream?${params.toString()}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : {},
         signal: abortController.signal,
       })
