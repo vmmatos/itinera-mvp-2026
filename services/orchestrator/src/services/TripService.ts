@@ -17,6 +17,8 @@ export interface TripSummary {
   region: string | null;
   destinations: Array<{ country: string; city?: string; nights: number }>;
   ownerId: string;
+  ownerName?: string;
+  ownerEmail?: string;
   startDate: Date | null;
   endDate: Date | null;
   budgetTotal: number | null;
@@ -25,10 +27,40 @@ export interface TripSummary {
   updatedAt: Date;
 }
 
+interface ProposalRoundDto {
+  id: string;
+  round: number;
+  agent: string;
+  action: string;
+  content: unknown;
+  reasoning?: string;
+  createdAt: string;
+}
+
+interface AgentLogEntryDto {
+  id: string;
+  agent: string;
+  round: number;
+  action: string;
+  latencyMs: number;
+  tokensUsed: number;
+  reasoning?: string;
+  createdAt: string;
+}
+
+interface TripMetricsDto {
+  convergenceRounds: number;
+  fairnessScore: number;
+  autonomyScore: number;
+  totalTimeMs: number;
+  totalTokensUsed: number;
+}
+
 export interface TripDebugView extends TripSummary {
-  proposals: Proposal[];
-  agentLogs: AgentLog[];
-  metrics: TripMetric[];
+  proposals: ProposalRoundDto[];
+  agentLogs: AgentLogEntryDto[];
+  metrics: TripMetricsDto[];
+  scores: never[];
 }
 
 export class TripService extends BaseService {
@@ -104,11 +136,11 @@ export class TripService extends BaseService {
     return this.toSummary(trip);
   }
 
-  async listTrips(ownerId: string): Promise<TripSummary[]> {
-    const trips = await AppDataSource.getRepository(Trip).find({
-      where: { ownerId },
-      order: { createdAt: 'DESC' },
-    });
+  async listTrips(ownerId: string, isAdmin = false): Promise<TripSummary[]> {
+    const repo = AppDataSource.getRepository(Trip);
+    const trips = isAdmin
+      ? await repo.find({ relations: { owner: true }, order: { createdAt: 'DESC' } })
+      : await repo.find({ where: { ownerId }, order: { createdAt: 'DESC' } });
     return trips.map((t) => this.toSummary(t));
   }
 
@@ -118,13 +150,13 @@ export class TripService extends BaseService {
 
     if (!isAdmin) return this.toSummary(trip);
 
-    const [proposals, agentLogs, metrics] = await Promise.all([
-      AppDataSource.getRepository(Proposal).find({ where: { tripId } }),
-      AppDataSource.getRepository(AgentLog).find({ where: { tripId } }),
-      AppDataSource.getRepository(TripMetric).find({ where: { tripId } }),
+    const [rawProposals, rawLogs, rawMetrics] = await Promise.all([
+      AppDataSource.getRepository(Proposal).find({ where: { tripId }, order: { createdAt: 'ASC' } }),
+      AppDataSource.getRepository(AgentLog).find({ where: { tripId }, order: { createdAt: 'ASC' } }),
+      AppDataSource.getRepository(TripMetric).find({ where: { tripId }, order: { round: 'ASC' } }),
     ]);
 
-    return { ...this.toSummary(trip), proposals, agentLogs, metrics };
+    return { ...this.toSummary(trip), ...this.toDebugView(rawProposals, rawLogs, rawMetrics) };
   }
 
   private toSummary(trip: Trip): TripSummary {
@@ -135,12 +167,76 @@ export class TripService extends BaseService {
       region: trip.region,
       destinations: trip.destinations ?? [],
       ownerId: trip.ownerId,
+      ownerName: trip.owner?.name,
+      ownerEmail: trip.owner?.email,
       startDate: trip.startDate,
       endDate: trip.endDate,
       budgetTotal: trip.budgetTotal,
       budgetCurrency: trip.budgetCurrency,
       createdAt: trip.createdAt,
       updatedAt: trip.updatedAt,
+    };
+  }
+
+  private toDebugView(
+    rawProposals: Proposal[],
+    rawLogs: AgentLog[],
+    rawMetrics: TripMetric[],
+  ): Pick<TripDebugView, 'proposals' | 'agentLogs' | 'metrics' | 'scores'> {
+    const toIso = (d: Date | string): string =>
+      d instanceof Date ? d.toISOString() : String(d);
+
+    const logMap = new Map<string, AgentLog>();
+    for (const l of rawLogs) logMap.set(`${l.agent}:${l.round}`, l);
+
+    const proposals: ProposalRoundDto[] = rawProposals.map((p) => {
+      const log = logMap.get(`${p.agent}:${p.round}`);
+      return {
+        id: p.id,
+        round: p.round,
+        agent: p.agent,
+        action: log?.action ?? p.status,
+        content: p.content,
+        reasoning: log?.reasoning ?? undefined,
+        createdAt: toIso(p.createdAt),
+      };
+    });
+
+    const agentLogs: AgentLogEntryDto[] = rawLogs.map((l) => ({
+      id: l.id,
+      agent: l.agent,
+      round: l.round,
+      action: l.action,
+      latencyMs: l.latencyMs ?? 0,
+      tokensUsed: l.tokensUsed ?? 0,
+      reasoning: l.reasoning ?? undefined,
+      createdAt: toIso(l.createdAt),
+    }));
+
+    const validatorProposal = rawProposals.find((p) => p.agent === 'validator');
+    const vc = validatorProposal?.content as Record<string, unknown> | undefined;
+    const vFairness = vc?.['fairness'] as Record<string, unknown> | undefined;
+    const vMetrics = vc?.['metrics'] as Record<string, unknown> | undefined;
+
+    const fairnessScore =
+      typeof vFairness?.['fairnessScore'] === 'number' ? vFairness['fairnessScore'] / 100 : 0;
+    const autonomyScore =
+      typeof vMetrics?.['autonomyPct'] === 'number' ? vMetrics['autonomyPct'] / 100 : 0;
+    const convergenceRounds =
+      typeof vMetrics?.['convergenceRounds'] === 'number'
+        ? vMetrics['convergenceRounds']
+        : rawMetrics.length;
+
+    const totalTokensUsed = rawLogs.reduce((s, l) => s + (l.tokensUsed ?? 0), 0);
+    const times = rawLogs.map((l) => new Date(l.createdAt).getTime());
+    const totalTimeMs =
+      times.length > 1 ? Math.max(...times) - Math.min(...times) : 0;
+
+    return {
+      proposals,
+      agentLogs,
+      metrics: [{ convergenceRounds, fairnessScore, autonomyScore, totalTimeMs, totalTokensUsed }],
+      scores: [],
     };
   }
 }

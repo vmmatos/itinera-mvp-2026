@@ -142,10 +142,11 @@ describe('Scenario 001 — Alice+Bob, Sintra, 2 days, €300 budget', () => {
       );
     });
 
-    it('saves proposal to storage on cache miss', async () => {
+    it('publishes event to RabbitMQ on cache miss', async () => {
+      // Agents publish events; the orchestrator service persists them to DB
       await analyzer.analyze(TRIP_ID, 1, [ALICE_PROPOSAL, BOB_PROPOSAL]);
 
-      expect(storage.save).toHaveBeenCalledOnce();
+      expect(publisher.publish).toHaveBeenCalledOnce();
     });
 
     it('cache hit returns cached event without calling Claude', async () => {
@@ -251,11 +252,12 @@ describe('Scenario 001 — Alice+Bob, Sintra, 2 days, €300 budget', () => {
       );
     });
 
-    it('saves compromise proposal to storage', async () => {
+    it('publishes compromise event to RabbitMQ', async () => {
+      // Agents publish events; the orchestrator service persists them to DB
       const conflictAnalysis = JSON.parse(CONFLICT_ANALYSIS_RESPONSE);
       await generator.generateCompromise(TRIP_ID, 1, conflictAnalysis, TRIP_CONTEXT);
 
-      expect(storage.save).toHaveBeenCalledOnce();
+      expect(publisher.publish).toHaveBeenCalledOnce();
     });
 
     it('conflict analysis context is included in Claude prompt', async () => {

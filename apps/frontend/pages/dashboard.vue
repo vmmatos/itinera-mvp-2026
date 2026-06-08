@@ -101,6 +101,12 @@ const AGENTS = [
       <AppLogo :size="20" />
       <div class="flex items-center gap-4">
         <span class="text-fg-2 text-13">{{ authStore.user?.email }}</span>
+        <NuxtLink
+          v-if="authStore.isAdmin"
+          to="/admin"
+          class="btn text-13"
+          style="font-family:var(--mono);color:var(--amber);border-color:var(--amber-line)"
+        >Debug</NuxtLink>
         <button class="btn text-13" @click="authStore.logout()">Sign out</button>
       </div>
     </header>

@@ -50,10 +50,12 @@ describe('TripInputForm', () => {
     expect(wrapper.text()).toContain('organiser')
   })
 
-  it('step 1 Next button is disabled before persona is selected', () => {
+  it('clicking Next without selecting persona stays on step 1', async () => {
     const wrapper = mountForm()
     const btn = wrapper.find('[class*="btn-primary"]')
-    expect(btn.attributes('disabled')).toBeDefined()
+    await btn.trigger('click')
+    // Validation fires on click — form does not advance to step 2
+    expect(wrapper.text()).toContain('Group composition')
   })
 
   // ── Step 1: traveller management ─────────────────────────────
@@ -120,12 +122,15 @@ describe('TripInputForm', () => {
 
   // ── Step 2: validation ───────────────────────────────────────
 
-  it('submit button is disabled when required fields are empty', async () => {
+  it('clicking submit with empty fields does not call createTrip', async () => {
     const wrapper = mountForm()
     await goToStep2(wrapper)
 
+    // Submit button is only disabled when store.loading; validation fires on click
     const submitBtn = wrapper.find('[data-testid="submit-btn"]')
-    expect(submitBtn.attributes('disabled')).toBeDefined()
+    await submitBtn.trigger('click')
+
+    expect(mockCreateTrip).not.toHaveBeenCalled()
   })
 
   it('submit button is enabled when all required step-2 fields are filled', async () => {
@@ -148,7 +153,8 @@ describe('TripInputForm', () => {
     await goToStep2(wrapper)
 
     await wrapper.find('[data-testid="budget-slider"]').setValue(5000)
-    expect(wrapper.text()).toContain('$5,000 ceiling')
+    // Default currency is EUR
+    expect(wrapper.text()).toContain('€5,000 ceiling')
   })
 
   // ── Submit: happy path ───────────────────────────────────────

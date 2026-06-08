@@ -178,10 +178,10 @@ describe('Scenario 006 — Alice (vegan) + Diana (fine dining), Sintra+Cascais, 
       );
     });
 
-    it('saves proposal to storage on cache miss', async () => {
+    it('publishes event to RabbitMQ on cache miss', async () => {
       await analyzer.analyze(TRIP_ID, 1, ALL_PROPOSALS);
 
-      expect(storage.save).toHaveBeenCalledOnce();
+      expect(publisher.publish).toHaveBeenCalledOnce();
     });
 
     it('cache hit returns cached event without calling Claude', async () => {
@@ -325,11 +325,11 @@ describe('Scenario 006 — Alice (vegan) + Diana (fine dining), Sintra+Cascais, 
       expect(event.timestamp).toBeDefined();
     });
 
-    it('saves compromise proposal to storage', async () => {
+    it('publishes compromise event to RabbitMQ', async () => {
       const conflictAnalysis = JSON.parse(DIETARY_CONFLICT_ANALYSIS_RESPONSE);
       await generator.generateCompromise(TRIP_ID, 1, conflictAnalysis, TRIP_CONTEXT);
 
-      expect(storage.save).toHaveBeenCalledOnce();
+      expect(publisher.publish).toHaveBeenCalledOnce();
     });
   });
 

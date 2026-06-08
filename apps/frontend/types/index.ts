@@ -144,6 +144,9 @@ export interface Trip {
   budgetTotal:    number
   budgetCurrency: Currency
   finalPlan?:     FinalPlan
+  ownerId?:       string
+  ownerName?:     string
+  ownerEmail?:    string
   createdAt:      string
   updatedAt:      string
 }
