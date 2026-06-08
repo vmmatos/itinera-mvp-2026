@@ -13,7 +13,7 @@ const tripId = computed(() => route.params.tripId as string)
 const tripIdRef = computed(() => tripId.value)
 
 const { data: debugData, loading, error, refresh } = useAdminDebug(tripIdRef)
-const { events: liveEvents, connected } = useAgentStream(tripIdRef)
+const { events: liveEvents, connected } = useAgentStream(tripIdRef, 'admin')
 
 const paused = ref(false)
 const pollTimer = ref<ReturnType<typeof setInterval> | null>(null)

@@ -57,8 +57,6 @@ async function startWithRetry(): Promise<void> {
       await start()
       return
     } catch (err: unknown) {
-)
-      }
       logger.warn('Failed to start ws-relay, retrying...', { attempt, error: String(err) })
       await new Promise<void>((res) => setTimeout(res, RETRY_DELAY_MS))
     }

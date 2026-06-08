@@ -15,7 +15,13 @@ export function createStreamRouter(sseManager: SSEManager): Router {
     (req: Request, res: Response, _next: NextFunction) => {
       const clientId = crypto.randomUUID()
       const tripId = typeof req.query['tripId'] === 'string' ? req.query['tripId'] : undefined
+      const roleParam = typeof req.query['role'] === 'string' ? req.query['role'] : undefined
       const user = (req as AuthenticatedRequest).user
+
+      if (roleParam === 'admin' && user.role !== 'admin') {
+        res.status(403).json({ error: 'Forbidden' })
+        return
+      }
 
       res.setHeader('Content-Type', 'text/event-stream')
       res.setHeader('Cache-Control', 'no-cache')

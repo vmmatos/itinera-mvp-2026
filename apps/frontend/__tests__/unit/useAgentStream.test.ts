@@ -142,6 +142,35 @@ describe('useAgentStream', () => {
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
+  it('appends role param to stream URL when provided', async () => {
+    const fetchSpy = makeFetchMock([])
+    globalThis.fetch = fetchSpy
+
+    const tripId = ref<string | null>('trip-1')
+    useAgentStream(tripId, 'admin')
+
+    await nextTick()
+    await new Promise((r) => setTimeout(r, 20))
+
+    const url = fetchSpy.mock.calls[0][0] as string
+    expect(url).toContain('role=admin')
+    expect(url).toContain('tripId=trip-1')
+  })
+
+  it('does not append role param when role is undefined', async () => {
+    const fetchSpy = makeFetchMock([])
+    globalThis.fetch = fetchSpy
+
+    const tripId = ref<string | null>('trip-1')
+    useAgentStream(tripId)
+
+    await nextTick()
+    await new Promise((r) => setTimeout(r, 20))
+
+    const url = fetchSpy.mock.calls[0][0] as string
+    expect(url).not.toContain('role=')
+  })
+
   it('reconnects when tripId changes', async () => {
     const fetchSpy = makeFetchMock([])
     globalThis.fetch = fetchSpy
