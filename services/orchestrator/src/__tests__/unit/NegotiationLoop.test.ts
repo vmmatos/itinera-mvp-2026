@@ -29,10 +29,12 @@ vi.mock('@/config', () => ({
 
 vi.mock('@/services/StateManager');
 vi.mock('@/services/AgentCaller');
+vi.mock('@/services/EventPublisher');
 
 import { NegotiationLoop } from '@/services/NegotiationLoop';
 import { StateManager } from '@/services/StateManager';
 import { AgentCaller } from '@/services/AgentCaller';
+import { EventPublisher } from '@/services/EventPublisher';
 
 const AGENT_RESULT = {
   content: { destination: 'paris' },
@@ -43,23 +45,44 @@ const AGENT_RESULT = {
 
 const TRIP_ID = '550e8400-e29b-41d4-a716-446655440000';
 
+const MOCK_TRIP = {
+  id: TRIP_ID,
+  name: 'Paris Weekend',
+  region: 'Paris, France',
+  ownerId: 'user-1',
+  owner: { id: 'user-1', email: 'alice@example.com', name: 'Alice Smith' },
+  travellers: [],
+  proposals: [],
+  metrics: [],
+  destinations: [],
+  budgetTotal: 1500,
+  budgetCurrency: 'EUR',
+  startDate: new Date('2026-07-01'),
+  endDate: new Date('2026-07-03'),
+  status: 'draft',
+  createdAt: new Date(),
+  updatedAt: new Date(),
+};
+
 describe('NegotiationLoop', () => {
   let stateManager: StateManager;
   let agentCaller: AgentCaller;
+  let eventPublisher: EventPublisher;
   let loop: NegotiationLoop;
 
   beforeEach(() => {
     vi.clearAllMocks();
     stateManager = new StateManager();
     agentCaller = new AgentCaller();
-    loop = new NegotiationLoop(stateManager, agentCaller);
+    eventPublisher = new EventPublisher();
+    loop = new NegotiationLoop(stateManager, agentCaller, eventPublisher);
 
     vi.mocked(stateManager.claimNegotiating).mockResolvedValue(true);
     vi.mocked(stateManager.transitionStatus).mockResolvedValue(undefined);
     vi.mocked(stateManager.saveProposal).mockResolvedValue(undefined);
     vi.mocked(stateManager.logAgentCall).mockResolvedValue(undefined);
     vi.mocked(stateManager.saveMetric).mockResolvedValue(undefined);
-    vi.mocked(stateManager.getTrip).mockResolvedValue(null);
+    vi.mocked(stateManager.getTrip).mockResolvedValue(MOCK_TRIP as never);
 
     vi.mocked(agentCaller.callPreferenceAgent).mockResolvedValue(AGENT_RESULT);
     vi.mocked(agentCaller.callOrchestratorAgent).mockResolvedValue(AGENT_RESULT);
@@ -67,6 +90,8 @@ describe('NegotiationLoop', () => {
     vi.mocked(agentCaller.callFinanceAgent).mockResolvedValue(AGENT_RESULT);
     vi.mocked(agentCaller.callLogisticsAgent).mockResolvedValue(AGENT_RESULT);
     vi.mocked(agentCaller.callValidatorAgent).mockResolvedValue(AGENT_RESULT);
+
+    vi.mocked(eventPublisher.publishToExchange).mockResolvedValue(undefined);
   });
 
   it('happy path: runs all 6 rounds and transitions to confirmed', async () => {
@@ -75,8 +100,8 @@ describe('NegotiationLoop', () => {
     expect(stateManager.claimNegotiating).toHaveBeenCalledWith(TRIP_ID);
     expect(stateManager.transitionStatus).toHaveBeenCalledWith(TRIP_ID, 'confirmed');
     expect(agentCaller.callPreferenceAgent).toHaveBeenCalledTimes(4);
-    expect(agentCaller.callOrchestratorAgent).toHaveBeenCalledTimes(1);     // analyze round
-    expect(agentCaller.callOrchestratorPropose).toHaveBeenCalledTimes(1);  // propose round
+    expect(agentCaller.callOrchestratorAgent).toHaveBeenCalledTimes(1);
+    expect(agentCaller.callOrchestratorPropose).toHaveBeenCalledTimes(1);
     expect(agentCaller.callFinanceAgent).toHaveBeenCalledTimes(1);
     expect(agentCaller.callLogisticsAgent).toHaveBeenCalledTimes(1);
     expect(agentCaller.callValidatorAgent).toHaveBeenCalledTimes(1);
@@ -133,5 +158,44 @@ describe('NegotiationLoop', () => {
 
     expect(agentCaller.callPreferenceAgent).not.toHaveBeenCalled();
     expect(stateManager.transitionStatus).not.toHaveBeenCalled();
+  });
+
+  // ── Notification tests ────────────────────────────────────────────
+
+  it('publishes itinerary-ready notification with owner email on successful confirm', async () => {
+    await loop.run(TRIP_ID);
+
+    expect(eventPublisher.publishToExchange).toHaveBeenCalledOnce();
+    const [exchange, routingKey, payload] = vi.mocked(eventPublisher.publishToExchange).mock.calls[0];
+    expect(exchange).toBe('notifications');
+    expect(routingKey).toBe('notification.email.itinerary-ready');
+    expect((payload as Record<string, unknown>)['type']).toBe('itinerary-ready');
+    expect((payload as Record<string, unknown>)['to']).toBe('alice@example.com');
+    const data = (payload as Record<string, unknown>)['data'] as Record<string, unknown>;
+    expect(data['firstName']).toBe('Alice');
+    expect(data['tripName']).toBe('Paris Weekend');
+    expect(data['tripId']).toBe(TRIP_ID);
+  });
+
+  it('does NOT publish notification when trip fails (cancelled)', async () => {
+    vi.mocked(agentCaller.callPreferenceAgent).mockRejectedValue(
+      new Error('preference-agent unreachable'),
+    );
+
+    await loop.run(TRIP_ID);
+
+    expect(eventPublisher.publishToExchange).not.toHaveBeenCalled();
+  });
+
+  it('skips notification gracefully when trip has no owner email', async () => {
+    vi.mocked(stateManager.getTrip).mockResolvedValue({
+      ...MOCK_TRIP,
+      owner: { id: 'user-1', email: '', name: 'Alice Smith' },
+    } as never);
+
+    await loop.run(TRIP_ID);
+
+    expect(eventPublisher.publishToExchange).not.toHaveBeenCalled();
+    expect(stateManager.transitionStatus).toHaveBeenCalledWith(TRIP_ID, 'confirmed');
   });
 });

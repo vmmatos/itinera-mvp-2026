@@ -3,6 +3,7 @@ import { resolve } from 'path';
 
 const financeAgentSrc = resolve(__dirname, '../../services/finance-agent/src');
 const logisticsAgentSrc = resolve(__dirname, '../../services/logistics-agent/src');
+const orchestratorSrc = resolve(__dirname, '../../services/orchestrator/src');
 
 export default defineConfig({
   test: {
@@ -16,6 +17,11 @@ export default defineConfig({
       { find: '@/agents/BudgetValidator', replacement: `${financeAgentSrc}/agents/BudgetValidator` },
       // Logistics-agent internal @/ imports — must precede the generic @/ rule
       { find: '@/agents/BaseLogisticsAgent', replacement: `${logisticsAgentSrc}/agents/BaseLogisticsAgent` },
+      // Orchestrator service imports for scenario 008 — must precede the generic @/ rule
+      { find: '@/services/NegotiationLoop', replacement: `${orchestratorSrc}/services/NegotiationLoop` },
+      { find: '@/services/StateManager',    replacement: `${orchestratorSrc}/services/StateManager` },
+      { find: '@/services/AgentCaller',     replacement: `${orchestratorSrc}/services/AgentCaller` },
+      { find: '@/services/EventPublisher',  replacement: `${orchestratorSrc}/services/EventPublisher` },
       // Orchestrator-agent generic rule (covers ConflictAnalyzer, CompromiseGenerator, services)
       { find: '@', replacement: resolve(__dirname, '../../services/orchestrator-agent/src') },
       { find: '@itinera/shared', replacement: resolve(__dirname, '../../services/shared/src') },

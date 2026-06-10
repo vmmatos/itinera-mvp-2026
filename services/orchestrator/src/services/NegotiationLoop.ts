@@ -3,6 +3,10 @@ import type { AgentName } from '@itinera/shared';
 import { StateManager } from '@/services/StateManager';
 import { AgentCaller } from '@/services/AgentCaller';
 import type { AgentTripContext } from '@/services/AgentCaller';
+import { EventPublisher } from '@/services/EventPublisher';
+
+const NOTIFICATIONS_EXCHANGE = 'notifications';
+const ROUTING_KEY_ITINERARY_READY = 'notification.email.itinerary-ready';
 
 const PREFERENCE_AGENTS: AgentName[] = ['alice', 'bob', 'carlos', 'diana'];
 
@@ -13,6 +17,7 @@ export class NegotiationLoop extends BaseService {
   constructor(
     private readonly stateManager: StateManager,
     private readonly agentCaller: AgentCaller,
+    private readonly eventPublisher: EventPublisher,
   ) {
     super('negotiation-loop');
   }
@@ -74,6 +79,25 @@ export class NegotiationLoop extends BaseService {
       }
 
       await this.stateManager.transitionStatus(tripId, 'confirmed');
+
+      if (trip?.owner?.email) {
+        await this.eventPublisher.publishToExchange(
+          NOTIFICATIONS_EXCHANGE,
+          ROUTING_KEY_ITINERARY_READY,
+          {
+            type: 'itinerary-ready',
+            to: trip.owner.email,
+            data: {
+              firstName: trip.owner.name?.split(' ')[0] ?? 'Traveller',
+              tripName: trip.name,
+              tripId,
+            },
+          },
+        );
+      } else {
+        this.logger.warn('Trip owner email missing — skipping itinerary-ready notification', { tripId });
+      }
+
       this.logger.info('Negotiation loop completed', { tripId });
     } catch (err) {
       this.logger.error('Negotiation loop failed', { tripId, error: String(err) });

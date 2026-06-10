@@ -81,6 +81,19 @@ export class EventPublisher extends BaseService {
     this.logger.debug('Event published', { routingKey, tripId: event.tripId });
   }
 
+  async publishToExchange(exchange: string, routingKey: string, payload: unknown): Promise<void> {
+    if (!this.channel) {
+      this.logger.warn('EventPublisher not connected — skipping', { exchange, routingKey });
+      return;
+    }
+    await this.channel.assertExchange(exchange, 'topic', { durable: true });
+    this.channel.publish(exchange, routingKey, Buffer.from(JSON.stringify(payload)), {
+      persistent: true,
+      contentType: 'application/json',
+    });
+    this.logger.debug('Event published to exchange', { exchange, routingKey });
+  }
+
   isConnected(): boolean {
     return this.connection !== null && this.channel !== null;
   }
