@@ -235,6 +235,15 @@ const ROUND_LABELS: Record<number, string> = {
   6: 'Final scoring',
 }
 
+const ROUND_AGENTS: Record<number, string[]> = {
+  1: ['alice', 'bob', 'carlos', 'diana'],
+  2: ['orchestrator'],
+  3: ['orchestrator'],
+  4: ['finance'],
+  5: ['logistics'],
+  6: ['validator'],
+}
+
 const startNegotiationPolling = (tripId: string): void => {
   const poll = async (): Promise<void> => {
     try {
@@ -302,6 +311,19 @@ const orchestratorDecisions = computed(() =>
 const agentOnlyEvents = computed(() =>
   discussionEvents.value.filter((e) => e.agent !== 'orchestrator'),
 )
+
+// Highest round with at least one completed event
+const completedRound = computed((): number => {
+  const src = streamEvents.value.length > 0 ? streamEvents.value : liveProposals.value
+  if (src.length === 0) return 0
+  return Math.min(Math.max(...src.map((e) => e.round)), 6)
+})
+
+// Round currently executing — completedRound + 1, capped at 6, 0 when not negotiating
+const activeRound = computed((): number => {
+  if (negotiationStatus.value !== 'negotiating') return 0
+  return Math.min(completedRound.value + 1, 6)
+})
 
 // ── Step 4: Itinerary review ──────────────────────────────────
 
@@ -1145,6 +1167,32 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
           </div>
         </div>
 
+        <!-- Active agent working indicator -->
+        <div
+          v-if="negotiationStatus === 'negotiating' && activeRound > 0"
+          data-testid="active-agent-indicator"
+          style="margin-bottom:var(--s-4);padding:var(--s-3) var(--s-4);border:var(--hair);border-radius:var(--r-2);background:var(--bg-2);display:flex;align-items:center;gap:var(--s-4);flex-wrap:wrap"
+        >
+          <span class="helper">Round {{ activeRound }} / 6 · {{ ROUND_LABELS[activeRound] ?? '' }}</span>
+          <div style="display:flex;gap:var(--s-4);flex-wrap:wrap">
+            <div
+              v-for="agent in ROUND_AGENTS[activeRound]"
+              :key="agent"
+              style="display:flex;align-items:center;gap:var(--s-2)"
+            >
+              <span
+                class="agent-thinking-dot"
+                :style="`background:${AGENT_COLOUR[agent] ?? 'var(--fg-3)'}`"
+              />
+              <span
+                style="font-size:var(--t-13);font-family:var(--mono);font-weight:600"
+                :style="`color:${AGENT_COLOUR[agent] ?? 'var(--fg-2)'}`"
+              >{{ agent }}</span>
+              <span class="helper" style="text-transform:none;letter-spacing:0">thinking…</span>
+            </div>
+          </div>
+        </div>
+
         <!-- Cancelled state -->
         <div v-if="negotiationStatus === 'cancelled'" style="padding:var(--s-6);background:rgba(255,93,93,0.06);border:1px solid rgba(255,93,93,0.24);border-radius:var(--r-2);text-align:center">
           <p style="color:var(--red);font-size:var(--t-15);margin:0 0 var(--s-3)">Negotiation failed</p>
@@ -1197,16 +1245,30 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
           </div>
         </div>
 
-        <!-- Round progress -->
-        <div v-if="negotiationStatus === 'negotiating'" style="margin-top:var(--s-4)">
-          <div class="helper" style="margin-bottom:var(--s-2)">
-            Round {{ Math.min(liveProposals.length > 0 ? Math.max(...liveProposals.map(p => p.round)) : 0, 6) }} / 6
+        <!-- Round progress — segmented -->
+        <div v-if="negotiationStatus === 'negotiating'" style="margin-top:var(--s-5)" data-testid="round-progress">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--s-2)">
+            <span class="helper">
+              Round {{ completedRound }} / 6{{ completedRound > 0 ? ' · ' + ROUND_LABELS[completedRound] : '' }}
+            </span>
+            <span class="helper">{{ Math.round((completedRound / 6) * 100) }}%</span>
           </div>
-          <div style="height:4px;background:var(--bg-3);border-radius:2px;overflow:hidden">
+          <div style="display:flex;gap:3px" data-testid="progress-segments">
             <div
-              style="height:100%;background:var(--green);border-radius:2px;transition:width 0.5s"
-              :style="`width:${Math.min((liveProposals.length > 0 ? Math.max(...liveProposals.map(p => p.round)) : 0) / 6 * 100, 100)}%`"
-            />
+              v-for="n in 6"
+              :key="n"
+              style="flex:1;height:8px;border-radius:var(--r-1);overflow:hidden;background:var(--bg-3)"
+            >
+              <div
+                v-if="n <= completedRound"
+                style="height:100%;background:var(--green);border-radius:var(--r-1)"
+              />
+              <div
+                v-else-if="n === activeRound"
+                class="progress-segment-active"
+                style="height:100%;background:var(--green-dim);border-radius:var(--r-1)"
+              />
+            </div>
           </div>
         </div>
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 
@@ -7,8 +7,10 @@ import { createPinia, setActivePinia } from 'pinia'
 import {
   mockCreateTrip,
   mockFetchTrips,
+  mockApiGet,
   tripStoreMock,
   authStoreMock,
+  agentStreamMock,
 } from '../setup'
 
 import TripInputForm from '~/components/trip/TripInputForm.vue'
@@ -203,5 +205,133 @@ describe('TripInputForm', () => {
     await wrapper.vm.$nextTick()
 
     expect(wrapper.emitted('success')).toBeFalsy()
+  })
+})
+
+// ── Step 3: Negotiate — active agent indicator + progress bar ───
+
+describe('TripInputForm Step 3 — Negotiate', () => {
+  // Navigate to step 3, optionally injecting stream events before mount.
+  // Returns the mounted wrapper already on step 3.
+  const goToStep3 = async (
+    streamEvents: object[] = [],
+    pollStatus = 'negotiating',
+    pollProposals: object[] = [],
+  ) => {
+    agentStreamMock.events.value = streamEvents
+    agentStreamMock.connected.value = false
+
+    mockCreateTrip.mockResolvedValueOnce('trip-abc')
+    mockApiGet
+      .mockResolvedValueOnce({ data: { data: { status: pollStatus } } })
+      .mockResolvedValueOnce({ data: { data: pollProposals } })
+
+    const wrapper = mountForm()
+    await goToStep2(wrapper)
+    await wrapper.find('[data-testid="trip-name"]').setValue('Lisbon trip')
+    await wrapper.find('[data-testid="region"]').setValue('Portugal')
+    await wrapper.find('[data-testid="start-date"]').setValue('2026-09-01')
+    await wrapper.find('[data-testid="end-date"]').setValue('2026-09-08')
+    await wrapper.find('[data-testid="submit-btn"]').trigger('click')
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+    return wrapper
+  }
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    vi.useFakeTimers()
+    tripStoreMock.loading = false
+    tripStoreMock.error = null
+    agentStreamMock.events.value = []
+    agentStreamMock.connected.value = false
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  // ── Active agent indicator ────────────────────────────────────
+
+  it('shows active agent indicator on round 1 when no events arrived', async () => {
+    const wrapper = await goToStep3()
+    const indicator = wrapper.find('[data-testid="active-agent-indicator"]')
+    expect(indicator.exists()).toBe(true)
+    expect(indicator.text()).toContain('Round 1')
+    expect(indicator.text()).toContain('alice')
+    expect(indicator.text()).toContain('bob')
+    expect(indicator.text()).toContain('carlos')
+    expect(indicator.text()).toContain('diana')
+  })
+
+  it('advances active agent to round 2 when 4 round-1 stream events arrive', async () => {
+    const round1Events = [
+      { tripId: 'trip-abc', type: 'propose', agent: 'alice',  round: 1, timestamp: '', content: {} },
+      { tripId: 'trip-abc', type: 'propose', agent: 'bob',    round: 1, timestamp: '', content: {} },
+      { tripId: 'trip-abc', type: 'propose', agent: 'carlos', round: 1, timestamp: '', content: {} },
+      { tripId: 'trip-abc', type: 'propose', agent: 'diana',  round: 1, timestamp: '', content: {} },
+    ]
+    const wrapper = await goToStep3(round1Events)
+    const indicator = wrapper.find('[data-testid="active-agent-indicator"]')
+    expect(indicator.exists()).toBe(true)
+    expect(indicator.text()).toContain('Round 2')
+    expect(indicator.text()).toContain('orchestrator')
+  })
+
+  it('shows finance agent as active on round 4', async () => {
+    const events = [
+      { tripId: 'trip-abc', type: 'propose', agent: 'alice',        round: 1, timestamp: '', content: {} },
+      { tripId: 'trip-abc', type: 'propose', agent: 'orchestrator', round: 2, timestamp: '', content: {} },
+      { tripId: 'trip-abc', type: 'propose', agent: 'orchestrator', round: 3, timestamp: '', content: {} },
+    ]
+    const wrapper = await goToStep3(events)
+    const indicator = wrapper.find('[data-testid="active-agent-indicator"]')
+    expect(indicator.exists()).toBe(true)
+    expect(indicator.text()).toContain('Round 4')
+    expect(indicator.text()).toContain('finance')
+  })
+
+  it('hides active agent indicator when negotiation is confirmed', async () => {
+    const wrapper = await goToStep3([], 'confirmed')
+    expect(wrapper.find('[data-testid="active-agent-indicator"]').exists()).toBe(false)
+  })
+
+  it('hides active agent indicator when negotiation is cancelled', async () => {
+    const wrapper = await goToStep3([], 'cancelled')
+    expect(wrapper.find('[data-testid="active-agent-indicator"]').exists()).toBe(false)
+  })
+
+  // ── Segmented progress bar ────────────────────────────────────
+
+  it('renders progress bar with 6 segments when negotiating', async () => {
+    const wrapper = await goToStep3()
+    expect(wrapper.find('[data-testid="round-progress"]').exists()).toBe(true)
+    const segments = wrapper.findAll('[data-testid="progress-segments"] > div')
+    expect(segments.length).toBe(6)
+  })
+
+  it('shows 0% and no completed label when no rounds done', async () => {
+    const wrapper = await goToStep3()
+    const bar = wrapper.find('[data-testid="round-progress"]')
+    expect(bar.text()).toContain('0 / 6')
+    expect(bar.text()).toContain('0%')
+  })
+
+  it('shows 50% label when 3 rounds completed', async () => {
+    const events = [
+      { tripId: 'trip-abc', type: 'propose', agent: 'alice',        round: 1, timestamp: '', content: {} },
+      { tripId: 'trip-abc', type: 'propose', agent: 'orchestrator', round: 2, timestamp: '', content: {} },
+      { tripId: 'trip-abc', type: 'propose', agent: 'orchestrator', round: 3, timestamp: '', content: {} },
+    ]
+    const wrapper = await goToStep3(events)
+    const bar = wrapper.find('[data-testid="round-progress"]')
+    expect(bar.text()).toContain('3 / 6')
+    expect(bar.text()).toContain('50%')
+  })
+
+  it('hides progress bar when negotiation is cancelled', async () => {
+    const wrapper = await goToStep3([], 'cancelled')
+    expect(wrapper.find('[data-testid="round-progress"]').exists()).toBe(false)
   })
 })
