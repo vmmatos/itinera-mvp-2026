@@ -1,4 +1,4 @@
-import { BaseService } from '@itinera/shared';
+import { BaseService, PREFERENCE_AGENT_NAMES } from '@itinera/shared';
 import type { AgentName } from '@itinera/shared';
 import { StateManager } from '@/services/StateManager';
 import { AgentCaller } from '@/services/AgentCaller';
@@ -8,7 +8,7 @@ import { EventPublisher } from '@/services/EventPublisher';
 const NOTIFICATIONS_EXCHANGE = 'notifications';
 const ROUTING_KEY_ITINERARY_READY = 'notification.email.itinerary-ready';
 
-const PREFERENCE_AGENTS: AgentName[] = ['alice', 'bob', 'carlos', 'diana'];
+const PREFERENCE_AGENTS: AgentName[] = PREFERENCE_AGENT_NAMES;
 
 type RoundName = 'preferences' | 'analyze' | 'propose' | 'finance' | 'logistics' | 'refine';
 const ROUNDS: RoundName[] = ['preferences', 'analyze', 'propose', 'finance', 'logistics', 'refine'];

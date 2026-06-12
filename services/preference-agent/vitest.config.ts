@@ -5,6 +5,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': resolve(__dirname, './src'),
+      '@itinera/shared': resolve(__dirname, '../shared/src'),
     },
   },
 });

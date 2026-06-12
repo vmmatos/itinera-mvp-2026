@@ -1,7 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import type { MessageParam } from '@anthropic-ai/sdk/resources/messages';
-import type { AgentEvent, AgentName } from '@itinera/shared';
+import type { AgentEvent, AgentName, AIMessage } from '@itinera/shared';
 import { BaseLogisticsAgent } from '@/agents/BaseLogisticsAgent';
 import type { WeatherForecast } from '@/services/WeatherService';
 import type { TimingValidationResult } from '@/validators/TimingValidator';
@@ -34,7 +33,7 @@ export class WeatherAnalyzer extends BaseLogisticsAgent {
         return cached;
       }
 
-      const messages: MessageParam[] = [
+      const messages: AIMessage[] = [
         {
           role: 'user',
           content: [
@@ -55,7 +54,7 @@ export class WeatherAnalyzer extends BaseLogisticsAgent {
         },
       ];
 
-      const event = await this.callClaudeAndBuild(tripId, round, 'propose', messages);
+      const event = await this.callAIAndBuild(tripId, round, 'propose', messages);
       await this.redis.set(cacheKey, event, config.CACHE_TTL_SECONDS);
       return event;
     });

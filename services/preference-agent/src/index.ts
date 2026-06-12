@@ -1,17 +1,14 @@
 import 'reflect-metadata';
 import express from 'express';
 import helmet from 'helmet';
-import { requestLogger, errorHandler, authMiddleware, createLogger } from '@itinera/shared';
+import { requestLogger, errorHandler, authMiddleware, createLogger, PREFERENCE_AGENT_CONFIGS } from '@itinera/shared';
 import { AppDataSource } from '@/data-source';
 import { config } from '@/config';
 import { AnthropicService } from '@/services/AnthropicService';
 import { RabbitMQPublisher } from '@/services/RabbitMQPublisher';
 import { RedisService } from '@/services/RedisService';
 import { ProposalStorageService } from '@/services/ProposalStorageService';
-import { AliceAgent } from '@/agents/AliceAgent';
-import { BobAgent } from '@/agents/BobAgent';
-import { CarlosAgent } from '@/agents/CarlosAgent';
-import { DianaAgent } from '@/agents/DianaAgent';
+import { PreferenceAgent } from '@/agents/PreferenceAgent';
 import { createHealthRouter } from '@/routes/health';
 import { createPreferencesRouter } from '@/routes/preferences';
 
@@ -26,7 +23,7 @@ async function start(): Promise<void> {
   await AppDataSource.initialize();
   logger.info('Database connected');
 
-  const anthropic = new AnthropicService();
+  const aiProvider = new AnthropicService();
   const publisher = new RabbitMQPublisher();
   const redis = new RedisService();
   const storage = new ProposalStorageService();
@@ -34,12 +31,12 @@ async function start(): Promise<void> {
   await publisher.connect();
   await redis.connect();
 
-  const agents = {
-    alice: new AliceAgent(anthropic, publisher, redis, storage),
-    bob: new BobAgent(anthropic, publisher, redis, storage),
-    carlos: new CarlosAgent(anthropic, publisher, redis, storage),
-    diana: new DianaAgent(anthropic, publisher, redis, storage),
-  };
+  const agents = Object.fromEntries(
+    PREFERENCE_AGENT_CONFIGS.map((cfg) => [
+      cfg.name,
+      new PreferenceAgent(cfg.name, aiProvider, publisher, redis, storage),
+    ]),
+  ) as Record<string, PreferenceAgent>;
 
   app.locals['logger'] = logger;
 

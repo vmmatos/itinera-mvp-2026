@@ -51,7 +51,7 @@ export class AlternativeFinder extends BaseFinanceAgent {
       JSON.stringify(proposal, null, 2),
     ].join('\n');
 
-    const event = await this.callClaudeAndBuild(tripId, round, 'propose', [
+    const event = await this.callAIAndBuild(tripId, round, 'propose', [
       { role: 'user', content: userMessage },
     ]);
 

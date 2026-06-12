@@ -1,18 +1,18 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { ValidationError } from '@itinera/shared';
+import { ValidationError, PREFERENCE_AGENT_CONFIGS, PREFERENCE_AGENT_NAMES } from '@itinera/shared';
 import type { AgentEvent } from '@itinera/shared';
 import type { BaseAgent } from '@/agents/BaseAgent';
 
-const AGENT_NAMES = ['alice', 'bob', 'carlos', 'diana'] as const;
-type AgentKey = (typeof AGENT_NAMES)[number];
+const AGENT_NAMES = PREFERENCE_AGENT_NAMES as [string, ...string[]];
+type AgentKey = (typeof PREFERENCE_AGENT_NAMES)[number];
 
 const ProposeSchema = z.object({
   tripId: z.string().uuid(),
   round: z.number().int().min(1),
   context: z.string().optional().default(''),
-  agents: z.array(z.enum(AGENT_NAMES)).min(1).default([...AGENT_NAMES]),
+  agents: z.array(z.enum(AGENT_NAMES)).min(1).default([...PREFERENCE_AGENT_NAMES]),
 });
 
 const ReactSchema = z.object({
@@ -20,31 +20,8 @@ const ReactSchema = z.object({
   round: z.number().int().min(1),
   proposals: z.array(z.unknown()).min(1),
   context: z.string().optional().default(''),
-  agents: z.array(z.enum(AGENT_NAMES)).min(1).default([...AGENT_NAMES]),
+  agents: z.array(z.enum(AGENT_NAMES)).min(1).default([...PREFERENCE_AGENT_NAMES]),
 });
-
-const AGENT_PROFILES = [
-  {
-    name: 'alice',
-    persona: 'Culture & History Enthusiast',
-    preferences: ['museums', 'historical sites', 'cultural events', 'architecture', 'art galleries'],
-  },
-  {
-    name: 'bob',
-    persona: 'Relaxation & Wine Lover',
-    preferences: ['beach', 'coastal resorts', 'wine tasting', 'leisurely pace', 'scenic views'],
-  },
-  {
-    name: 'carlos',
-    persona: 'Adventure & Outdoor Explorer',
-    preferences: ['hiking', 'adventure sports', 'national parks', 'physical challenges', 'nature'],
-  },
-  {
-    name: 'diana',
-    persona: 'Gastronomy & Fine Dining Connoisseur',
-    preferences: ['michelin restaurants', 'food markets', 'cooking classes', 'local cuisine', 'wine pairing'],
-  },
-] as const;
 
 export function createPreferencesRouter(agents: Record<AgentKey, BaseAgent>): Router {
   const router = Router();
@@ -59,7 +36,7 @@ export function createPreferencesRouter(agents: Record<AgentKey, BaseAgent>): Ro
     const { tripId, round, context, agents: requestedAgents } = parsed.data;
 
     const results = await Promise.allSettled(
-      requestedAgents.map((name) => agents[name].propose(tripId, round, context)),
+      requestedAgents.map((name) => agents[name as AgentKey].propose(tripId, round, context)),
     );
 
     const proposals: AgentEvent[] = [];
@@ -90,7 +67,7 @@ export function createPreferencesRouter(agents: Record<AgentKey, BaseAgent>): Ro
     const { tripId, round, proposals, context, agents: requestedAgents } = parsed.data;
 
     const results = await Promise.allSettled(
-      requestedAgents.map((name) => agents[name].react(tripId, round, proposals, context)),
+      requestedAgents.map((name) => agents[name as AgentKey].react(tripId, round, proposals, context)),
     );
 
     const reactions: AgentEvent[] = [];
@@ -112,7 +89,7 @@ export function createPreferencesRouter(agents: Record<AgentKey, BaseAgent>): Ro
   });
 
   router.get('/profiles', (_req: Request, res: Response): void => {
-    res.json({ agents: AGENT_PROFILES });
+    res.json({ agents: PREFERENCE_AGENT_CONFIGS });
   });
 
   return router;
