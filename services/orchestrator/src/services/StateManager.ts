@@ -64,7 +64,7 @@ export class StateManager extends BaseService {
   async getTrip(tripId: string): Promise<Trip | null> {
     return AppDataSource.getRepository(Trip).findOne({
       where: { id: tripId },
-      relations: ['travellers', 'proposals', 'metrics'],
+      relations: ['travellers', 'proposals', 'metrics', 'owner'],
     });
   }
 

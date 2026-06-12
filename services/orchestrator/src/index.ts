@@ -27,7 +27,7 @@ async function start(): Promise<void> {
 
   const stateManager = new StateManager();
   const agentCaller = new AgentCaller();
-  const negotiationLoop = new NegotiationLoop(stateManager, agentCaller);
+  const negotiationLoop = new NegotiationLoop(stateManager, agentCaller, eventPublisher);
   const tripService = new TripService(stateManager, negotiationLoop);
 
   registerRoutes(app, eventPublisher, tripService);
