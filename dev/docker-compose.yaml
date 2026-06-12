@@ -234,6 +234,7 @@ services:
         condition: service_healthy
     volumes:
       - ../services/orchestrator/src:/app/services/orchestrator/src
+      - ../services/orchestrator/vitest.config.ts:/app/services/orchestrator/vitest.config.ts:ro
       - ../services/shared/src:/app/services/shared/src
 
   ## ── Preference Agent ─────────────────────────────────────────────────────────
@@ -276,6 +277,7 @@ services:
         condition: service_healthy
     volumes:
       - ../services/preference-agent/src:/app/services/preference-agent/src
+      - ../services/preference-agent/vitest.config.ts:/app/services/preference-agent/vitest.config.ts:ro
       - ../services/shared/src:/app/services/shared/src
 
   ## ── Orchestrator Agent ───────────────────────────────────────────────────────
