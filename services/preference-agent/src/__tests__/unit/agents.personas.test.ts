@@ -18,6 +18,7 @@ vi.mock('@/config', () => ({
   config: {
     ANTHROPIC_API_KEY: 'test-key',
     ANTHROPIC_MODEL: 'claude-sonnet-4-20250514',
+    AI_PROVIDER: 'anthropic',
     NODE_ENV: 'test',
     RABBITMQ_EXCHANGE: 'agent.events',
   },
@@ -25,27 +26,25 @@ vi.mock('@/config', () => ({
   getRedisUrl: () => 'redis://localhost:6379',
 }));
 
-import { AliceAgent } from '@/agents/AliceAgent';
-import { BobAgent } from '@/agents/BobAgent';
-import { CarlosAgent } from '@/agents/CarlosAgent';
-import { DianaAgent } from '@/agents/DianaAgent';
+import { PreferenceAgent } from '@/agents/PreferenceAgent';
+import { PREFERENCE_AGENT_CONFIGS } from '@itinera/shared';
+import type { AgentName } from '@itinera/shared';
 import { AnthropicService } from '@/services/AnthropicService';
 import { RabbitMQPublisher } from '@/services/RabbitMQPublisher';
 import { RedisService } from '@/services/RedisService';
 import { ProposalStorageService } from '@/services/ProposalStorageService';
 
-type AnyAgentClass =
-  | typeof AliceAgent
-  | typeof BobAgent
-  | typeof CarlosAgent
-  | typeof DianaAgent;
-
 function makeDeps() {
-  const anthropic = new AnthropicService();
+  const aiProvider = new AnthropicService();
   const publisher = new RabbitMQPublisher();
   const redis = new RedisService();
   const storage = new ProposalStorageService();
-  return { anthropic, publisher, redis, storage };
+  return { aiProvider, publisher, redis, storage };
+}
+
+function makeAgent(name: AgentName) {
+  const { aiProvider, publisher, redis, storage } = makeDeps();
+  return new PreferenceAgent(name, aiProvider, publisher, redis, storage);
 }
 
 const VALID_JSON_RESPONSE = JSON.stringify({
@@ -62,31 +61,27 @@ const VALID_JSON_RESPONSE = JSON.stringify({
 
 // ─── Block 1: agentName property ───────────────────────────────────────────
 
-describe.each<[string, AnyAgentClass]>([
-  ['alice', AliceAgent],
-  ['bob', BobAgent],
-  ['carlos', CarlosAgent],
-  ['diana', DianaAgent],
-])('%s — agentName property', (expectedName, AgentClass) => {
-  it(`agentName equals '${expectedName}'`, () => {
-    const { anthropic, publisher, redis, storage } = makeDeps();
-    const agent = new AgentClass(anthropic, publisher, redis, storage);
-    expect(agent.agentName).toBe(expectedName);
-  });
-});
+describe.each<[AgentName]>([['alice'], ['bob'], ['carlos'], ['diana']])(
+  '%s — agentName property',
+  (name) => {
+    it(`agentName equals '${name}'`, () => {
+      const agent = makeAgent(name);
+      expect(agent.agentName).toBe(name);
+    });
+  },
+);
 
 // ─── Block 2: persona keyword in systemPrompt ──────────────────────────────
 
-describe.each<[string, AnyAgentClass, string]>([
-  ['alice', AliceAgent, 'museum'],
-  ['bob', BobAgent, 'relaxation'],
-  ['carlos', CarlosAgent, 'adventure'],
-  ['diana', DianaAgent, 'gastronomy'],
-])('%s — systemPrompt contains persona keyword', (_, AgentClass, keyword) => {
+describe.each<[AgentName, string]>([
+  ['alice', 'museum'],
+  ['bob', 'relaxation'],
+  ['carlos', 'adventure'],
+  ['diana', 'gastronomy'],
+])('%s — systemPrompt contains persona keyword', (name, keyword) => {
   it(`systemPrompt contains '${keyword}'`, () => {
-    const { anthropic, publisher, redis, storage } = makeDeps();
-    const agent = new AgentClass(anthropic, publisher, redis, storage);
-    expect(agent.systemPrompt).toContain(keyword);
+    const agent = makeAgent(name);
+    expect(agent.systemPrompt.toLowerCase()).toContain(keyword);
   });
 });
 
@@ -94,125 +89,118 @@ describe.each<[string, AnyAgentClass, string]>([
 
 describe('Alice — persona consistency', () => {
   it("systemPrompt contains 'museum'", () => {
-    const { anthropic, publisher, redis, storage } = makeDeps();
-    const alice = new AliceAgent(anthropic, publisher, redis, storage);
-    expect(alice.systemPrompt).toContain('museum');
+    expect(makeAgent('alice').systemPrompt.toLowerCase()).toContain('museum');
   });
 
   it("systemPrompt contains 'museums' in priorities text", () => {
-    const { anthropic, publisher, redis, storage } = makeDeps();
-    const alice = new AliceAgent(anthropic, publisher, redis, storage);
-    expect(alice.systemPrompt).toContain('museums');
+    expect(makeAgent('alice').systemPrompt.toLowerCase()).toContain('museums');
   });
 
   it("systemPrompt contains 'culture'", () => {
-    const { anthropic, publisher, redis, storage } = makeDeps();
-    const alice = new AliceAgent(anthropic, publisher, redis, storage);
-    expect(alice.systemPrompt).toContain('culture');
+    expect(makeAgent('alice').systemPrompt.toLowerCase()).toContain('culture');
   });
 });
 
-// ─── Block 4: systemPrompt forwarded to anthropic.complete ─────────────────
+// ─── Block 4: systemPrompt forwarded to aiProvider.complete ────────────────
 
-describe.each<[string, AnyAgentClass]>([
-  ['alice', AliceAgent],
-  ['bob', BobAgent],
-  ['carlos', CarlosAgent],
-  ['diana', DianaAgent],
-])('%s — systemPrompt forwarded to anthropic.complete', (_, AgentClass) => {
-  let anthropic: AnthropicService;
-  let agent: InstanceType<AnyAgentClass>;
+describe.each<[AgentName]>([['alice'], ['bob'], ['carlos'], ['diana']])(
+  '%s — systemPrompt forwarded to aiProvider.complete',
+  (name) => {
+    let deps: ReturnType<typeof makeDeps>;
+    let agent: PreferenceAgent;
 
-  beforeEach(() => {
-    vi.clearAllMocks();
-    const deps = makeDeps();
-    anthropic = deps.anthropic;
-    agent = new AgentClass(anthropic, deps.publisher, deps.redis, deps.storage);
+    beforeEach(() => {
+      vi.clearAllMocks();
+      deps = makeDeps();
+      agent = new PreferenceAgent(name, deps.aiProvider, deps.publisher, deps.redis, deps.storage);
 
-    vi.mocked(anthropic.complete).mockResolvedValue({
-      content: VALID_JSON_RESPONSE,
-      latencyMs: 100,
-      tokensUsed: 50,
+      vi.mocked(deps.aiProvider.complete).mockResolvedValue({
+        content: VALID_JSON_RESPONSE,
+        latencyMs: 100,
+        tokensUsed: 50,
+      });
+      vi.mocked(deps.redis.get).mockResolvedValue(null);
+      vi.mocked(deps.redis.set).mockResolvedValue(undefined);
+      vi.mocked(deps.storage.save).mockResolvedValue(undefined);
+      vi.mocked(deps.publisher.publish).mockResolvedValue(undefined);
     });
-    vi.mocked(deps.redis.get).mockResolvedValue(null);
-    vi.mocked(deps.redis.set).mockResolvedValue(undefined);
-    vi.mocked(deps.storage.save).mockResolvedValue(undefined);
-    vi.mocked(deps.publisher.publish).mockResolvedValue(undefined);
-  });
 
-  it('passes systemPrompt as first arg to anthropic.complete', async () => {
-    await agent.propose('trip-001', 1, 'Weekend trip');
-    const [firstArg] = vi.mocked(anthropic.complete).mock.calls[0];
-    expect(firstArg).toBe(agent.systemPrompt);
-  });
-});
+    it('passes systemPrompt as first arg to aiProvider.complete', async () => {
+      await agent.propose('trip-001', 1, 'Weekend trip');
+      const [firstArg] = vi.mocked(deps.aiProvider.complete).mock.calls[0];
+      expect(firstArg).toBe(agent.systemPrompt);
+    });
+  },
+);
 
 // ─── Block 5: each agent proposes valid JSON ────────────────────────────────
 
-describe.each<[string, AnyAgentClass]>([
-  ['alice', AliceAgent],
-  ['bob', BobAgent],
-  ['carlos', CarlosAgent],
-  ['diana', DianaAgent],
-])('%s — propose returns valid parsed JSON', (_, AgentClass) => {
-  let agent: InstanceType<AnyAgentClass>;
-  let anthropic: AnthropicService;
-  let redis: RedisService;
-  let storage: ProposalStorageService;
-  let publisher: RabbitMQPublisher;
+describe.each<[AgentName]>([['alice'], ['bob'], ['carlos'], ['diana']])(
+  '%s — propose returns valid parsed JSON',
+  (name) => {
+    let deps: ReturnType<typeof makeDeps>;
+    let agent: PreferenceAgent;
 
-  beforeEach(() => {
-    vi.clearAllMocks();
-    const deps = makeDeps();
-    anthropic = deps.anthropic;
-    redis = deps.redis;
-    storage = deps.storage;
-    publisher = deps.publisher;
-    agent = new AgentClass(anthropic, publisher, redis, storage);
+    beforeEach(() => {
+      vi.clearAllMocks();
+      deps = makeDeps();
+      agent = new PreferenceAgent(name, deps.aiProvider, deps.publisher, deps.redis, deps.storage);
 
-    vi.mocked(anthropic.complete).mockResolvedValue({
-      content: VALID_JSON_RESPONSE,
-      latencyMs: 100,
-      tokensUsed: 50,
+      vi.mocked(deps.aiProvider.complete).mockResolvedValue({
+        content: VALID_JSON_RESPONSE,
+        latencyMs: 100,
+        tokensUsed: 50,
+      });
+      vi.mocked(deps.redis.get).mockResolvedValue(null);
+      vi.mocked(deps.redis.set).mockResolvedValue(undefined);
+      vi.mocked(deps.storage.save).mockResolvedValue(undefined);
+      vi.mocked(deps.publisher.publish).mockResolvedValue(undefined);
     });
-    vi.mocked(redis.get).mockResolvedValue(null);
-    vi.mocked(redis.set).mockResolvedValue(undefined);
-    vi.mocked(storage.save).mockResolvedValue(undefined);
-    vi.mocked(publisher.publish).mockResolvedValue(undefined);
-  });
 
-  it('event.content is a parsed object, not a raw string', async () => {
-    const event = await agent.propose('trip-001', 1, 'Trip to Europe');
-    expect(typeof event.content).toBe('object');
-    expect(event.content).not.toBeNull();
-  });
+    it('event.content is a parsed object, not a raw string', async () => {
+      const event = await agent.propose('trip-001', 1, 'Trip to Europe');
+      expect(typeof event.content).toBe('object');
+      expect(event.content).not.toBeNull();
+    });
 
-  it('event.content has proposal property', async () => {
-    const event = await agent.propose('trip-001', 1, 'Trip to Europe');
-    expect(event.content).toHaveProperty('proposal');
-  });
+    it('event.content has proposal property', async () => {
+      const event = await agent.propose('trip-001', 1, 'Trip to Europe');
+      expect(event.content).toHaveProperty('proposal');
+    });
 
-  it("event.type is 'agent.propose'", async () => {
-    const event = await agent.propose('trip-001', 1, 'Trip to Europe');
-    expect(event.type).toBe('agent.propose');
-  });
+    it("event.type is 'agent.propose'", async () => {
+      const event = await agent.propose('trip-001', 1, 'Trip to Europe');
+      expect(event.type).toBe('agent.propose');
+    });
 
-  it('event.agent matches agentName', async () => {
-    const event = await agent.propose('trip-001', 1, 'Trip to Europe');
-    expect(event.agent).toBe(agent.agentName);
-  });
-});
+    it('event.agent matches agentName', async () => {
+      const event = await agent.propose('trip-001', 1, 'Trip to Europe');
+      expect(event.agent).toBe(agent.agentName);
+    });
+  },
+);
 
 // ─── Block 6: all agents have distinct systemPrompts ───────────────────────
 
 it('all four agents have distinct systemPrompts', () => {
-  const deps = makeDeps();
-  const agents = [
-    new AliceAgent(deps.anthropic, deps.publisher, deps.redis, deps.storage),
-    new BobAgent(deps.anthropic, deps.publisher, deps.redis, deps.storage),
-    new CarlosAgent(deps.anthropic, deps.publisher, deps.redis, deps.storage),
-    new DianaAgent(deps.anthropic, deps.publisher, deps.redis, deps.storage),
-  ];
+  const agents = PREFERENCE_AGENT_CONFIGS.map((cfg) => makeAgent(cfg.name));
   const uniquePrompts = new Set(agents.map((a) => a.systemPrompt));
   expect(uniquePrompts.size).toBe(4);
+});
+
+// ─── Block 7: PREFERENCE_AGENT_CONFIGS covers all 4 agents ─────────────────
+
+it('PREFERENCE_AGENT_CONFIGS has exactly 4 entries: alice, bob, carlos, diana', () => {
+  const names = PREFERENCE_AGENT_CONFIGS.map((c) => c.name);
+  expect(names).toEqual(expect.arrayContaining(['alice', 'bob', 'carlos', 'diana']));
+  expect(names).toHaveLength(4);
+});
+
+it('each PREFERENCE_AGENT_CONFIGS entry has name, persona, and preferences array', () => {
+  for (const cfg of PREFERENCE_AGENT_CONFIGS) {
+    expect(typeof cfg.name).toBe('string');
+    expect(typeof cfg.persona).toBe('string');
+    expect(Array.isArray(cfg.preferences)).toBe(true);
+    expect(cfg.preferences.length).toBeGreaterThan(0);
+  }
 });

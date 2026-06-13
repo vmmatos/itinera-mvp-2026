@@ -1,9 +1,7 @@
 import path from 'path';
 import fs from 'fs';
-import type { MessageParam } from '@anthropic-ai/sdk/resources/messages';
-import type { AgentEvent, AgentName } from '@itinera/shared';
+import type { AgentEvent, AgentName, AIMessage, IAIProvider } from '@itinera/shared';
 import { BaseOrchestratorAgent } from '@/agents/BaseOrchestratorAgent';
-import { AnthropicService } from '@/services/AnthropicService';
 import { RabbitMQPublisher } from '@/services/RabbitMQPublisher';
 import { RedisService } from '@/services/RedisService';
 import { ProposalStorageService } from '@/services/ProposalStorageService';
@@ -13,12 +11,12 @@ export class ProposalRefiner extends BaseOrchestratorAgent {
   readonly systemPrompt: string;
 
   constructor(
-    anthropic: AnthropicService,
+    aiProvider: IAIProvider,
     publisher: RabbitMQPublisher,
     redis: RedisService,
     storage: ProposalStorageService,
   ) {
-    super(anthropic, publisher, redis, storage);
+    super(aiProvider, publisher, redis, storage);
     this.systemPrompt = fs.readFileSync(
       path.join(__dirname, '../config/prompts/refine.txt'),
       'utf-8',
@@ -35,14 +33,14 @@ export class ProposalRefiner extends BaseOrchestratorAgent {
   ): Promise<AgentEvent> {
     return this.handleAsync(async () => {
       const proposalSummary = JSON.stringify(proposal, null, 2);
-      const messages: MessageParam[] = [
+      const messages: AIMessage[] = [
         {
           role: 'user',
           content: `Trip context: ${context}\n\nRound: ${round}\n\nCurrent proposal:\n${proposalSummary}\n\nFeedback to incorporate:\n${feedback}\n\nRefine the proposal based on this feedback. Respond with valid JSON only.`,
         },
       ];
 
-      return this.callClaudeAndBuild(tripId, round, 'refine', messages);
+      return this.callAIAndBuild(tripId, round, 'refine', messages);
     });
   }
 }

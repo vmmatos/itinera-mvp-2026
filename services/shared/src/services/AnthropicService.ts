@@ -1,14 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk';
-import type { MessageParam } from '@anthropic-ai/sdk/resources/messages';
 import { BaseService } from './BaseService';
+import type { AIMessage, CompletionResult, IAIProvider } from '../types/aiProvider';
 
-export interface CompletionResult {
-  content: string;
-  latencyMs: number;
-  tokensUsed: number;
-}
+export type { CompletionResult } from '../types/aiProvider';
 
-export class AnthropicService extends BaseService {
+export class AnthropicService extends BaseService implements IAIProvider {
   private readonly client: Anthropic;
   private readonly model: string;
 
@@ -18,7 +14,7 @@ export class AnthropicService extends BaseService {
     this.model = model;
   }
 
-  async complete(systemPrompt: string, messages: MessageParam[]): Promise<CompletionResult> {
+  async complete(systemPrompt: string, messages: AIMessage[]): Promise<CompletionResult> {
     const MAX_RETRIES = 3;
     let lastError: unknown;
 
@@ -40,17 +36,14 @@ export class AnthropicService extends BaseService {
     throw lastError;
   }
 
-  private async callOnce(
-    systemPrompt: string,
-    messages: MessageParam[],
-  ): Promise<CompletionResult> {
+  private async callOnce(systemPrompt: string, messages: AIMessage[]): Promise<CompletionResult> {
     const startMs = Date.now();
 
     const response = await this.client.messages.create({
       model: this.model,
       max_tokens: 4096,
       system: systemPrompt,
-      messages,
+      messages: messages.map((m) => ({ role: m.role, content: m.content })),
     });
 
     const latencyMs = Date.now() - startMs;

@@ -1,7 +1,5 @@
-import type { MessageParam } from '@anthropic-ai/sdk/resources/messages';
 import { BaseService, buildRoutingKey } from '@itinera/shared';
-import type { AgentEvent, AgentName, AgentAction } from '@itinera/shared';
-import { AnthropicService } from '@/services/AnthropicService';
+import type { AgentEvent, AgentName, AgentAction, AIMessage, IAIProvider } from '@itinera/shared';
 import { RabbitMQPublisher } from '@/services/RabbitMQPublisher';
 import { RedisService } from '@/services/RedisService';
 import { ProposalStorageService } from '@/services/ProposalStorageService';
@@ -11,7 +9,7 @@ export abstract class BaseFinanceAgent extends BaseService {
   abstract readonly systemPrompt: string;
 
   constructor(
-    protected readonly anthropic: AnthropicService,
+    protected readonly aiProvider: IAIProvider,
     protected readonly publisher: RabbitMQPublisher,
     protected readonly redis: RedisService,
     protected readonly storage: ProposalStorageService,
@@ -19,13 +17,13 @@ export abstract class BaseFinanceAgent extends BaseService {
     super('base-finance-agent');
   }
 
-  protected async callClaudeAndBuild(
+  protected async callAIAndBuild(
     tripId: string,
     round: number,
     action: AgentAction,
-    messages: MessageParam[],
+    messages: AIMessage[],
   ): Promise<AgentEvent> {
-    const { content, latencyMs, tokensUsed } = await this.anthropic.complete(
+    const { content, latencyMs, tokensUsed } = await this.aiProvider.complete(
       this.systemPrompt,
       messages,
     );

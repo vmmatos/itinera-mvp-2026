@@ -1,10 +1,8 @@
 import path from 'path';
 import fs from 'fs';
-import type { MessageParam } from '@anthropic-ai/sdk/resources/messages';
-import type { AgentEvent, AgentName } from '@itinera/shared';
+import type { AgentEvent, AgentName, AIMessage, IAIProvider } from '@itinera/shared';
 import { BaseOrchestratorAgent } from '@/agents/BaseOrchestratorAgent';
 import { config } from '@/config';
-import { AnthropicService } from '@/services/AnthropicService';
 import { RabbitMQPublisher } from '@/services/RabbitMQPublisher';
 import { RedisService } from '@/services/RedisService';
 import { ProposalStorageService } from '@/services/ProposalStorageService';
@@ -14,12 +12,12 @@ export class ConflictAnalyzer extends BaseOrchestratorAgent {
   readonly systemPrompt: string;
 
   constructor(
-    anthropic: AnthropicService,
+    aiProvider: IAIProvider,
     publisher: RabbitMQPublisher,
     redis: RedisService,
     storage: ProposalStorageService,
   ) {
-    super(anthropic, publisher, redis, storage);
+    super(aiProvider, publisher, redis, storage);
     this.systemPrompt = fs.readFileSync(
       path.join(__dirname, '../config/prompts/analyze.txt'),
       'utf-8',
@@ -36,14 +34,14 @@ export class ConflictAnalyzer extends BaseOrchestratorAgent {
       }
 
       const proposalsSummary = JSON.stringify(proposals, null, 2);
-      const messages: MessageParam[] = [
+      const messages: AIMessage[] = [
         {
           role: 'user',
           content: `Trip ID: ${tripId}\nRound: ${round}\n\nAgent proposals:\n${proposalsSummary}\n\nAnalyze these proposals and identify conflicts and consensus areas. Respond with valid JSON only.`,
         },
       ];
 
-      const event = await this.callClaudeAndBuild(tripId, round, 'score', messages);
+      const event = await this.callAIAndBuild(tripId, round, 'score', messages);
       await this.redis.set(cacheKey, event, config.CACHE_TTL_SECONDS);
       return event;
     });

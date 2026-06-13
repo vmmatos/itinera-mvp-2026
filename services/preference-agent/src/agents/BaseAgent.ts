@@ -1,7 +1,5 @@
-import type { MessageParam } from '@anthropic-ai/sdk/resources/messages';
 import { BaseService, buildRoutingKey } from '@itinera/shared';
-import type { AgentEvent, AgentName, AgentAction } from '@itinera/shared';
-import { AnthropicService } from '@/services/AnthropicService';
+import type { AgentEvent, AgentName, AgentAction, AIMessage, IAIProvider } from '@itinera/shared';
 import { RabbitMQPublisher } from '@/services/RabbitMQPublisher';
 import { RedisService } from '@/services/RedisService';
 import { ProposalStorageService } from '@/services/ProposalStorageService';
@@ -13,7 +11,7 @@ export abstract class BaseAgent extends BaseService {
   abstract readonly systemPrompt: string;
 
   constructor(
-    protected readonly anthropic: AnthropicService,
+    protected readonly aiProvider: IAIProvider,
     protected readonly publisher: RabbitMQPublisher,
     protected readonly redis: RedisService,
     protected readonly storage: ProposalStorageService,
@@ -30,14 +28,14 @@ export abstract class BaseAgent extends BaseService {
         return cached;
       }
 
-      const messages: MessageParam[] = [
+      const messages: AIMessage[] = [
         {
           role: 'user',
           content: `Trip context: ${context}\n\nRound: ${round}\n\nPlease propose your ideal itinerary for this group trip. Respond with valid JSON only.`,
         },
       ];
 
-      const event = await this.callClaudeAndBuild(tripId, round, 'propose', messages);
+      const event = await this.callAIAndBuild(tripId, round, 'propose', messages);
       await this.redis.set(cacheKey, event, CACHE_TTL_SECONDS);
       return event;
     });
@@ -58,26 +56,26 @@ export abstract class BaseAgent extends BaseService {
       }
 
       const proposalsSummary = JSON.stringify(proposals, null, 2);
-      const messages: MessageParam[] = [
+      const messages: AIMessage[] = [
         {
           role: 'user',
           content: `Trip context: ${context}\n\nRound: ${round}\n\nExisting proposals from other agents:\n${proposalsSummary}\n\nReact to these proposals from your perspective and suggest refinements. Respond with valid JSON only.`,
         },
       ];
 
-      const event = await this.callClaudeAndBuild(tripId, round, 'refine', messages);
+      const event = await this.callAIAndBuild(tripId, round, 'refine', messages);
       await this.redis.set(cacheKey, event, CACHE_TTL_SECONDS);
       return event;
     });
   }
 
-  private async callClaudeAndBuild(
+  private async callAIAndBuild(
     tripId: string,
     round: number,
     action: AgentAction,
-    messages: MessageParam[],
+    messages: AIMessage[],
   ): Promise<AgentEvent> {
-    const { content, latencyMs, tokensUsed } = await this.anthropic.complete(
+    const { content, latencyMs, tokensUsed } = await this.aiProvider.complete(
       this.systemPrompt,
       messages,
     );

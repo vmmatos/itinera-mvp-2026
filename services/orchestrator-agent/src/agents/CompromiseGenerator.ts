@@ -1,10 +1,8 @@
 import path from 'path';
 import fs from 'fs';
-import type { MessageParam } from '@anthropic-ai/sdk/resources/messages';
-import type { AgentEvent, AgentName } from '@itinera/shared';
+import type { AgentEvent, AgentName, AIMessage, IAIProvider } from '@itinera/shared';
 import { BaseOrchestratorAgent } from '@/agents/BaseOrchestratorAgent';
 import { config } from '@/config';
-import { AnthropicService } from '@/services/AnthropicService';
 import { RabbitMQPublisher } from '@/services/RabbitMQPublisher';
 import { RedisService } from '@/services/RedisService';
 import { ProposalStorageService } from '@/services/ProposalStorageService';
@@ -14,12 +12,12 @@ export class CompromiseGenerator extends BaseOrchestratorAgent {
   readonly systemPrompt: string;
 
   constructor(
-    anthropic: AnthropicService,
+    aiProvider: IAIProvider,
     publisher: RabbitMQPublisher,
     redis: RedisService,
     storage: ProposalStorageService,
   ) {
-    super(anthropic, publisher, redis, storage);
+    super(aiProvider, publisher, redis, storage);
     this.systemPrompt = fs.readFileSync(
       path.join(__dirname, '../config/prompts/propose.txt'),
       'utf-8',
@@ -41,14 +39,14 @@ export class CompromiseGenerator extends BaseOrchestratorAgent {
       }
 
       const conflictsSummary = JSON.stringify(conflicts, null, 2);
-      const messages: MessageParam[] = [
+      const messages: AIMessage[] = [
         {
           role: 'user',
           content: `Trip context: ${context}\n\nRound: ${round}\n\nConflict analysis:\n${conflictsSummary}\n\nGenerate a compromise itinerary that satisfies as many agents as possible. Respond with valid JSON only.`,
         },
       ];
 
-      const event = await this.callClaudeAndBuild(tripId, round, 'propose', messages);
+      const event = await this.callAIAndBuild(tripId, round, 'propose', messages);
       await this.redis.set(cacheKey, event, config.CACHE_TTL_SECONDS);
       return event;
     });
