@@ -45,7 +45,6 @@ const onTripCreated = (_tripId: string): void => {
 }
 
 onMounted(async () => {
-  authStore.initFromStorage()
   await tripStore.fetchTrips()
   if (hasNegotiating.value) startPolling()
 })

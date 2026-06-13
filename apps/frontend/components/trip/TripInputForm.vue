@@ -152,7 +152,7 @@ const activeTripId = ref<string | null>(null)
 
 // Reopen existing confirmed trip directly at step 4
 onMounted(() => {
-  if (props.viewTripId) {
+  if (isValidUUID(props.viewTripId)) {
     activeTripId.value = props.viewTripId
     negotiationStatus.value = 'confirmed'
     step.value = 4
@@ -781,6 +781,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
                   class="txt full"
                   placeholder="Traveller name"
                   style="font-size:var(--t-14)"
+                  maxlength="255"
                 />
                 <span v-else class="gn">
                   {{ t.name }}
@@ -918,6 +919,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
               class="txt full lg"
               placeholder="e.g. Cusco run · Jun 2026"
               data-testid="trip-name"
+              maxlength="255"
             />
             <p
               v-if="step2Attempted && !tripName.trim()"
@@ -936,6 +938,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
               class="txt full"
               placeholder="e.g. Cusco + Sacred Valley, Peru"
               data-testid="region"
+              maxlength="255"
             />
             <p
               v-if="step2Attempted && !region.trim()"
@@ -1046,6 +1049,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
               class="txt"
               placeholder="+ add must-have"
               style="width:160px"
+              maxlength="200"
               @keydown.enter.prevent="addMustHave"
               @blur="addMustHave"
             />
@@ -1069,6 +1073,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
               class="txt"
               placeholder="+ add avoid"
               style="width:160px"
+              maxlength="200"
               @keydown.enter.prevent="addDealBreaker"
               @blur="addDealBreaker"
             />

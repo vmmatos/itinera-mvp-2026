@@ -39,7 +39,6 @@ const fetchTrips = async (): Promise<void> => {
 }
 
 onMounted(() => {
-  authStore.initFromStorage()
   void fetchTrips()
 })
 </script>
@@ -78,6 +77,7 @@ onMounted(() => {
           class="search-input"
           placeholder="search by user name or email…"
           autocomplete="off"
+          maxlength="200"
         />
         <span class="search-count helper">
           {{ filteredTrips.length }} / {{ trips.length }} trips

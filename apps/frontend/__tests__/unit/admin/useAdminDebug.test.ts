@@ -8,12 +8,11 @@ const mockGet = vi.fn()
 globalThis.useApi = vi.fn(() => ({ get: mockGet }))
 // @ts-expect-error global shim
 globalThis.useRuntimeConfig = vi.fn(() => ({ public: { apiBase: 'http://localhost' } }))
-
 const { useAdminDebug } = await import('~/composables/useAdminDebug')
 
 // ── Fixtures ──────────────────────────────────────────────────
 
-const TRIP_ID = 'trip-debug-001'
+const TRIP_ID = '00000000-0000-0000-0000-000000000001'
 
 function makeDebugData(overrides: Partial<TripDebugData> = {}): TripDebugData {
   return {
@@ -100,24 +99,26 @@ describe('useAdminDebug', () => {
   })
 
   it('re-fetches when tripId changes', async () => {
-    const first = makeDebugData({ id: 'trip-a', name: 'A' })
-    const second = makeDebugData({ id: 'trip-b', name: 'B' })
+    const ID_A = '00000000-0000-0000-0000-aaaaaaaaaaaa'
+    const ID_B = '00000000-0000-0000-0000-bbbbbbbbbbbb'
+    const first = makeDebugData({ id: ID_A, name: 'A' })
+    const second = makeDebugData({ id: ID_B, name: 'B' })
     mockGet.mockResolvedValueOnce({ data: { success: true, data: first } })
     mockGet.mockResolvedValueOnce({ data: { success: true, data: second } })
 
-    const tripId = ref<string | null>('trip-a')
+    const tripId = ref<string | null>(ID_A)
     const { data } = useAdminDebug(tripId)
 
     await nextTick()
     await new Promise((r) => setTimeout(r, 20))
     expect(data.value?.name).toBe('A')
 
-    tripId.value = 'trip-b'
+    tripId.value = ID_B
     await nextTick()
     await new Promise((r) => setTimeout(r, 20))
 
     expect(data.value?.name).toBe('B')
-    expect(mockGet).toHaveBeenCalledWith('/api/v1/trips/trip-b?view=debug')
+    expect(mockGet).toHaveBeenCalledWith(`/api/v1/trips/${ID_B}?view=debug`)
   })
 
   // ── Error scenarios ────────────────────────────────────────

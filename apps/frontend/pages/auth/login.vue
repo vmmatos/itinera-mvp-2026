@@ -108,6 +108,7 @@ const errorMessage = computed(() => oauthError.value ?? authStore.error)
               class="input"
               placeholder="Your name"
               autocomplete="name"
+              maxlength="255"
             />
           </div>
         </Transition>
@@ -121,6 +122,7 @@ const errorMessage = computed(() => oauthError.value ?? authStore.error)
             class="input"
             placeholder="you@example.com"
             autocomplete="email"
+            maxlength="254"
           />
         </div>
 
@@ -133,6 +135,7 @@ const errorMessage = computed(() => oauthError.value ?? authStore.error)
             class="input"
             placeholder="••••••••"
             :autocomplete="mode === 'login' ? 'current-password' : 'new-password'"
+            maxlength="128"
           />
           <p v-if="mode === 'register'" class="text-fg-3 text-13 mt-1">Minimum 8 characters</p>
         </div>

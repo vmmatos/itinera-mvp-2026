@@ -47,6 +47,29 @@ export default defineNuxtConfig({
     },
   },
 
+  // ── Security headers ─────────────────────────────────────────
+  routeRules: {
+    '/**': {
+      headers: {
+        'Content-Security-Policy': [
+          "default-src 'self'",
+          "script-src 'self' 'unsafe-inline'",  // unsafe-inline required for Nuxt SSR hydration
+          "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+          "font-src 'self' https://fonts.gstatic.com",
+          "connect-src 'self' ws: wss:",
+          "img-src 'self' data: blob:",
+          "frame-ancestors 'none'",
+          "base-uri 'self'",
+          "form-action 'self'",
+        ].join('; '),
+        'X-Frame-Options': 'DENY',
+        'X-Content-Type-Options': 'nosniff',
+        'Referrer-Policy': 'strict-origin-when-cross-origin',
+        'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+      },
+    },
+  },
+
   // ── Nitro (SSR) ──────────────────────────────────────────────
   nitro: {
     preset: 'node-server',
