@@ -255,6 +255,19 @@ ensure_plugin route "orchestrator-v1-api" jwt \
 ensure_plugin route "orchestrator-v1-api" acl \
   '{"allow":["user","admin","service"],"hide_groups_header":true}'
 
+# Trip creation gets a stricter per-route rate limit (10/min) to prevent abuse.
+# This more-specific route (method=POST + exact path) takes priority over orchestrator-v1-api.
+upsert_route "orchestrator-trips-create" "orchestrator" \
+  "paths=[\"/api/v1/trips\"]" \
+  "methods=[\"POST\"]" \
+  "strip_path=false"
+ensure_plugin route "orchestrator-trips-create" rate-limiting \
+  '{"minute":10,"policy":"local","fault_tolerant":true}'
+ensure_plugin route "orchestrator-trips-create" jwt \
+  '{"key_claim_name":"iss"}'
+ensure_plugin route "orchestrator-trips-create" acl \
+  '{"allow":["user","admin","service"],"hide_groups_header":true}'
+
 # auth-api is intentionally excluded — login/register/oauth2 are public endpoints
 
 # ---------------------------------------------------------------------------
