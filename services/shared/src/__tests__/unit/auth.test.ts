@@ -91,6 +91,30 @@ describe('authMiddleware', () => {
       expect.objectContaining({ statusCode: 401 }),
     );
   });
+
+  it('token with unrecognised role (e.g. "superuser") → next(UnauthorizedError)', () => {
+    const token = jwt.sign({ sub: 'u', role: 'superuser' }, SECRET);
+    const req = makeReq(`Bearer ${token}`);
+    const next = makeNext();
+
+    authMiddleware(req, makeRes(), next);
+
+    expect(next).toHaveBeenCalledWith(
+      expect.objectContaining({ statusCode: 401, code: 'UNAUTHORIZED' }),
+    );
+  });
+
+  it('token missing sub field → next(UnauthorizedError)', () => {
+    const token = jwt.sign({ role: 'user' }, SECRET);
+    const req = makeReq(`Bearer ${token}`);
+    const next = makeNext();
+
+    authMiddleware(req, makeRes(), next);
+
+    expect(next).toHaveBeenCalledWith(
+      expect.objectContaining({ statusCode: 401 }),
+    );
+  });
 });
 
 describe('requireRole', () => {
