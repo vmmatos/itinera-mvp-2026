@@ -195,6 +195,7 @@ services:
     volumes:
       - ../services/auth/src:/app/services/auth/src
       - ../services/shared/src:/app/services/shared/src
+      - ../services/shared/dist:/app/services/shared/dist:ro
 
   ## ── Orchestrator ─────────────────────────────────────────────────────────────
   orchestrator:
@@ -236,6 +237,7 @@ services:
       - ../services/orchestrator/src:/app/services/orchestrator/src
       - ../services/orchestrator/vitest.config.ts:/app/services/orchestrator/vitest.config.ts:ro
       - ../services/shared/src:/app/services/shared/src
+      - ../services/shared/dist:/app/services/shared/dist:ro
 
   ## ── Preference Agent ─────────────────────────────────────────────────────────
   preference-agent:
@@ -279,6 +281,7 @@ services:
       - ../services/preference-agent/src:/app/services/preference-agent/src
       - ../services/preference-agent/vitest.config.ts:/app/services/preference-agent/vitest.config.ts:ro
       - ../services/shared/src:/app/services/shared/src
+      - ../services/shared/dist:/app/services/shared/dist:ro
 
   ## ── Orchestrator Agent ───────────────────────────────────────────────────────
   orchestrator-agent:
@@ -321,6 +324,7 @@ services:
     volumes:
       - ../services/orchestrator-agent/src:/app/services/orchestrator-agent/src
       - ../services/shared/src:/app/services/shared/src
+      - ../services/shared/dist:/app/services/shared/dist:ro
 
   ## ── Finance Agent ────────────────────────────────────────────────────────────
   finance-agent:
@@ -365,6 +369,7 @@ services:
     volumes:
       - ../services/finance-agent/src:/app/services/finance-agent/src
       - ../services/shared/src:/app/services/shared/src
+      - ../services/shared/dist:/app/services/shared/dist:ro
 
   ## ── Logistics Agent ──────────────────────────────────────────────────────────
   logistics-agent:
@@ -414,6 +419,7 @@ services:
     volumes:
       - ../services/logistics-agent/src:/app/services/logistics-agent/src
       - ../services/shared/src:/app/services/shared/src
+      - ../services/shared/dist:/app/services/shared/dist:ro
 
   ## ── Validator ────────────────────────────────────────────────────────────────
   validator:
@@ -451,6 +457,7 @@ services:
     volumes:
       - ../services/validator/src:/app/services/validator/src
       - ../services/shared/src:/app/services/shared/src
+      - ../services/shared/dist:/app/services/shared/dist:ro
 
   ## ── Notification ─────────────────────────────────────────────────────────────
   notification:
@@ -488,6 +495,7 @@ services:
     volumes:
       - ../services/notification/src:/app/services/notification/src
       - ../services/shared/src:/app/services/shared/src
+      - ../services/shared/dist:/app/services/shared/dist:ro
 
   ## ── Sharing ──────────────────────────────────────────────────────────────────
   sharing:
@@ -517,6 +525,7 @@ services:
     volumes:
       - ../services/sharing/src:/app/services/sharing/src
       - ../services/shared/src:/app/services/shared/src
+      - ../services/shared/dist:/app/services/shared/dist:ro
 
   ## ── WS Relay ─────────────────────────────────────────────────────────────────
   ws-relay:
@@ -546,6 +555,7 @@ services:
     volumes:
       - ../services/ws-relay/src:/app/services/ws-relay/src
       - ../services/shared/src:/app/services/shared/src
+      - ../services/shared/dist:/app/services/shared/dist:ro
 
   ## ── Mailhog (dev email) ──────────────────────────────────────────────────────
   mailhog:
