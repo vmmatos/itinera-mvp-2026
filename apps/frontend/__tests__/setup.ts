@@ -27,12 +27,18 @@ export const tripStoreMock = {
 // ── Auth store mock ────────────────────────────────────────────
 export const authStoreMock = {
   user: { id: 'user-1', name: 'Test User', email: 'test@test.com', role: 'user' },
+  token: 'mock-token',
   isAuthenticated: true,
-  initFromStorage: vi.fn(),
+  tryRefresh: vi.fn().mockResolvedValue(true),
+  clearSession: vi.fn(),
+  updateToken: vi.fn(),
   logout: vi.fn(),
 }
 
 // ── Global shims ───────────────────────────────────────────────
+// @ts-expect-error global shim — mirrors apps/frontend/utils/validation.ts
+globalThis.isValidUUID = (v: string | null | undefined): boolean =>
+  typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)
 // @ts-expect-error global shim
 globalThis.useApi = vi.fn(() => ({ get: mockApiGet, post: mockApiPost }))
 // @ts-expect-error global shim

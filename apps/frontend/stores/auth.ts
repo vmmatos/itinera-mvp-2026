@@ -14,6 +14,8 @@ interface AuthResult {
 }
 
 export const useAuthStore = defineStore('auth', () => {
+  // Token lives in memory only — never persisted to localStorage.
+  // On page reload the middleware calls tryRefresh() to re-hydrate via httpOnly cookie.
   const token = ref<string | null>(null)
   const user = ref<AuthUser | null>(null)
   const loading = ref(false)
@@ -22,16 +24,36 @@ export const useAuthStore = defineStore('auth', () => {
   const isAuthenticated = computed(() => !!token.value)
   const isAdmin = computed(() => user.value?.role === 'admin')
 
-  const initFromStorage = (): void => {
-    token.value = localStorage.getItem('itinera_token')
-    const stored = localStorage.getItem('itinera_user')
-    if (stored) {
-      try { user.value = JSON.parse(stored) as AuthUser } catch { user.value = null }
+  const updateToken = (newToken: string): void => {
+    token.value = newToken
+  }
+
+  const clearSession = (): void => {
+    token.value = null
+    user.value = null
+  }
+
+  /**
+   * Attempt silent token refresh using the httpOnly refresh_token cookie.
+   * Returns true if a new access token was obtained, false otherwise.
+   * Called by the route middleware on every navigation when token is absent.
+   */
+  const tryRefresh = async (): Promise<boolean> => {
+    try {
+      const api = useApi()
+      const { data } = await api.post<{ success: true; data: AuthResult }>('/api/auth/refresh', {})
+      token.value = data.data.token
+      user.value = data.data.user
+      return true
+    } catch {
+      token.value = null
+      user.value = null
+      return false
     }
   }
 
   const setFromOAuth = (result: AuthResult): void => {
-    _persist(result)
+    _set(result)
   }
 
   const login = async (email: string, password: string): Promise<void> => {
@@ -40,7 +62,7 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const api = useApi()
       const { data } = await api.post<{ success: true; data: AuthResult }>('/api/auth/login', { email, password })
-      _persist(data.data)
+      _set(data.data)
       await navigateTo('/')
     } catch (err: unknown) {
       error.value = _extractMessage(err, 'Invalid credentials. Please try again.')
@@ -56,7 +78,7 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const api = useApi()
       const { data } = await api.post<{ success: true; data: AuthResult }>('/api/auth/register', { email, password, name })
-      _persist(data.data)
+      _set(data.data)
       await navigateTo('/')
     } catch (err: unknown) {
       error.value = _extractMessage(err, 'Registration failed. Please try again.')
@@ -78,8 +100,6 @@ export const useAuthStore = defineStore('auth', () => {
     } catch { /* best-effort */ }
     token.value = null
     user.value = null
-    localStorage.removeItem('itinera_token')
-    localStorage.removeItem('itinera_user')
     await navigateTo('/auth/login', { replace: true })
   }
 
@@ -87,11 +107,9 @@ export const useAuthStore = defineStore('auth', () => {
     error.value = null
   }
 
-  const _persist = (result: AuthResult): void => {
+  const _set = (result: AuthResult): void => {
     token.value = result.token
     user.value = result.user
-    localStorage.setItem('itinera_token', result.token)
-    localStorage.setItem('itinera_user', JSON.stringify(result.user))
   }
 
   const _extractMessage = (err: unknown, fallback: string): string => {
@@ -109,7 +127,9 @@ export const useAuthStore = defineStore('auth', () => {
     error,
     isAuthenticated,
     isAdmin,
-    initFromStorage,
+    updateToken,
+    clearSession,
+    tryRefresh,
     setFromOAuth,
     login,
     register,

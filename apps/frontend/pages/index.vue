@@ -4,7 +4,6 @@ definePageMeta({ layout: 'default' })
 const authStore = useAuthStore()
 
 onMounted(() => {
-  authStore.initFromStorage()
   navigateTo(authStore.isAuthenticated ? '/dashboard' : '/auth/login', { replace: true })
 })
 </script>

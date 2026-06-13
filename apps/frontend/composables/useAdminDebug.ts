@@ -8,7 +8,7 @@ export function useAdminDebug(tripId: Ref<string | null>) {
   const error = ref<string | null>(null)
 
   const refresh = async (): Promise<void> => {
-    if (!tripId.value) return
+    if (!isValidUUID(tripId.value)) return
     loading.value = true
     error.value = null
     try {

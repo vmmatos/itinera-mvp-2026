@@ -61,7 +61,6 @@ const stopPolling = (): void => {
 }
 
 onMounted(() => {
-  authStore.initFromStorage()
   if (isNegotiating.value) startPolling()
 })
 

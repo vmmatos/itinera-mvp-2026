@@ -7,13 +7,14 @@ const RECONNECT_DELAY_MS = 3000
 export function useAgentStream(tripId: Ref<string | null>, role?: string) {
   const events = ref<AgentStreamEvent[]>([])
   const connected = ref(false)
+  const authStore = useAuthStore()
 
   let abortController: AbortController | null = null
   let reconnectTimer: ReturnType<typeof setTimeout> | null = null
   let destroyed = false
 
   function getToken(): string | null {
-    return localStorage.getItem('itinera_token')
+    return authStore.token
   }
 
   async function connect(id: string): Promise<void> {

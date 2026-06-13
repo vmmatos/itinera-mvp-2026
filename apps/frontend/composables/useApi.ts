@@ -6,6 +6,7 @@ let refreshQueue: Array<(token: string | null) => void> = []
 
 export const useApi = (): AxiosInstance => {
   const config = useRuntimeConfig()
+  const authStore = useAuthStore()
 
   const api = axios.create({
     baseURL: config.public.apiBase as string,
@@ -14,7 +15,7 @@ export const useApi = (): AxiosInstance => {
   })
 
   api.interceptors.request.use((cfg) => {
-    const token = localStorage.getItem('itinera_token')
+    const token = authStore.token
     if (token) {
       cfg.headers.Authorization = `Bearer ${token}`
     }
@@ -49,7 +50,7 @@ export const useApi = (): AxiosInstance => {
             { withCredentials: true },
           )
           const newToken = resp.data.data.token
-          localStorage.setItem('itinera_token', newToken)
+          authStore.updateToken(newToken)
 
           refreshQueue.forEach((cb) => cb(newToken))
           refreshQueue = []
@@ -59,8 +60,7 @@ export const useApi = (): AxiosInstance => {
         } catch {
           refreshQueue.forEach((cb) => cb(null))
           refreshQueue = []
-          localStorage.removeItem('itinera_token')
-          localStorage.removeItem('itinera_user')
+          authStore.clearSession()
           await navigateTo('/auth/login', { replace: true })
           return Promise.reject(err)
         } finally {
