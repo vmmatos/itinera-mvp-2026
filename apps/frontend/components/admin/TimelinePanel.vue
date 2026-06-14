@@ -32,16 +32,19 @@ function formatTs(iso: string): string {
 }
 
 interface TimelineActivity {
-  name: string
-  agent: string
+  name:       string
+  agent:      string
   colourCode: string
-  timeSlot: string
-  left: string
-  width: string
+  timeSlot:   string
+  left:       string
+  width:      string
+  city?:      string
+  venue?:     string
 }
 
 interface TimelineDay {
   label: string
+  city?:  string
   activities: TimelineActivity[]
 }
 
@@ -55,21 +58,26 @@ const timelineDays = computed((): TimelineDay[] => {
   for (const p of accepted) {
     if (!p.content || typeof p.content !== 'object') continue
     const c = p.content as Record<string, unknown>
-    const days = Array.isArray(c.days)
-      ? (c.days as Record<string, unknown>[])
-      : []
-    for (const day of days) {
-      const label = String(day.date ?? day.title ?? 'Day')
+    const itinerary = Array.isArray(c.itinerary)
+      ? (c.itinerary as Record<string, unknown>[])
+      : Array.isArray(c.days)
+        ? (c.days as Record<string, unknown>[])
+        : []
+    for (const day of itinerary) {
+      const label = String(day.date ?? day.title ?? (typeof day.day === 'number' ? `Day ${day.day}` : 'Day'))
+      const dayCity = typeof day.city === 'string' && day.city.trim() ? day.city.trim() : undefined
       const activities = Array.isArray(day.activities) ? day.activities : []
       const existing = dayMap.get(label) ?? []
       for (const act of activities as Record<string, unknown>[]) {
         existing.push({
-          name: String(act.name ?? 'Activity'),
-          agent: String(act.agent ?? p.agent),
-          colourCode: colourCode(String(act.agent ?? p.agent)),
-          timeSlot: String(act.time ?? 'morning'),
-          left: '10%',
-          width: '30%',
+          name:       String(act.name ?? act.activity ?? 'Activity'),
+          agent:      String(act.agent ?? act.ownerAgent ?? p.agent),
+          colourCode: colourCode(String(act.agent ?? act.ownerAgent ?? p.agent)),
+          timeSlot:   String(act.time ?? 'morning'),
+          left:       '10%',
+          width:      '30%',
+          city:       typeof act.city === 'string' && act.city.trim() ? act.city.trim() : dayCity,
+          venue:      typeof act.venue === 'string' && act.venue.trim() ? act.venue.trim() : undefined,
         })
       }
       dayMap.set(label, existing)
@@ -78,6 +86,7 @@ const timelineDays = computed((): TimelineDay[] => {
 
   return [...dayMap.entries()].slice(0, 7).map(([label, activities]) => ({
     label,
+    city: activities[0]?.city,
     activities,
   }))
 })
@@ -135,7 +144,9 @@ const traceLog = computed(() =>
         <template v-for="day in timelineDays" :key="day.label">
           <div class="atl-row">
             <div class="lbl">
-              {{ day.label }}<br><small>AM</small>
+              {{ day.label }}<br>
+              <small v-if="day.city" class="lbl-city">{{ day.city }}</small>
+              <small v-else>AM</small>
             </div>
             <div class="atl-track">
               <div class="atl-hours">
@@ -150,6 +161,7 @@ const traceLog = computed(() =>
               >
                 <span class="own">{{ act.agent }}</span>
                 <span class="nm">{{ act.name }}</span>
+                <span v-if="act.venue" class="venue">{{ act.venue }}</span>
               </div>
             </div>
           </div>
@@ -170,6 +182,7 @@ const traceLog = computed(() =>
               >
                 <span class="own">{{ act.agent }}</span>
                 <span class="nm">{{ act.name }}</span>
+                <span v-if="act.venue" class="venue">{{ act.venue }}</span>
               </div>
             </div>
           </div>
@@ -278,6 +291,7 @@ const traceLog = computed(() =>
   justify-content: center;
 }
 .lbl small { color: var(--fg-3); font-size: 10px; }
+.lbl-city { color: var(--green); font-size: 9px; text-transform: uppercase; letter-spacing: .06em; }
 .atl-track { position: relative; display: flex; align-items: center; overflow: hidden; }
 .atl-hours {
   position: absolute; left: 0; right: 0; top: 0; bottom: 0;
@@ -307,6 +321,7 @@ const traceLog = computed(() =>
 .atl-block[data-c="m"] { border-color: var(--magenta-line); background: var(--magenta-bg); color: var(--magenta); }
 .atl-block[data-c="m"] .own { color: var(--magenta); }
 .nm { color: var(--fg-0); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.venue { font-size: 9px; color: var(--fg-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 
 /* commit + trace log */
 .log-scroll { flex: 1; overflow-y: auto; font-family: var(--mono); font-size: var(--t-13); line-height: 1.55; }

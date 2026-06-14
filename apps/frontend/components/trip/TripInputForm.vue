@@ -362,17 +362,29 @@ interface ItineraryActivity {
   name:          string
   time?:         string
   location?:     string
+  venue?:        string
+  city?:         string
+  country?:      string
+  ownerAgent?:   string
   notes?:        string
   cost?:         number
   weatherAlert?: string
   satisfies?:    string[]
 }
 
+interface ItineraryCityTransition {
+  to:         string
+  travelTime: string
+}
+
 interface ItineraryDay {
-  day:        number
-  date?:      string
-  activities: ItineraryActivity[]
-  meals?:     Array<{ type: string; name: string }>
+  day:             number
+  date?:           string
+  city?:           string
+  country?:        string
+  cityTransition?: ItineraryCityTransition
+  activities:      ItineraryActivity[]
+  meals?:          Array<{ type: string; name: string }>
 }
 
 const latestByAgent = computed((): Record<string, ProposalEntry> => {
@@ -404,24 +416,42 @@ function buildDays(obj: unknown): ItineraryDay[] {
   const o = obj as Record<string, unknown>
   const arr = o['itinerary'] ?? o['days'] ?? o['plan'] ?? o['schedule']
   if (!Array.isArray(arr) || arr.length === 0) return []
-  return (arr as Array<Record<string, unknown>>).map((d, i) => ({
-    day:  typeof d['day'] === 'number' ? d['day'] : i + 1,
-    date: typeof d['date'] === 'string' ? d['date'] : undefined,
-    activities: Array.isArray(d['activities'])
-      ? (d['activities'] as Array<Record<string, unknown>>).map((a) => ({
-          name:         String(a['name'] ?? a['activity'] ?? a['title'] ?? '—'),
-          time:         typeof a['time'] === 'string' ? a['time'] : typeof a['startTime'] === 'string' ? a['startTime'] : undefined,
-          location:     typeof a['location'] === 'string' ? a['location'] : undefined,
-          notes:        typeof a['notes'] === 'string' ? a['notes'] : typeof a['description'] === 'string' ? a['description'] : undefined,
-          cost:         typeof a['cost'] === 'number' ? a['cost'] : undefined,
-          weatherAlert: typeof a['weatherAlert'] === 'string' ? a['weatherAlert'] : undefined,
-          satisfies:    Array.isArray(a['satisfies']) ? (a['satisfies'] as string[]) : undefined,
-        }))
-      : [],
-    meals: Array.isArray(d['meals'])
-      ? (d['meals'] as Array<Record<string, unknown>>).map((m) => ({ type: String(m['type'] ?? 'meal'), name: String(m['name'] ?? '—') }))
-      : undefined,
-  }))
+  return (arr as Array<Record<string, unknown>>).map((d, i) => {
+    const rawTransition = d['cityTransition']
+    const cityTransition: ItineraryCityTransition | undefined =
+      rawTransition && typeof rawTransition === 'object'
+        ? {
+            to:         String((rawTransition as Record<string, unknown>)['to'] ?? ''),
+            travelTime: String((rawTransition as Record<string, unknown>)['travelTime'] ?? ''),
+          }
+        : undefined
+
+    return {
+      day:  typeof d['day'] === 'number' ? d['day'] : i + 1,
+      date: typeof d['date'] === 'string' ? d['date'] : undefined,
+      city:    typeof d['city'] === 'string' && d['city'].trim() ? d['city'].trim() : undefined,
+      country: typeof d['country'] === 'string' && d['country'].trim() ? d['country'].trim() : undefined,
+      cityTransition: cityTransition?.to ? cityTransition : undefined,
+      activities: Array.isArray(d['activities'])
+        ? (d['activities'] as Array<Record<string, unknown>>).map((a) => ({
+            name:         String(a['name'] ?? a['activity'] ?? a['title'] ?? '—'),
+            time:         typeof a['time'] === 'string' ? a['time'] : typeof a['startTime'] === 'string' ? a['startTime'] : undefined,
+            location:     typeof a['location'] === 'string' ? a['location'] : undefined,
+            venue:        typeof a['venue'] === 'string' && a['venue'].trim() ? a['venue'].trim() : undefined,
+            city:         typeof a['city'] === 'string' && a['city'].trim() ? a['city'].trim() : undefined,
+            country:      typeof a['country'] === 'string' && a['country'].trim() ? a['country'].trim() : undefined,
+            ownerAgent:   typeof a['ownerAgent'] === 'string' && a['ownerAgent'].trim() ? a['ownerAgent'].trim() : undefined,
+            notes:        typeof a['notes'] === 'string' ? a['notes'] : typeof a['description'] === 'string' ? a['description'] : undefined,
+            cost:         typeof a['cost'] === 'number' ? a['cost'] : undefined,
+            weatherAlert: typeof a['weatherAlert'] === 'string' ? a['weatherAlert'] : undefined,
+            satisfies:    Array.isArray(a['satisfies']) ? (a['satisfies'] as string[]) : undefined,
+          }))
+        : [],
+      meals: Array.isArray(d['meals'])
+        ? (d['meals'] as Array<Record<string, unknown>>).map((m) => ({ type: String(m['type'] ?? 'meal'), name: String(m['name'] ?? '—') }))
+        : undefined,
+    }
+  })
 }
 
 
@@ -1429,58 +1459,11 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
         </div>
 
         <!-- Structured itinerary timeline -->
-        <div v-if="parsedItinerary.length > 0" style="display:flex;flex-direction:column;gap:var(--s-3);margin-bottom:var(--s-6)">
-          <div
-            v-for="day in parsedItinerary"
-            :key="day.day"
-            style="border:var(--hair);border-radius:var(--r-2);background:var(--bg-1);overflow:hidden"
-          >
-            <!-- Day header -->
-            <div style="padding:var(--s-3) var(--s-4);border-bottom:var(--hair);display:flex;align-items:center;gap:var(--s-3);background:var(--bg-2)">
-              <span style="font-family:var(--mono);font-size:var(--t-12);color:var(--green);font-weight:600;background:var(--green-bg);border:1px solid var(--green-line);padding:2px 8px;border-radius:var(--r-1)">Day {{ day.day }}</span>
-              <span v-if="day.date" class="helper">{{ day.date }}</span>
-            </div>
-            <div style="padding:var(--s-2) var(--s-4) var(--s-3)">
-              <div v-if="day.activities.length === 0" class="helper" style="padding:var(--s-2) 0">No structured activities.</div>
-              <template v-else>
-                <template v-for="slot in TIME_SLOT_ORDER" :key="slot">
-                  <template v-if="day.activities.filter(a => getTimeSlot(a.time) === slot).length > 0">
-                    <!-- Time-of-day header -->
-                    <div style="display:flex;align-items:center;gap:var(--s-2);padding:var(--s-2) 0 4px;margin-top:var(--s-3)">
-                      <span style="font-family:var(--mono);font-size:10px;color:var(--fg-3);letter-spacing:.06em;text-transform:uppercase">{{ TIME_SLOT_LABELS[slot] }}</span>
-                      <div style="flex:1;height:1px;background:rgba(255,255,255,0.06)" />
-                    </div>
-                    <!-- Activities in this slot -->
-                    <div
-                      v-for="(act, i) in day.activities.filter(a => getTimeSlot(a.time) === slot)"
-                      :key="i"
-                      style="padding:var(--s-2) var(--s-3);margin-bottom:2px;border-radius:var(--r-1);background:var(--bg-2);border:1px solid rgba(255,255,255,0.04)"
-                    >
-                      <div style="display:flex;align-items:center;gap:var(--s-2);flex-wrap:wrap;margin-bottom:2px">
-                        <p style="margin:0;font-size:var(--t-14);color:var(--fg-0);font-weight:500">{{ act.name }}</p>
-                        <span
-                          v-if="act.weatherAlert"
-                          style="font-family:var(--mono);font-size:10px;color:var(--amber);background:var(--amber-bg);border:1px solid var(--amber-line);padding:1px 6px;border-radius:var(--r-1)"
-                        >⚠ {{ act.weatherAlert }}</span>
-                        <span
-                          v-if="act.cost"
-                          style="font-family:var(--mono);font-size:var(--t-12);color:var(--fg-2)"
-                        >{{ financeSummary?.currency ?? currencySymbol }}{{ act.cost }}</span>
-                      </div>
-                      <p v-if="act.location" style="margin:0;font-size:var(--t-12);color:var(--fg-3)">{{ act.location }}</p>
-                      <p v-if="act.notes" style="margin:2px 0 0;font-size:var(--t-12);color:var(--fg-3);font-style:italic">{{ act.notes }}</p>
-                    </div>
-                  </template>
-                </template>
-              </template>
-              <!-- Meals row -->
-              <div v-if="day.meals && day.meals.length > 0" style="margin-top:var(--s-3);display:flex;gap:var(--s-2);flex-wrap:wrap;padding-top:var(--s-2);border-top:1px solid rgba(255,255,255,0.04)">
-                <span v-for="m in day.meals" :key="m.type" class="chip on" style="font-size:var(--t-12)">
-                  {{ m.type }}: {{ m.name }}
-                </span>
-              </div>
-            </div>
-          </div>
+        <div v-if="parsedItinerary.length > 0" style="margin-bottom:var(--s-6)">
+          <TripTimeline
+            :days="parsedItinerary"
+            :currency-symbol="financeSummary?.currency ?? currencySymbol"
+          />
         </div>
 
         <div v-else class="helper" style="margin-bottom:var(--s-6)">Proposal data is processing.</div>

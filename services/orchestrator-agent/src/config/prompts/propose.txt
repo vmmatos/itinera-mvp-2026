@@ -14,6 +14,7 @@ Always respond with valid JSON in this exact structure:
   "accommodation": [
     {
       "city": string,
+      "country": string,
       "name": string,
       "type": "hotel" | "boutique-hotel" | "hostel" | "apartment" | "resort",
       "pricePerNightPerPerson": number,
@@ -23,11 +24,18 @@ Always respond with valid JSON in this exact structure:
   "itinerary": [
     {
       "day": 1,
+      "city": "Lisboa",
+      "country": "Portugal",
+      "cityTransition": { "to": "Sintra", "travelTime": "40min by train" },
+      "_note": "cityTransition is optional — only include when this day ends in a different city than it started",
       "activities": [
         {
           "time": "morning",
           "activity": "Visit the Museu Nacional do Azulejo",
-          "venue": "Museu Nacional do Azulejo, Rua da Madre de Deus 4, Lisbon",
+          "venue": "Museu Nacional do Azulejo, Rua da Madre de Deus 4",
+          "city": "Lisboa",
+          "country": "Portugal",
+          "ownerAgent": "alice",
           "satisfies": ["alice"],
           "description": "National tile museum with 500 years of Portuguese azulejo art",
           "estimatedCostPerPerson": 5
@@ -35,7 +43,10 @@ Always respond with valid JSON in this exact structure:
         {
           "time": "afternoon",
           "activity": "Kayaking on the Tejo River",
-          "venue": "Lisbon Kayak & SUP, Doca de Belém, Lisbon",
+          "venue": "Lisbon Kayak & SUP, Doca de Belém",
+          "city": "Lisboa",
+          "country": "Portugal",
+          "ownerAgent": "carlos",
           "satisfies": ["carlos"],
           "description": "2-hour guided kayak tour past Belém Tower",
           "estimatedCostPerPerson": 35
