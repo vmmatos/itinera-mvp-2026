@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { AGENT_COLOURS } from '~/types/index'
-import { formatLocation } from '~/utils/itinerary'
 
 export interface ActivityCardProps {
   venue?:        string
@@ -24,7 +23,18 @@ const props = withDefaults(defineProps<{
   currencySymbol: '€',
 })
 
-const locationLine = computed(() => formatLocation(props.activity))
+// venue shown in fg-1 (prominent); city+country in green below
+const venueLine = computed((): string => props.activity.venue?.trim() ?? '')
+
+const cityLine = computed((): string => {
+  const city    = props.activity.city?.trim()
+  const country = props.activity.country?.trim()
+  if (city && country) return `${city}, ${country}`
+  if (city)            return city
+  // no structured city — fall back to legacy location only when venue absent
+  if (!venueLine.value) return props.activity.location?.trim() ?? ''
+  return ''
+})
 
 const COLOUR_CODE: Record<string, string> = {
   green: 'g', amber: 'a', blue: 'b', magenta: 'm',
@@ -67,11 +77,12 @@ function agentLineVar(agent: string): string {
         >{{ activity.ownerAgent }}</span>
       </div>
     </div>
-    <div v-if="locationLine" class="act-loc">
-      <svg class="pin" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <p v-if="venueLine" class="act-venue">{{ venueLine }}</p>
+    <div v-if="cityLine" class="act-city">
+      <svg class="pin-green" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
         <path d="M8 1.5C5.51 1.5 3.5 3.51 3.5 6c0 3.75 4.5 8.5 4.5 8.5s4.5-4.75 4.5-8.5c0-2.49-2.01-4.5-4.5-4.5zm0 6a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z" fill="currentColor"/>
       </svg>
-      <span>{{ locationLine }}</span>
+      <span>{{ cityLine }}</span>
     </div>
     <p v-if="activity.notes" class="act-notes">{{ activity.notes }}</p>
   </div>
@@ -135,19 +146,31 @@ function agentLineVar(agent: string): string {
   border: 1px solid;
 }
 
-.act-loc {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: var(--t-12);
-  color: var(--fg-3);
+.act-venue {
+  margin: 3px 0 1px;
+  font-size: var(--t-13);
+  color: var(--fg-1);
+  font-weight: 400;
+  line-height: 1.3;
 }
 
-.pin {
-  width: 12px;
-  height: 12px;
+.act-city {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--green);
+  opacity: 0.75;
+  letter-spacing: 0.03em;
+  margin-bottom: 2px;
+}
+
+.pin-green {
+  width: 10px;
+  height: 10px;
   flex-shrink: 0;
-  color: var(--fg-4);
+  color: var(--green);
 }
 
 .act-notes {
