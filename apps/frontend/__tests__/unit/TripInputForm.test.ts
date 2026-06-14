@@ -19,7 +19,7 @@ const mountForm = () =>
   mount(TripInputForm, {
     global: {
       plugins: [createPinia()],
-      stubs: { transition: true },
+      stubs: { transition: true, TripTimeline: true, TripActivityCard: true, AppLogo: true },
     },
   })
 

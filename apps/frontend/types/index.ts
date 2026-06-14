@@ -92,6 +92,11 @@ export interface CreateTripInput {
 }
 
 // ── Trip result ───────────────────────────────────────────────
+export interface CityTransition {
+  to:         string
+  travelTime: string
+}
+
 export interface Activity {
   time:      string
   name:      string
@@ -99,14 +104,20 @@ export interface Activity {
   duration:  string
   cost?:     number
   agent?:    AgentName   // which agent "owns" this decision
+  venue?:    string
+  city?:     string
+  country?:  string
   notes?:    string
   weatherAlert?: string
 }
 
 export interface DayPlan {
-  date:       string
-  title:      string
-  activities: Activity[]
+  date:            string
+  title:           string
+  city?:           string
+  country?:        string
+  cityTransition?: CityTransition
+  activities:      Activity[]
 }
 
 export interface FinalPlan {
