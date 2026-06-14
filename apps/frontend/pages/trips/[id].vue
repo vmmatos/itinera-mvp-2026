@@ -1,0 +1,190 @@
+<script setup lang="ts">
+import { ref, computed, onMounted } from 'vue'
+import type { Trip, CreateTripInput } from '~/types/index'
+import type { TimelineDay, TimelineActivity } from '~/components/trip/Timeline.vue'
+
+definePageMeta({
+  layout: 'default',
+  middleware: 'auth',
+})
+
+const route     = useRoute()
+const tripStore = useTripPlannerStore()
+const authStore = useAuthStore()
+const api       = useApi()
+
+const tripId = computed(() => route.params.id as string)
+
+const trip    = ref<Trip | null>(null)
+const loading = ref(true)
+const error   = ref<string | null>(null)
+
+const statusColour: Record<Trip['status'], string> = {
+  draft:       'var(--fg-3)',
+  negotiating: 'var(--amber)',
+  confirmed:   'var(--green)',
+  completed:   'var(--green)',
+  cancelled:   'var(--red)',
+}
+
+const timelineDays = computed((): TimelineDay[] => {
+  const plan = trip.value?.finalPlan
+  if (!plan?.days?.length) return []
+  return plan.days.map((d, i) => ({
+    day:  i + 1,
+    date: d.date,
+    city: d.city,
+    country: d.country,
+    cityTransition: d.cityTransition
+      ? { to: d.cityTransition.to, travelTime: d.cityTransition.travelTime }
+      : undefined,
+    activities: (d.activities ?? []).map((a): TimelineActivity => ({
+      name:         a.name,
+      location:     a.location,
+      venue:        a.venue,
+      city:         a.city,
+      country:      a.country,
+      time:         a.time,
+      duration:     a.duration,
+      cost:         a.cost,
+      ownerAgent:   a.agent,
+      notes:        a.notes,
+      weatherAlert: a.weatherAlert,
+    })),
+  }))
+})
+
+const currencySymbol = computed(() =>
+  trip.value?.budgetCurrency === 'USD' ? '$' : '€',
+)
+
+const handleRefine = (): void => {
+  if (trip.value && !tripStore.lastInput) {
+    tripStore.setLastInput({
+      name:           trip.value.name,
+      region:         trip.value.region,
+      startDate:      trip.value.startDate,
+      endDate:        trip.value.endDate,
+      budgetTotal:    trip.value.budgetTotal,
+      budgetCurrency: trip.value.budgetCurrency,
+      travellers:     [],
+    })
+  }
+  navigateTo('/planner')
+}
+
+onMounted(async () => {
+  loading.value = true
+  error.value   = null
+  try {
+    const { data } = await api.get<{ success: boolean; data: Trip }>(`/api/v1/trips/${tripId.value}`)
+    trip.value = data.data
+  } catch (err: unknown) {
+    error.value = err instanceof Error ? err.message : 'Failed to load trip'
+  } finally {
+    loading.value = false
+  }
+})
+</script>
+
+<template>
+  <div class="min-h-screen bg-bg-0 text-fg-0">
+    <!-- Header -->
+    <header class="border-b border-line-2 px-6 py-4 flex items-center justify-between">
+      <AppLogo :size="20" />
+      <div class="flex items-center gap-4">
+        <NuxtLink to="/dashboard" class="btn text-13">← Dashboard</NuxtLink>
+        <NuxtLink
+          v-if="authStore.isAdmin && trip"
+          :to="`/admin/${trip.id}`"
+          class="btn text-13"
+          style="color:var(--amber);border-color:var(--amber-line);font-family:var(--mono)"
+        >Debug view</NuxtLink>
+      </div>
+    </header>
+
+    <!-- Loading -->
+    <div v-if="loading" class="flex items-center justify-center py-32">
+      <span class="helper pulse-green">Loading trip…</span>
+    </div>
+
+    <!-- Error -->
+    <div v-else-if="error" class="max-w-3xl mx-auto px-6 py-10">
+      <div class="card" style="border-color:rgba(255,93,93,0.32)">
+        <p class="text-danger text-13">{{ error }}</p>
+      </div>
+    </div>
+
+    <!-- Trip content -->
+    <main v-else-if="trip" class="max-w-5xl mx-auto px-6 py-10">
+
+      <!-- Trip header -->
+      <div class="mb-8">
+        <div class="flex items-start justify-between gap-4 mb-2 flex-wrap">
+          <div>
+            <div class="sec-eyebrow mb-1">Trip results</div>
+            <h1 style="font-size:var(--t-28);font-weight:400;letter-spacing:-0.02em;margin:0">
+              {{ trip.name }}
+            </h1>
+          </div>
+          <div class="flex items-center gap-3 flex-wrap">
+            <span
+              class="badge font-mono"
+              :style="`color:${statusColour[trip.status]};background:transparent;border-color:${statusColour[trip.status]}33`"
+            >{{ trip.status }}</span>
+            <button
+              class="btn btn-primary"
+              data-testid="refine-trip-btn"
+              @click="handleRefine"
+            >
+              ← Refine trip
+            </button>
+          </div>
+        </div>
+
+        <!-- Meta row -->
+        <div class="flex flex-wrap gap-4 mt-3" style="font-family:var(--mono);font-size:var(--t-12);color:var(--fg-3)">
+          <span>{{ trip.region }}</span>
+          <span>{{ trip.startDate }} → {{ trip.endDate }}</span>
+          <span>{{ trip.budgetCurrency }} {{ trip.budgetTotal.toLocaleString() }} budget</span>
+        </div>
+      </div>
+
+      <!-- Itinerary -->
+      <div v-if="trip.status === 'confirmed' || trip.status === 'completed'">
+        <div v-if="timelineDays.length > 0">
+          <div class="sec-eyebrow mb-4">Itinerary</div>
+          <TripTimeline
+            :days="timelineDays"
+            :currency-symbol="currencySymbol"
+          />
+        </div>
+        <div v-else class="card" style="padding:var(--s-6);text-align:center">
+          <p class="helper">Itinerary data is not available for this trip.</p>
+        </div>
+      </div>
+
+      <!-- Non-confirmed state -->
+      <div v-else class="card" style="padding:var(--s-6);text-align:center">
+        <p class="helper">
+          {{ trip.status === 'negotiating' ? 'Agents are still building this itinerary…' : 'No itinerary available.' }}
+        </p>
+      </div>
+
+      <!-- Refine CTA (bottom) -->
+      <div class="mt-10 pt-6 border-t border-line-2 flex items-center justify-between flex-wrap gap-4">
+        <div>
+          <p style="font-size:var(--t-15);font-weight:500;margin:0">Not quite right?</p>
+          <p style="font-size:var(--t-13);color:var(--fg-3);margin:4px 0 0">
+            Adjust your preferences and re-plan. A new trip will be created.
+          </p>
+        </div>
+        <button
+          class="btn btn-primary"
+          @click="handleRefine"
+        >← Refine trip</button>
+      </div>
+
+    </main>
+  </div>
+</template>

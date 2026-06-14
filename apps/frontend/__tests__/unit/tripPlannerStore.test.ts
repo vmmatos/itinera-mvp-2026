@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
 // useApi is shimmed as a global in __tests__/setup.ts
@@ -51,6 +51,8 @@ const MOCK_INPUT: CreateTripInput = {
   ],
 }
 
+const LS_KEY = 'itinera_last_input'
+
 describe('useTripPlannerStore', () => {
   let mockGet:  ReturnType<typeof vi.fn>
   let mockPost: ReturnType<typeof vi.fn>
@@ -60,6 +62,11 @@ describe('useTripPlannerStore', () => {
     mockGet  = vi.fn()
     mockPost = vi.fn()
     setApiMocks(mockGet, mockPost)
+    localStorage.clear()
+  })
+
+  afterEach(() => {
+    localStorage.clear()
   })
 
   // ── fetchTrips ──────────────────────────────────────────────
@@ -159,6 +166,105 @@ describe('useTripPlannerStore', () => {
 
       store.setCurrentTrip(null)
       expect(store.currentTrip).toBeNull()
+    })
+  })
+
+  // ── setLastInput ─────────────────────────────────────────────
+
+  describe('setLastInput', () => {
+    it('sets lastInput state and writes to localStorage', () => {
+      const store = useTripPlannerStore()
+      store.setLastInput(MOCK_INPUT)
+
+      expect(store.lastInput).toEqual(MOCK_INPUT)
+      expect(localStorage.getItem(LS_KEY)).toBe(JSON.stringify(MOCK_INPUT))
+    })
+
+    it('overwrites a previously stored value', () => {
+      const store = useTripPlannerStore()
+      store.setLastInput(MOCK_INPUT)
+
+      const updated: CreateTripInput = { ...MOCK_INPUT, name: 'Updated trip' }
+      store.setLastInput(updated)
+
+      expect(store.lastInput?.name).toBe('Updated trip')
+      expect(JSON.parse(localStorage.getItem(LS_KEY) ?? '{}')).toMatchObject({ name: 'Updated trip' })
+    })
+  })
+
+  // ── clearLastInput ───────────────────────────────────────────
+
+  describe('clearLastInput', () => {
+    it('nulls lastInput and removes localStorage key', () => {
+      const store = useTripPlannerStore()
+      store.setLastInput(MOCK_INPUT)
+      expect(store.lastInput).not.toBeNull()
+
+      store.clearLastInput()
+
+      expect(store.lastInput).toBeNull()
+      expect(localStorage.getItem(LS_KEY)).toBeNull()
+    })
+  })
+
+  // ── localStorage rehydration ─────────────────────────────────
+
+  describe('localStorage rehydration', () => {
+    it('pre-populates lastInput from localStorage on store init', () => {
+      localStorage.setItem(LS_KEY, JSON.stringify(MOCK_INPUT))
+
+      // Fresh store — reads from localStorage during defineStore init
+      const store = useTripPlannerStore()
+
+      expect(store.lastInput).toEqual(MOCK_INPUT)
+    })
+
+    it('starts with null lastInput when localStorage is empty', () => {
+      const store = useTripPlannerStore()
+      expect(store.lastInput).toBeNull()
+    })
+
+    it('returns null when localStorage contains malformed JSON', () => {
+      localStorage.setItem(LS_KEY, 'not-valid-json{{{')
+      const store = useTripPlannerStore()
+      expect(store.lastInput).toBeNull()
+    })
+  })
+
+  // ── createTrip saves lastInput before API call ───────────────
+
+  describe('createTrip saves lastInput', () => {
+    it('writes lastInput to localStorage before the POST request', async () => {
+      const callOrder: string[] = []
+
+      const origSetItem = localStorage.setItem.bind(localStorage)
+      vi.spyOn(localStorage, 'setItem').mockImplementation((key, value) => {
+        if (key === LS_KEY) callOrder.push('localStorage')
+        origSetItem(key, value)
+      })
+
+      mockPost.mockImplementation(async () => {
+        callOrder.push('post')
+        return { data: { success: true, data: { tripId: 'new-id' } } }
+      })
+      mockGet.mockResolvedValueOnce({ data: { success: true, data: MOCK_TRIPS } })
+
+      const store = useTripPlannerStore()
+      await store.createTrip(MOCK_INPUT)
+
+      expect(callOrder[0]).toBe('localStorage')
+      expect(callOrder[1]).toBe('post')
+
+      vi.restoreAllMocks()
+    })
+
+    it('preserves lastInput even when the API call fails', async () => {
+      mockPost.mockRejectedValueOnce(new Error('Server error'))
+
+      const store = useTripPlannerStore()
+      await store.createTrip(MOCK_INPUT).catch(() => undefined)
+
+      expect(store.lastInput).toEqual(MOCK_INPUT)
     })
   })
 })
