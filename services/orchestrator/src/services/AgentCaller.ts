@@ -1,4 +1,5 @@
 import { BaseService } from '@itinera/shared';
+import type { DateInput } from '@itinera/shared';
 import jwt from 'jsonwebtoken';
 import { config } from '@/config';
 
@@ -13,6 +14,7 @@ export interface AgentTripContext {
   budgetTotal?: number | null;
   budgetCurrency?: string;
   region?: string | null;
+  dateInput?: DateInput | null;
 }
 
 interface AgentEventLike {
@@ -131,6 +133,7 @@ export class AgentCaller extends BaseService {
         proposal,
         budgetTotal: Number(tripContext?.budgetTotal ?? 5000),
         budgetCurrency: tripContext?.budgetCurrency ?? 'EUR',
+        dateInput: tripContext?.dateInput ?? null,
       },
     );
     return toAgentCallResult(resp.review, Date.now() - start);
@@ -151,6 +154,7 @@ export class AgentCaller extends BaseService {
         round,
         proposal,
         region: tripContext?.region ?? 'unknown',
+        dateInput: tripContext?.dateInput ?? null,
       },
     );
     return toAgentCallResult(resp.validation, Date.now() - start);

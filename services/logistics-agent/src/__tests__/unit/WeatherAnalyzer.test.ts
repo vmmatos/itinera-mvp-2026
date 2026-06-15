@@ -169,4 +169,34 @@ describe('WeatherAnalyzer', () => {
 
     expect(event.content).toEqual({ raw: 'Weather looks fine overall.' });
   });
+
+  // ── Flexible date selection ───────────────────────────────────
+
+  it('flexible dateInput: appends DATE SELECTION MODE instruction to Claude call', async () => {
+    const dateInput = { mode: 'flexible' as const, days: 7, preferredMonth: '2026-07', window: 'moderate' as const };
+
+    await analyzer.analyze(VALID_TRIP_ID, 1, MOCK_ITINERARY, MOCK_FORECASTS, MOCK_TIMING, dateInput);
+
+    // Check the specific dynamic user-message injection (includes the dash + month)
+    const callStr = JSON.stringify(vi.mocked(anthropic.complete).mock.calls[0]);
+    expect(callStr).toContain('DATE SELECTION MODE: flexible — 7 days in 2026-07');
+    expect(callStr).toContain('suggestedDates');
+  });
+
+  it('fixed dateInput: does NOT inject flexible date instruction', async () => {
+    const dateInput = { mode: 'fixed' as const, startDate: '2026-07-01', endDate: '2026-07-08' };
+
+    await analyzer.analyze(VALID_TRIP_ID, 1, MOCK_ITINERARY, MOCK_FORECASTS, MOCK_TIMING, dateInput);
+
+    // The dynamic instruction contains " — N days in YYYY-MM" which only appears for flexible mode
+    const callStr = JSON.stringify(vi.mocked(anthropic.complete).mock.calls[0]);
+    expect(callStr).not.toContain('DATE SELECTION MODE: flexible —');
+  });
+
+  it('no dateInput: does NOT inject flexible date instruction', async () => {
+    await analyzer.analyze(VALID_TRIP_ID, 1, MOCK_ITINERARY, MOCK_FORECASTS, MOCK_TIMING);
+
+    const callStr = JSON.stringify(vi.mocked(anthropic.complete).mock.calls[0]);
+    expect(callStr).not.toContain('DATE SELECTION MODE: flexible —');
+  });
 });

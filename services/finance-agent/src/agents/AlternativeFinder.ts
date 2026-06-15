@@ -26,6 +26,7 @@ export class AlternativeFinder extends BaseFinanceAgent {
     breakdown: CostBreakdown,
     validation: BudgetValidation,
     context: string,
+    dateInput?: { mode: string; preferredMonth?: string; window?: string; days?: number } | null,
   ): Promise<AgentEvent> {
     if (validation.status === 'within_budget') {
       const content = {
@@ -35,7 +36,16 @@ export class AlternativeFinder extends BaseFinanceAgent {
       return this.buildAndPublishEvent(tripId, round, 'propose', content);
     }
 
+    const flexPricingNote: string[] = dateInput?.mode === 'flexible' && dateInput.preferredMonth
+      ? [
+          `PRICING NOTE: Dates are flexible — ${dateInput.days ?? '?'} days in ${dateInput.preferredMonth} (window: ${dateInput.window ?? 'moderate'}).`,
+          'Consider weekday vs weekend rates, public holidays in that month, and shoulder-season accommodation when suggesting alternatives.',
+          '',
+        ]
+      : [];
+
     const userMessage = [
+      ...flexPricingNote,
       `Trip context: ${context || 'No additional context provided.'}`,
       '',
       `Budget constraint: ${validation.budgetTotal} ${validation.currency}`,

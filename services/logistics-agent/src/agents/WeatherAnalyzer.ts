@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import type { AgentEvent, AgentName, AIMessage } from '@itinera/shared';
+import type { AgentEvent, AgentName, AIMessage, DateInput } from '@itinera/shared';
 import { BaseLogisticsAgent } from '@/agents/BaseLogisticsAgent';
 import type { WeatherForecast } from '@/services/WeatherService';
 import type { TimingValidationResult } from '@/validators/TimingValidator';
@@ -24,6 +24,7 @@ export class WeatherAnalyzer extends BaseLogisticsAgent {
     itinerary: unknown,
     weatherForecasts: WeatherForecast[],
     timingResult: TimingValidationResult,
+    dateInput?: DateInput | null,
   ): Promise<AgentEvent> {
     return this.handleAsync(async () => {
       const cacheKey = `logistics:${tripId}:weather-analyzer:${round}:propose`;
@@ -32,6 +33,17 @@ export class WeatherAnalyzer extends BaseLogisticsAgent {
         this.logger.info('Cache hit', { agent: this.agentName, tripId, round, action: 'propose' });
         return cached;
       }
+
+      const flexSection: string[] = dateInput?.mode === 'flexible'
+        ? [
+            '',
+            `DATE SELECTION MODE: flexible — ${dateInput.days} days in ${dateInput.preferredMonth} (window: ${dateInput.window})`,
+            'Based on the weather forecasts above, select the optimal consecutive window within this month.',
+            'Add a "suggestedDates" key to your JSON response:',
+            '  "suggestedDates": { "startDate": "YYYY-MM-DD", "endDate": "YYYY-MM-DD", "rationale": "..." }',
+            'If forecast data covers fewer days than needed, note this in rationale and omit startDate/endDate.',
+          ]
+        : [];
 
       const messages: AIMessage[] = [
         {
@@ -48,6 +60,7 @@ export class WeatherAnalyzer extends BaseLogisticsAgent {
             '',
             'Timing validation result:',
             JSON.stringify(timingResult, null, 2),
+            ...flexSection,
             '',
             'Analyse the weather impact on outdoor activities, flag risky days, and suggest alternative times or indoor fallbacks where needed. Respond with valid JSON only.',
           ].join('\n'),

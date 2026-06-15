@@ -1,6 +1,25 @@
 export type TripStatus = 'draft' | 'negotiating' | 'confirmed' | 'completed' | 'cancelled';
 export type ProposalStatus = 'pending' | 'accepted' | 'rejected' | 'superseded';
 export type UserRole = 'user' | 'admin' | 'service';
+export type DateWindow = 'tight' | 'moderate' | 'open';
+
+export interface FixedDateInput {
+  mode: 'fixed';
+  startDate: string; // YYYY-MM-DD
+  endDate: string;   // YYYY-MM-DD
+}
+
+export interface FlexibleDateInput {
+  mode: 'flexible';
+  days: number;
+  preferredMonth: string; // YYYY-MM
+  window: DateWindow;
+  resolvedStart?: string;
+  resolvedEnd?: string;
+  rationale?: string;
+}
+
+export type DateInput = FixedDateInput | FlexibleDateInput;
 
 export interface User {
   id: string;
@@ -20,6 +39,7 @@ export interface Trip {
   endDate: Date | null;
   budgetTotal: number | null;
   budgetCurrency: string;
+  dateInput: DateInput | null;
   createdAt: Date;
   updatedAt: Date;
 }

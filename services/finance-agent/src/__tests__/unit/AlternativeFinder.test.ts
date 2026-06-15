@@ -191,4 +191,47 @@ describe('AlternativeFinder', () => {
       expect(event.tripId).toBe(VALID_TRIP_ID);
     });
   });
+
+  // ── Flexible dates pricing note ───────────────────────────────
+
+  describe('flexible dateInput', () => {
+    const FLEXIBLE_DATE_INPUT = {
+      mode: 'flexible' as const,
+      days: 7,
+      preferredMonth: '2026-07',
+      window: 'moderate' as const,
+    };
+
+    it('over_budget + flexible: includes PRICING NOTE in Claude prompt', async () => {
+      await finder.findAlternatives(
+        VALID_TRIP_ID, 1, MOCK_PROPOSAL, MOCK_BREAKDOWN, OVER_BUDGET_VALIDATION, '', FLEXIBLE_DATE_INPUT,
+      );
+
+      const callArg = vi.mocked(anthropic.complete).mock.calls[0];
+      const callStr = JSON.stringify(callArg);
+      expect(callStr).toContain('PRICING NOTE');
+      expect(callStr).toContain('2026-07');
+      expect(callStr).toContain('weekday vs weekend');
+    });
+
+    it('within_budget + flexible: Claude still not called (fast path unchanged)', async () => {
+      await finder.findAlternatives(
+        VALID_TRIP_ID, 1, MOCK_PROPOSAL, MOCK_BREAKDOWN, WITHIN_BUDGET_VALIDATION, '', FLEXIBLE_DATE_INPUT,
+      );
+
+      expect(anthropic.complete).not.toHaveBeenCalled();
+    });
+
+    it('over_budget + fixed dateInput: no PRICING NOTE in prompt', async () => {
+      const fixedDateInput = { mode: 'fixed' as const, startDate: '2026-07-01', endDate: '2026-07-08' };
+
+      await finder.findAlternatives(
+        VALID_TRIP_ID, 1, MOCK_PROPOSAL, MOCK_BREAKDOWN, OVER_BUDGET_VALIDATION, '', fixedDateInput,
+      );
+
+      const callArg = vi.mocked(anthropic.complete).mock.calls[0];
+      const callStr = JSON.stringify(callArg);
+      expect(callStr).not.toContain('PRICING NOTE');
+    });
+  });
 });

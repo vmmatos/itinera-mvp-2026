@@ -187,4 +187,42 @@ describe('AgentCaller', () => {
       caller.callPreferenceAgent('trip-1', 'alice', 1),
     ).rejects.toThrow('ECONNREFUSED');
   });
+
+  it('callLogisticsAgent: includes dateInput in body when provided', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ validation: AGENT_EVENT }),
+    });
+
+    const dateInput = { mode: 'flexible' as const, days: 7, preferredMonth: '2026-07', window: 'moderate' as const };
+    await caller.callLogisticsAgent('trip-1', 4, {}, { region: 'Portugal', dateInput });
+
+    const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string) as Record<string, unknown>;
+    expect(sentBody['dateInput']).toEqual(dateInput);
+  });
+
+  it('callLogisticsAgent: sends null dateInput when not provided', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ validation: AGENT_EVENT }),
+    });
+
+    await caller.callLogisticsAgent('trip-1', 4, {}, { region: 'Portugal' });
+
+    const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string) as Record<string, unknown>;
+    expect(sentBody['dateInput']).toBeNull();
+  });
+
+  it('callFinanceAgent: includes dateInput in body when provided', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ review: AGENT_EVENT }),
+    });
+
+    const dateInput = { mode: 'flexible' as const, days: 5, preferredMonth: '2026-08', window: 'open' as const };
+    await caller.callFinanceAgent('trip-1', 3, {}, { budgetTotal: 3000, budgetCurrency: 'EUR', dateInput });
+
+    const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string) as Record<string, unknown>;
+    expect(sentBody['dateInput']).toEqual(dateInput);
+  });
 });

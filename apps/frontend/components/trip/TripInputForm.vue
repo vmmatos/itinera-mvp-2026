@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onUnmounted, onMounted } from 'vue'
 import { PERSONA_LABELS, PERSONA_AGENT, AGENT_COLOURS } from '~/types/index'
-import type { Persona, Flexibility, Currency, CreateTripInput, TravellerInput, SatisfactionScore, AgentStreamEvent } from '~/types/index'
+import type { Persona, Flexibility, Currency, DateWindow, DateInput, CreateTripInput, TravellerInput, SatisfactionScore, AgentStreamEvent } from '~/types/index'
 
 const props = withDefaults(defineProps<{ viewTripId?: string }>(), { viewTripId: undefined })
 
@@ -86,6 +86,12 @@ const budgetCurrency = ref<Currency>('EUR')
 const currencySymbol = computed(() => budgetCurrency.value === 'EUR' ? '€' : '$')
 const tripFlexibility = ref<Flexibility>('medium')
 
+// Flexible date mode
+const dateMode       = ref<'fixed' | 'flexible'>('fixed')
+const flexDays       = ref(7)
+const preferredMonth = ref('')
+const flexWindow     = ref<DateWindow>('moderate')
+
 const mustHaveInput  = ref('')
 const mustHaves      = ref<string[]>([])
 const dealBreakerInput = ref('')
@@ -128,9 +134,10 @@ const removeDealBreaker = (v: string): void => {
 const step2Valid = computed(() =>
   tripName.value.trim() !== '' &&
   region.value.trim() !== '' &&
-  startDate.value !== '' &&
-  endDate.value !== '' &&
-  nights.value > 0 &&
+  (dateMode.value === 'fixed'
+    ? startDate.value !== '' && endDate.value !== '' && nights.value > 0
+    : flexDays.value > 0 && preferredMonth.value !== ''
+  ) &&
   budgetTotal.value > 0,
 )
 
@@ -161,10 +168,25 @@ onMounted(() => {
     const li = store.lastInput
     tripName.value       = li.name
     region.value         = li.region ?? ''
-    startDate.value      = li.startDate
-    endDate.value        = li.endDate ?? ''
     budgetTotal.value    = li.budgetTotal
     budgetCurrency.value = li.budgetCurrency
+    // Restore date input — guard against old localStorage shape lacking dateInput
+    const di = li.dateInput as DateInput | undefined
+    if (di?.mode === 'flexible') {
+      dateMode.value       = 'flexible'
+      flexDays.value       = di.days
+      preferredMonth.value = di.preferredMonth
+      flexWindow.value     = di.window
+    } else if (di?.mode === 'fixed') {
+      dateMode.value  = 'fixed'
+      startDate.value = di.startDate
+      endDate.value   = di.endDate
+    } else {
+      // Legacy shape: startDate/endDate at top level
+      const legacy = li as unknown as { startDate?: string; endDate?: string }
+      startDate.value = legacy.startDate ?? ''
+      endDate.value   = legacy.endDate ?? ''
+    }
     const first = li.travellers[0]
     if (first) {
       tripFlexibility.value = first.preferences.pace ?? 'medium'
@@ -189,8 +211,9 @@ const submit = async (): Promise<void> => {
   const payload: CreateTripInput = {
     name:           tripName.value.trim(),
     region:         region.value.trim(),
-    startDate:      startDate.value,
-    endDate:        endDate.value,
+    dateInput:      dateMode.value === 'fixed'
+      ? { mode: 'fixed', startDate: startDate.value, endDate: endDate.value }
+      : { mode: 'flexible', days: flexDays.value, preferredMonth: preferredMonth.value, window: flexWindow.value },
     budgetTotal:    budgetTotal.value,
     budgetCurrency: budgetCurrency.value,
     travellers:     travellers.value.map((t): TravellerInput => ({
@@ -1032,37 +1055,98 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
 
         <div class="field-row">
           <div class="field-label">Dates</div>
-          <div class="field-input">
-            <input
-              v-model="startDate"
-              type="date"
-              class="txt"
-              style="width:140px"
-              data-testid="start-date"
-            />
-            <span style="color:var(--fg-3);font-family:var(--mono);font-size:var(--t-12)">→</span>
-            <input
-              v-model="endDate"
-              type="date"
-              class="txt"
-              style="width:140px"
-              :min="startDate"
-              data-testid="end-date"
-            />
-            <span v-if="nights > 0" class="helper">{{ nights }} night{{ nights !== 1 ? 's' : '' }}</span>
+          <div class="field-input" style="flex-direction:column;align-items:flex-start;gap:var(--s-3)">
+            <!-- Mode toggle -->
+            <div style="display:flex;gap:6px">
+              <button
+                class="chip"
+                :class="{ on: dateMode === 'fixed' }"
+                data-testid="date-mode-fixed"
+                @click="dateMode = 'fixed'"
+              >Fixed dates</button>
+              <button
+                class="chip"
+                :class="{ on: dateMode === 'flexible' }"
+                data-testid="date-mode-flexible"
+                @click="dateMode = 'flexible'"
+              >I'm flexible</button>
+            </div>
+
+            <!-- Fixed mode -->
+            <template v-if="dateMode === 'fixed'">
+              <div style="display:flex;align-items:center;gap:8px">
+                <input
+                  v-model="startDate"
+                  type="date"
+                  class="txt"
+                  style="width:140px"
+                  data-testid="start-date"
+                />
+                <span style="color:var(--fg-3);font-family:var(--mono);font-size:var(--t-12)">→</span>
+                <input
+                  v-model="endDate"
+                  type="date"
+                  class="txt"
+                  style="width:140px"
+                  :min="startDate"
+                  data-testid="end-date"
+                />
+                <span v-if="nights > 0" class="helper">{{ nights }} night{{ nights !== 1 ? 's' : '' }}</span>
+              </div>
+              <p
+                v-if="step2Attempted && !startDate"
+                style="color:var(--red);font-size:var(--t-12);margin:0;font-family:var(--mono)"
+              >
+                Select a start date
+              </p>
+              <p
+                v-else-if="step2Attempted && (!endDate || nights <= 0)"
+                style="color:var(--red);font-size:var(--t-12);margin:0;font-family:var(--mono)"
+              >
+                End date must be after start date
+              </p>
+            </template>
+
+            <!-- Flexible mode -->
+            <template v-else>
+              <div style="display:flex;align-items:center;gap:8px">
+                <input
+                  v-model.number="flexDays"
+                  type="number"
+                  min="1"
+                  max="60"
+                  class="txt"
+                  style="width:64px"
+                  data-testid="flex-days"
+                />
+                <span class="helper">days</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <input
+                  v-model="preferredMonth"
+                  type="month"
+                  class="txt"
+                  data-testid="preferred-month"
+                />
+                <span class="helper">preferred month</span>
+              </div>
+              <div style="display:flex;gap:6px">
+                <button
+                  v-for="w in (['tight', 'moderate', 'open'] as DateWindow[])"
+                  :key="w"
+                  class="chip"
+                  :class="{ on: flexWindow === w }"
+                  @click="flexWindow = w"
+                >{{ w }}</button>
+              </div>
+              <p
+                v-if="step2Attempted && !preferredMonth"
+                style="color:var(--red);font-size:var(--t-12);margin:0;font-family:var(--mono)"
+              >
+                Select a preferred month
+              </p>
+            </template>
           </div>
-          <p
-            v-if="step2Attempted && !startDate"
-            style="color:var(--red);font-size:var(--t-12);margin:4px 0 0;font-family:var(--mono)"
-          >
-            Select a start date
-          </p>
-          <p
-            v-else-if="step2Attempted && (!endDate || nights <= 0)"
-            style="color:var(--red);font-size:var(--t-12);margin:4px 0 0;font-family:var(--mono)"
-          >
-            End date must be after start date
-          </p>
         </div>
 
         <div class="field-row">
@@ -1196,7 +1280,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
 
         <div class="summary-card">
           <div class="sub">Trip summary</div>
-          <h3>{{ region || '—' }}{{ nights > 0 ? ` · ${nights} nights` : '' }} · {{ travellers.length }} travellers</h3>
+          <h3>{{ region || '—' }}{{ dateMode === 'flexible' ? ` · ${flexDays} nights · flexible` : nights > 0 ? ` · ${nights} nights` : '' }} · {{ travellers.length }} travellers</h3>
           <div class="kv">
             <div class="k">target / pp</div>
             <div class="v"><span class="mono">{{ currencySymbol }}{{ budgetPerPerson.toLocaleString() }}</span></div>
@@ -1750,7 +1834,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
             {{ tripName }} is ready.
           </h2>
           <p style="margin:var(--s-2) 0 0;color:var(--fg-3);font-size:var(--t-14)">
-            {{ region }} · {{ nights }} nights · {{ travellers.length }} traveller{{ travellers.length !== 1 ? 's' : '' }}
+            {{ region }} · {{ dateMode === 'flexible' ? `${flexDays} nights (flexible)` : `${nights} nights` }} · {{ travellers.length }} traveller{{ travellers.length !== 1 ? 's' : '' }}
           </p>
         </div>
 

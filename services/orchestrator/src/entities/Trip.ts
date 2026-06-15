@@ -13,6 +13,7 @@ import type { Traveller } from '@/entities/Traveller';
 import type { Proposal } from '@/entities/Proposal';
 import type { TripMetric } from '@/entities/TripMetric';
 import type { SatisfactionScore } from '@/entities/SatisfactionScore';
+import type { DateInput } from '@itinera/shared';
 
 @Entity('trips')
 export class Trip {
@@ -45,6 +46,9 @@ export class Trip {
 
   @Column({ type: 'jsonb', default: [] })
   destinations!: Array<{ country: string; city?: string; nights: number }>;
+
+  @Column({ name: 'date_input', type: 'jsonb', nullable: true })
+  dateInput!: DateInput | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;

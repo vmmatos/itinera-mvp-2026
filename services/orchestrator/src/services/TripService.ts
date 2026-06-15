@@ -1,5 +1,5 @@
 import { BaseService, NotFoundError } from '@itinera/shared';
-import type { TripStatus } from '@itinera/shared';
+import type { TripStatus, DateInput } from '@itinera/shared';
 import { AppDataSource } from '@/data-source';
 import { Trip } from '@/entities/Trip';
 import { Traveller } from '@/entities/Traveller';
@@ -23,6 +23,7 @@ export interface TripSummary {
   endDate: Date | null;
   budgetTotal: number | null;
   budgetCurrency: string;
+  dateInput: DateInput | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -92,6 +93,7 @@ export class TripService extends BaseService {
         endDate: endDate ? new Date(endDate) : null,
         budgetTotal: input.budgetTotal ?? null,
         budgetCurrency: input.budgetCurrency ?? 'EUR',
+        dateInput: input.dateInput ?? null,
         status: 'draft',
       });
       const savedTrip = await manager.save(newTrip);
@@ -119,6 +121,14 @@ export class TripService extends BaseService {
       where: { tripId },
       order: { createdAt: 'ASC' },
     });
+  }
+
+  async resolveFlexibleDates(tripId: string, startDate: string, endDate: string): Promise<void> {
+    await AppDataSource.getRepository(Trip).update(
+      { id: tripId },
+      { startDate: new Date(startDate), endDate: new Date(endDate) },
+    );
+    this.logger.info('Flexible dates resolved', { tripId, startDate, endDate });
   }
 
   startOrchestration(tripId: string): void {
@@ -173,6 +183,7 @@ export class TripService extends BaseService {
       endDate: trip.endDate,
       budgetTotal: trip.budgetTotal,
       budgetCurrency: trip.budgetCurrency,
+      dateInput: trip.dateInput ?? null,
       createdAt: trip.createdAt,
       updatedAt: trip.updatedAt,
     };

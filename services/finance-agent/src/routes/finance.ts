@@ -8,12 +8,18 @@ import type { AlternativeFinder } from '@/agents/AlternativeFinder';
 import type { ProposalStorageService } from '@/services/ProposalStorageService';
 
 const ReviewSchema = z.object({
-  tripId: z.string().uuid(),
-  round: z.number().int().min(1),
-  proposal: z.record(z.unknown()),
-  budgetTotal: z.number().positive(),
+  tripId:         z.string().uuid(),
+  round:          z.number().int().min(1),
+  proposal:       z.record(z.unknown()),
+  budgetTotal:    z.number().positive(),
   budgetCurrency: z.string().min(1),
-  context: z.string().optional().default(''),
+  context:        z.string().optional().default(''),
+  dateInput: z.object({
+    mode:           z.string(),
+    preferredMonth: z.string().optional(),
+    window:         z.string().optional(),
+    days:           z.number().optional(),
+  }).nullable().optional(),
 });
 
 const BreakdownQuerySchema = z.object({
@@ -36,7 +42,7 @@ export function createFinanceRouter(
       return;
     }
 
-    const { tripId, round, proposal, budgetTotal, budgetCurrency, context } = parsed.data;
+    const { tripId, round, proposal, budgetTotal, budgetCurrency, context, dateInput } = parsed.data;
 
     const rawItinerary = Array.isArray(proposal['itinerary']) ? proposal['itinerary'] : [];
     const itinerary: ItineraryDay[] = (rawItinerary as Array<Record<string, unknown>>).map((day) => ({
@@ -48,7 +54,7 @@ export function createFinanceRouter(
 
     const breakdown = calculator.calculate(itinerary, budgetCurrency);
     const validation = validator.validate(breakdown, budgetTotal, budgetCurrency);
-    const review = await finder.findAlternatives(tripId, round, proposal, breakdown, validation, context);
+    const review = await finder.findAlternatives(tripId, round, proposal, breakdown, validation, context, dateInput ?? null);
 
     res.json({ review });
   });
