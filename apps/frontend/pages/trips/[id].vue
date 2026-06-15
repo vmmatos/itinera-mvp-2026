@@ -83,6 +83,19 @@ function extractItinerary(proposals: RawProposal[]): TimelineDay[] {
 
 const timelineDays = computed((): TimelineDay[] => extractItinerary(rawProposals.value))
 
+const suggestedDates = computed(() => {
+  if (trip.value?.dateInput?.mode !== 'flexible') return null
+  const lp = rawProposals.value.find((p) => p.agent === 'logistics')
+  const c = lp?.content as Record<string, unknown> | null
+  const sd = c?.['suggestedDates'] as Record<string, unknown> | undefined
+  if (!sd?.['startDate'] || !sd?.['endDate']) return null
+  return {
+    startDate: String(sd['startDate']),
+    endDate:   String(sd['endDate']),
+    rationale: sd['rationale'] ? String(sd['rationale']) : null,
+  }
+})
+
 const currencySymbol = computed(() =>
   trip.value?.budgetCurrency === 'USD' ? '$' : '€',
 )
@@ -187,6 +200,15 @@ onMounted(async () => {
           <span>{{ trip.region }}</span>
           <span>{{ trip.startDate }} → {{ trip.endDate }}</span>
           <span>{{ trip.budgetCurrency }} {{ trip.budgetTotal.toLocaleString() }} budget</span>
+        </div>
+
+        <!-- Flexible dates: suggested window + rationale -->
+        <div
+          v-if="suggestedDates"
+          style="margin-top:var(--s-3);padding:var(--s-3) var(--s-4);background:var(--bg-2);border:var(--hair);border-radius:var(--r-2);font-size:var(--t-13);color:var(--fg-2);line-height:1.5"
+        >
+          <span style="font-family:var(--mono);font-size:var(--t-11);text-transform:uppercase;letter-spacing:.06em;color:var(--green);margin-right:var(--s-2)">suggested window</span>
+          {{ suggestedDates.startDate }} – {{ suggestedDates.endDate }}<span v-if="suggestedDates.rationale" style="color:var(--fg-3)"> · {{ suggestedDates.rationale }}</span>
         </div>
       </div>
 
