@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 import type { Trip } from '~/types/index'
 import { useIdleTimeout } from '~/composables/useIdleTimeout'
 
@@ -10,8 +10,6 @@ definePageMeta({
 
 const authStore = useAuthStore()
 const tripStore = useTripPlannerStore()
-
-const showForm = ref(false)
 
 const hasNegotiating = computed(() =>
   tripStore.trips.some((t: Trip) => t.status === 'negotiating'),
@@ -29,12 +27,6 @@ const startPolling = (): void => {
 
 const stopPolling = (): void => {
   if (pollTimer !== null) { clearInterval(pollTimer); pollTimer = null }
-}
-
-const onTripCreated = (_tripId: string): void => {
-  showForm.value = false
-  void tripStore.fetchTrips()
-  startPolling()
 }
 
 onMounted(async () => {
@@ -104,31 +96,23 @@ const AGENTS = [
     </header>
 
     <!-- Main -->
-    <main class="max-w-5xl mx-auto px-6 py-10">
+    <main class="px-6 py-10">
 
-      <!-- Trip input form (inline) — new trip only -->
-      <TripInputForm
-        v-if="showForm"
-        class="mb-8"
-        @success="onTripCreated"
-        @cancel="showForm = false; void tripStore.fetchTrips()"
-      />
-
-      <!-- Dashboard: full-width header -->
-      <div v-if="!showForm" class="flex items-center justify-between mb-6">
+      <!-- Dashboard header -->
+      <div class="flex items-center justify-between mb-6">
         <div>
           <h2 class="text-22 font-semibold" style="letter-spacing:-0.02em">
             Welcome, {{ authStore.user?.name ?? 'Traveller' }}
           </h2>
           <p class="text-fg-3 text-13 mt-1">Plan your next group trip with AI agents.</p>
         </div>
-        <button class="btn btn-primary" data-testid="plan-trip-btn" @click="tripStore.clearLastInput(); showForm = true">
+        <button class="btn btn-primary" data-testid="plan-trip-btn" @click="tripStore.clearLastInput(); navigateTo('/planner')">
           Plan a trip <span style="margin-left:4px">→</span>
         </button>
       </div>
 
       <!-- Dashboard two-column layout -->
-      <div v-if="!showForm" class="user-grid" style="min-height:auto;grid-template-columns:1.6fr 1fr">
+      <div class="user-grid" style="min-height:auto;grid-template-columns:1.6fr 1fr">
 
         <!-- Left: trips -->
         <div class="user-left" style="padding-left:0;padding-top:0">

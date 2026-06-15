@@ -149,14 +149,14 @@ onMounted(async () => {
     </div>
 
     <!-- Error -->
-    <div v-else-if="error" class="max-w-3xl mx-auto px-6 py-10">
+    <div v-else-if="error" class="px-6 py-10">
       <div class="card" style="border-color:rgba(255,93,93,0.32)">
         <p class="text-danger text-13">{{ error }}</p>
       </div>
     </div>
 
     <!-- Trip content -->
-    <main v-else-if="trip" class="max-w-5xl mx-auto px-6 py-10">
+    <main v-else-if="trip" class="px-6 py-10">
 
       <!-- Trip header -->
       <div class="mb-8">
