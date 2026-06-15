@@ -18,7 +18,7 @@ const DateInputSchema = z.discriminatedUnion('mode', [
   z.object({
     mode:           z.literal('flexible'),
     days:           z.number().int().min(1),
-    preferredMonth: z.string(),
+    preferredMonth: z.string().optional(),
     window:         z.enum(['tight', 'moderate', 'open']),
   }),
 ]).nullable().optional();
@@ -96,23 +96,31 @@ export function createLogisticsRouter(
     const timingResult = timing.validate(allActivities, allTransport);
 
     const isFlexible = dateInput?.mode === 'flexible';
-    const flexDays = isFlexible ? (dateInput as { days: number }).days : 0;
-    const daysToFetch = isFlexible
-      ? flexDays + 7
-      : Math.max(rawItinerary.length, 1) + 1;
-    const weatherCacheKey = isFlexible
-      ? `weather:${region}:flex:${(dateInput as { preferredMonth: string }).preferredMonth}`
-      : `weather:${region}:multi`;
+    const flexibleNoMonth = isFlexible && !(dateInput as { preferredMonth?: string }).preferredMonth;
 
-    let forecasts = await redis.get(weatherCacheKey);
-    if (!forecasts) {
-      try {
-        forecasts = await weather.getMultiDayForecast(region, daysToFetch);
-        if (Array.isArray(forecasts) && forecasts.length > 0) {
-          await redis.set(weatherCacheKey, forecasts, config.WEATHER_CACHE_TTL_SECONDS);
+    let forecasts: Awaited<ReturnType<WeatherService['getMultiDayForecast']>> = [];
+
+    if (!flexibleNoMonth) {
+      const flexDays = isFlexible ? (dateInput as { days: number }).days : 0;
+      const daysToFetch = isFlexible
+        ? flexDays + 7
+        : Math.max(rawItinerary.length, 1) + 1;
+      const weatherCacheKey = isFlexible
+        ? `weather:${region}:flex:${(dateInput as { preferredMonth?: string }).preferredMonth}`
+        : `weather:${region}:multi`;
+
+      const cached = await redis.get(weatherCacheKey);
+      if (cached) {
+        forecasts = cached as Awaited<ReturnType<WeatherService['getMultiDayForecast']>>;
+      } else {
+        try {
+          forecasts = await weather.getMultiDayForecast(region, daysToFetch);
+          if (Array.isArray(forecasts) && forecasts.length > 0) {
+            await redis.set(weatherCacheKey, forecasts, config.WEATHER_CACHE_TTL_SECONDS);
+          }
+        } catch {
+          forecasts = [];
         }
-      } catch {
-        forecasts = [];
       }
     }
 
@@ -120,7 +128,7 @@ export function createLogisticsRouter(
       tripId,
       round,
       rawItinerary,
-      forecasts as Awaited<ReturnType<WeatherService['getMultiDayForecast']>>,
+      forecasts,
       timingResult,
       dateInput ?? null,
     );

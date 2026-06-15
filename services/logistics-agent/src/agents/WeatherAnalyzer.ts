@@ -34,7 +34,7 @@ export class WeatherAnalyzer extends BaseLogisticsAgent {
         return cached;
       }
 
-      const flexSection: string[] = dateInput?.mode === 'flexible'
+      const flexSection: string[] = dateInput?.mode === 'flexible' && dateInput.preferredMonth
         ? [
             '',
             `DATE SELECTION MODE: flexible — ${dateInput.days} days in ${dateInput.preferredMonth} (window: ${dateInput.window})`,

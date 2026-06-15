@@ -295,6 +295,39 @@ describe('POST /validate', () => {
     expect(mockRedis.get).toHaveBeenCalledWith('weather:Paris:flex:2026-07');
   });
 
+  it('flexible mode without preferredMonth: skips weather fetch entirely', async () => {
+    const app = buildApp();
+    const dateInput = { mode: 'flexible', days: 5, window: 'open' };
+
+    await request(app).post('/validate').send({
+      tripId: VALID_UUID,
+      round: 1,
+      proposal: { itinerary: [VALID_ITINERARY_DAY] },
+      region: 'Paris',
+      dateInput,
+    });
+
+    expect(mockWeather.getMultiDayForecast).not.toHaveBeenCalled();
+    expect(mockRedis.get).not.toHaveBeenCalledWith(expect.stringContaining('flex'));
+  });
+
+  it('flexible mode without preferredMonth: passes empty forecasts to analyzer', async () => {
+    const app = buildApp();
+    const dateInput = { mode: 'flexible', days: 5, window: 'open' };
+
+    await request(app).post('/validate').send({
+      tripId: VALID_UUID,
+      round: 1,
+      proposal: { itinerary: [VALID_ITINERARY_DAY] },
+      region: 'Paris',
+      dateInput,
+    });
+
+    expect(mockAnalyzer.analyze).toHaveBeenCalledWith(
+      VALID_UUID, 1, expect.any(Array), [], expect.any(Object), dateInput,
+    );
+  });
+
   it('fixed mode: uses standard multi cache key and standard day count', async () => {
     const app = buildApp();
     const dateInput = { mode: 'fixed', startDate: '2026-07-01', endDate: '2026-07-08' };

@@ -136,7 +136,7 @@ const step2Valid = computed(() =>
   region.value.trim() !== '' &&
   (dateMode.value === 'fixed'
     ? startDate.value !== '' && endDate.value !== '' && nights.value > 0
-    : flexDays.value > 0 && preferredMonth.value !== ''
+    : flexDays.value > 0
   ) &&
   budgetTotal.value > 0,
 )
@@ -213,7 +213,7 @@ const submit = async (): Promise<void> => {
     region:         region.value.trim(),
     dateInput:      dateMode.value === 'fixed'
       ? { mode: 'fixed', startDate: startDate.value, endDate: endDate.value }
-      : { mode: 'flexible', days: flexDays.value, preferredMonth: preferredMonth.value, window: flexWindow.value },
+      : { mode: 'flexible', days: flexDays.value, preferredMonth: preferredMonth.value || undefined, window: flexWindow.value },
     budgetTotal:    budgetTotal.value,
     budgetCurrency: budgetCurrency.value,
     travellers:     travellers.value.map((t): TravellerInput => ({
@@ -671,6 +671,8 @@ const dayWeatherCards = computed<WeatherCard[]>(() => {
     label: overallRisk === 'high' ? 'stormy' : overallRisk === 'medium' ? 'cloudy' : 'clear',
   }))
 })
+
+const showWeather = computed(() => !(dateMode.value === 'flexible' && !preferredMonth.value))
 
 // ── Step 4: Share link ────────────────────────────────────────
 
@@ -1139,12 +1141,6 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
                   @click="flexWindow = w"
                 >{{ w }}</button>
               </div>
-              <p
-                v-if="step2Attempted && !preferredMonth"
-                style="color:var(--red);font-size:var(--t-12);margin:0;font-family:var(--mono)"
-              >
-                Select a preferred month
-              </p>
             </template>
           </div>
         </div>
@@ -1627,8 +1623,8 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
           <span class="ttl">Negotiation results</span>
         </div>
 
-        <!-- Weather forecast — per-day icon grid -->
-        <div v-if="dayWeatherCards.length > 0 || logisticsWeatherSummary" class="summary-card" style="margin-bottom:var(--s-4)">
+        <!-- Weather forecast — per-day icon grid (hidden when flexible with no preferred month) -->
+        <div v-if="showWeather && (dayWeatherCards.length > 0 || logisticsWeatherSummary)" class="summary-card" style="margin-bottom:var(--s-4)">
           <div class="sub" style="margin-bottom:var(--s-3)">Weather forecast</div>
 
           <!-- Day-by-day icon grid -->

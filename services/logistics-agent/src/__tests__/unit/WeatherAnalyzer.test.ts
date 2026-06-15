@@ -199,4 +199,14 @@ describe('WeatherAnalyzer', () => {
     const callStr = JSON.stringify(vi.mocked(anthropic.complete).mock.calls[0]);
     expect(callStr).not.toContain('DATE SELECTION MODE: flexible —');
   });
+
+  it('flexible dateInput without preferredMonth: does NOT inject DATE SELECTION MODE instruction', async () => {
+    const dateInput = { mode: 'flexible' as const, days: 5, window: 'open' as const };
+
+    await analyzer.analyze(VALID_TRIP_ID, 1, MOCK_ITINERARY, MOCK_FORECASTS, MOCK_TIMING, dateInput);
+
+    // Only the dynamic user-message injection uses "DATE SELECTION MODE: flexible —"; system prompt does not
+    const callStr = JSON.stringify(vi.mocked(anthropic.complete).mock.calls[0]);
+    expect(callStr).not.toContain('DATE SELECTION MODE: flexible —');
+  });
 });

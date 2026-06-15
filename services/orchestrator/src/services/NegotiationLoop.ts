@@ -153,7 +153,8 @@ export class NegotiationLoop extends BaseService {
     }
 
     if (trip.dateInput?.mode === 'flexible') {
-      lines.push(`\nDATES: Flexible — ${trip.dateInput.days} days in ${trip.dateInput.preferredMonth} (window: ${trip.dateInput.window})`);
+      const monthPart = trip.dateInput.preferredMonth ? ` in ${trip.dateInput.preferredMonth}` : '';
+      lines.push(`\nDATES: Flexible — ${trip.dateInput.days} days${monthPart} (window: ${trip.dateInput.window})`);
     } else {
       lines.push(`\nDATES: ${trip.startDate ? String(trip.startDate).slice(0, 10) : 'TBD'} → ${trip.endDate ? String(trip.endDate).slice(0, 10) : 'TBD'}`);
     }

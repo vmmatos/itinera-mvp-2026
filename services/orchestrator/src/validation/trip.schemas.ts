@@ -15,7 +15,7 @@ const FixedDateInputSchema = z.object({
 const FlexibleDateInputSchema = z.object({
   mode:           z.literal('flexible'),
   days:           z.number().int().min(1).max(365),
-  preferredMonth: z.string().regex(/^\d{4}-(?:0[1-9]|1[0-2])$/, 'Must be YYYY-MM'),
+  preferredMonth: z.string().regex(/^\d{4}-(?:0[1-9]|1[0-2])$/, 'Must be YYYY-MM').optional(),
   window:         z.enum(['tight', 'moderate', 'open']),
 });
 

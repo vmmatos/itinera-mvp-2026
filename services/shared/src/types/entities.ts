@@ -12,7 +12,7 @@ export interface FixedDateInput {
 export interface FlexibleDateInput {
   mode: 'flexible';
   days: number;
-  preferredMonth: string; // YYYY-MM
+  preferredMonth?: string; // YYYY-MM
   window: DateWindow;
   resolvedStart?: string;
   resolvedEnd?: string;
