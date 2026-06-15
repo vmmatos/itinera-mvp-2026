@@ -68,6 +68,7 @@ export interface Destination {
 
 export interface TravellerInput {
   userId?:     string
+  name?:       string   // frontend-only: preserved in lastInput for pre-fill
   preferences: {
     persona:      Persona
     flexibility:  Flexibility

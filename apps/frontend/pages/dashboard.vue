@@ -11,17 +11,11 @@ definePageMeta({
 const authStore = useAuthStore()
 const tripStore = useTripPlannerStore()
 
-const showForm     = ref(false)
-const viewTripId   = ref<string | null>(null)
+const showForm = ref(false)
 
 const hasNegotiating = computed(() =>
   tripStore.trips.some((t: Trip) => t.status === 'negotiating'),
 )
-
-const openTrip = (trip: Trip): void => {
-  viewTripId.value = trip.id
-  showForm.value = true
-}
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
@@ -39,7 +33,6 @@ const stopPolling = (): void => {
 
 const onTripCreated = (_tripId: string): void => {
   showForm.value = false
-  viewTripId.value = null
   void tripStore.fetchTrips()
   startPolling()
 }
@@ -113,13 +106,12 @@ const AGENTS = [
     <!-- Main -->
     <main class="max-w-5xl mx-auto px-6 py-10">
 
-      <!-- Trip input form (inline) — new or reopen existing -->
+      <!-- Trip input form (inline) — new trip only -->
       <TripInputForm
         v-if="showForm"
         class="mb-8"
-        :view-trip-id="viewTripId ?? undefined"
         @success="onTripCreated"
-        @cancel="showForm = false; viewTripId = null; void tripStore.fetchTrips()"
+        @cancel="showForm = false; void tripStore.fetchTrips()"
       />
 
       <!-- Dashboard: full-width header -->
@@ -130,7 +122,7 @@ const AGENTS = [
           </h2>
           <p class="text-fg-3 text-13 mt-1">Plan your next group trip with AI agents.</p>
         </div>
-        <button class="btn btn-primary" data-testid="plan-trip-btn" @click="viewTripId = null; showForm = true">
+        <button class="btn btn-primary" data-testid="plan-trip-btn" @click="showForm = true">
           Plan a trip <span style="margin-left:4px">→</span>
         </button>
       </div>
@@ -172,12 +164,12 @@ const AGENTS = [
                   class="badge font-mono"
                   :style="`color:${statusColour[trip.status]};background:transparent;border-color:${statusColour[trip.status]}33`"
                 >{{ trip.status }}</span>
-                <button
+                <NuxtLink
                   v-if="trip.status === 'confirmed' || trip.status === 'completed'"
+                  :to="`/trips/${trip.id}`"
                   class="btn text-13"
                   style="padding:4px 12px;font-size:12px"
-                  @click="openTrip(trip)"
-                >View results</button>
+                >View results</NuxtLink>
               </div>
             </div>
           </div>

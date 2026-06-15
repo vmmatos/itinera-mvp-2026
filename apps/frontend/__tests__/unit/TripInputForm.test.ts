@@ -8,6 +8,7 @@ import {
   mockCreateTrip,
   mockFetchTrips,
   mockApiGet,
+  mockSetLastInput,
   tripStoreMock,
   authStoreMock,
   agentStreamMock,
@@ -333,5 +334,146 @@ describe('TripInputForm Step 3 — Negotiate', () => {
   it('hides progress bar when negotiation is cancelled', async () => {
     const wrapper = await goToStep3([], 'cancelled')
     expect(wrapper.find('[data-testid="round-progress"]').exists()).toBe(false)
+  })
+})
+
+// ── Pre-fill from lastInput ───────────────────────────────────────
+
+describe('TripInputForm — pre-fill from lastInput', () => {
+  const LAST_INPUT = {
+    name:           'Refine test trip',
+    region:         'Portugal',
+    startDate:      '2026-09-01',
+    endDate:        '2026-09-08',
+    budgetTotal:    6000,
+    budgetCurrency: 'EUR' as const,
+    travellers: [
+      {
+        userId:  'user-1',
+        name:    'Test User',
+        preferences: {
+          persona:      'culture' as const,
+          flexibility:  'high' as const,
+          pace:         'high' as const,
+          dietary:      [],
+          constraints:  [],
+          mustHaves:    ['sunset views'],
+          dealBreakers: ['crowded tours'],
+        },
+      },
+    ],
+  }
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    tripStoreMock.loading  = false
+    tripStoreMock.error    = null
+    tripStoreMock.lastInput = null
+    agentStreamMock.events.value = []
+    agentStreamMock.connected.value = false
+  })
+
+  it('pre-fills trip name and region from lastInput on mount', async () => {
+    tripStoreMock.lastInput = LAST_INPUT
+
+    const wrapper = mountForm()
+    await wrapper.vm.$nextTick()
+
+    // persona is pre-selected from lastInput — advance to step 2 without re-clicking it
+    await wrapper.find('[class*="btn-primary"]').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const nameInput = wrapper.find('[data-testid="trip-name"]')
+    const regionInput = wrapper.find('[data-testid="region"]')
+    expect((nameInput.element as HTMLInputElement).value).toBe('Refine test trip')
+    expect((regionInput.element as HTMLInputElement).value).toBe('Portugal')
+  })
+
+  it('pre-fills traveller persona from lastInput on mount', async () => {
+    tripStoreMock.lastInput = LAST_INPUT
+
+    const wrapper = mountForm()
+    await wrapper.vm.$nextTick()
+
+    // persona-card for index 0 = culture; should be pre-selected (no manual click needed)
+    const cards = wrapper.findAll('.persona-card')
+    const cultureCard = cards.find((c) => c.text().includes('Culture'))
+    expect(cultureCard?.classes().some((c) => c.startsWith('selected-'))).toBe(true)
+  })
+
+  it('does not pre-fill when lastInput is null', async () => {
+    tripStoreMock.lastInput = null
+
+    const wrapper = mountForm()
+    await wrapper.vm.$nextTick()
+
+    await wrapper.findAll('.persona-card')[0].trigger('click')
+    await wrapper.find('[class*="btn-primary"]').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    const nameInput = wrapper.find('[data-testid="trip-name"]')
+    expect((nameInput.element as HTMLInputElement).value).toBe('')
+  })
+})
+
+// ── Refine trip button (step 4) ───────────────────────────────────
+
+describe('TripInputForm — Refine trip (step 4)', () => {
+  const VALID_TRIP_UUID = '11111111-1111-1111-1111-111111111111'
+
+  const mountAtStep4 = () =>
+    mount(TripInputForm, {
+      props: { viewTripId: VALID_TRIP_UUID },
+      global: {
+        plugins: [createPinia()],
+        stubs: { transition: true, TripTimeline: true, TripActivityCard: true, AppLogo: true },
+      },
+    })
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    vi.useFakeTimers()
+    tripStoreMock.loading  = false
+    tripStoreMock.error    = null
+    tripStoreMock.lastInput = null
+    agentStreamMock.events.value = []
+    agentStreamMock.connected.value = false
+
+    // Polling response when form opens at step 4 with viewTripId
+    mockApiGet
+      .mockResolvedValue({ data: { data: { status: 'confirmed' } } })
+    mockApiGet
+      .mockResolvedValueOnce({ data: { data: { status: 'confirmed' } } })
+      .mockResolvedValueOnce({ data: { data: [] } })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('renders the Refine trip button when on step 4', async () => {
+    const wrapper = mountAtStep4()
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('[data-testid="refine-trip-btn"]').exists()).toBe(true)
+  })
+
+  it('clicking Refine trip calls setLastInput and returns to step 1', async () => {
+    const wrapper = mountAtStep4()
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    const refineBtn = wrapper.find('[data-testid="refine-trip-btn"]')
+    expect(refineBtn.exists()).toBe(true)
+
+    await refineBtn.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(mockSetLastInput).toHaveBeenCalledOnce()
+    // After refine, should return to step 1 (Group composition)
+    expect(wrapper.text()).toContain('Group composition')
   })
 })

@@ -150,13 +150,36 @@ const api   = useApi()
 
 const activeTripId = ref<string | null>(null)
 
-// Reopen existing confirmed trip directly at step 4
+// Reopen existing confirmed trip directly at step 4, or pre-fill from lastInput
 onMounted(() => {
   if (isValidUUID(props.viewTripId)) {
     activeTripId.value = props.viewTripId
     negotiationStatus.value = 'confirmed'
     step.value = 4
     startNegotiationPolling(props.viewTripId)
+  } else if (store.lastInput) {
+    const li = store.lastInput
+    tripName.value       = li.name
+    region.value         = li.region ?? ''
+    startDate.value      = li.startDate
+    endDate.value        = li.endDate ?? ''
+    budgetTotal.value    = li.budgetTotal
+    budgetCurrency.value = li.budgetCurrency
+    const first = li.travellers[0]
+    if (first) {
+      tripFlexibility.value = first.preferences.pace ?? 'medium'
+      mustHaves.value       = [...(first.preferences.mustHaves ?? [])]
+      dealBreakers.value    = [...(first.preferences.dealBreakers ?? [])]
+    }
+    if (li.travellers.length > 0) {
+      travellers.value = li.travellers.map((t, i) => ({
+        id: nextId(),
+        name: t.name ?? (i === 0 ? currentUserName.value : ''),
+        isCurrentUser: i === 0,
+        persona: t.preferences.persona,
+        flexibility: t.preferences.flexibility,
+      }))
+    }
   }
 })
 
@@ -172,6 +195,7 @@ const submit = async (): Promise<void> => {
     budgetCurrency: budgetCurrency.value,
     travellers:     travellers.value.map((t): TravellerInput => ({
       userId: t.isCurrentUser ? currentUserId.value : undefined,
+      name:   t.name,
       preferences: {
         persona:      t.persona!,
         flexibility:  t.flexibility,
@@ -648,6 +672,33 @@ const handleShare = async (): Promise<void> => {
   } finally {
     shareLoading.value = false
   }
+}
+
+const handleRefine = (): void => {
+  const currentInput: CreateTripInput = {
+    name:           tripName.value,
+    region:         region.value,
+    startDate:      startDate.value,
+    endDate:        endDate.value,
+    budgetTotal:    budgetTotal.value,
+    budgetCurrency: budgetCurrency.value,
+    travellers:     travellers.value.map((t): TravellerInput => ({
+      userId: t.isCurrentUser ? currentUserId.value : undefined,
+      name:   t.name,
+      preferences: {
+        persona:      t.persona ?? 'culture',
+        flexibility:  t.flexibility,
+        pace:         tripFlexibility.value,
+        dietary:      [],
+        constraints:  [],
+        mustHaves:    mustHaves.value,
+        dealBreakers: dealBreakers.value,
+      },
+    })),
+  }
+  store.setLastInput(currentInput)
+  activeTripId.value = null
+  step.value = 1
 }
 
 const handleAccept = (): void => { step.value = 5 }
@@ -1472,6 +1523,13 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
         <div class="user-form-foot">
           <button class="btn" style="color:var(--red);border-color:rgba(255,93,93,0.32)" @click="handleReject">
             Reject
+          </button>
+          <button
+            class="btn"
+            data-testid="refine-trip-btn"
+            @click="handleRefine"
+          >
+            ← Refine trip
           </button>
           <button class="btn btn-primary" @click="handleAccept">
             Accept &amp; Export →

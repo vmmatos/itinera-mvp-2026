@@ -8,20 +8,25 @@ export const mockApiGet  = vi.fn()
 export const mockApiPost = vi.fn()
 
 // ── Trip planner store mock (overridable per test) ─────────────
-export const mockCreateTrip = vi.fn()
-export const mockFetchTrips = vi.fn()
-export const mockClearError = vi.fn()
+export const mockCreateTrip    = vi.fn()
+export const mockFetchTrips    = vi.fn()
+export const mockClearError    = vi.fn()
 export const mockSetCurrentTrip = vi.fn()
+export const mockSetLastInput  = vi.fn()
+export const mockClearLastInput = vi.fn()
 
 export const tripStoreMock = {
   loading: false,
   error: null as string | null,
   trips: [] as unknown[],
   currentTrip: null,
+  lastInput: null as unknown,
   createTrip: mockCreateTrip,
   fetchTrips: mockFetchTrips,
   clearError: mockClearError,
   setCurrentTrip: mockSetCurrentTrip,
+  setLastInput: mockSetLastInput,
+  clearLastInput: mockClearLastInput,
 }
 
 // ── Auth store mock ────────────────────────────────────────────
