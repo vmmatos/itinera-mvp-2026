@@ -122,7 +122,7 @@ const AGENTS = [
           </h2>
           <p class="text-fg-3 text-13 mt-1">Plan your next group trip with AI agents.</p>
         </div>
-        <button class="btn btn-primary" data-testid="plan-trip-btn" @click="showForm = true">
+        <button class="btn btn-primary" data-testid="plan-trip-btn" @click="tripStore.clearLastInput(); showForm = true">
           Plan a trip <span style="margin-left:4px">→</span>
         </button>
       </div>
