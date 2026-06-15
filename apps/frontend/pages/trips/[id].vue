@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import type { Trip, CreateTripInput } from '~/types/index'
+import type { Trip } from '~/types/index'
 import type { TimelineDay, TimelineActivity } from '~/components/trip/Timeline.vue'
 
 definePageMeta({
@@ -15,9 +15,13 @@ const api       = useApi()
 
 const tripId = computed(() => route.params.id as string)
 
-const trip    = ref<Trip | null>(null)
-const loading = ref(true)
-const error   = ref<string | null>(null)
+const trip      = ref<Trip | null>(null)
+const loading   = ref(true)
+const error     = ref<string | null>(null)
+
+// Raw proposal content extracted from proposals endpoint
+type RawProposal = { agent: string; round: number; content: unknown }
+const rawProposals = ref<RawProposal[]>([])
 
 const statusColour: Record<Trip['status'], string> = {
   draft:       'var(--fg-3)',
@@ -27,32 +31,57 @@ const statusColour: Record<Trip['status'], string> = {
   cancelled:   'var(--red)',
 }
 
-const timelineDays = computed((): TimelineDay[] => {
-  const plan = trip.value?.finalPlan
-  if (!plan?.days?.length) return []
-  return plan.days.map((d, i) => ({
-    day:  i + 1,
-    date: d.date,
-    city: d.city,
-    country: d.country,
-    cityTransition: d.cityTransition
-      ? { to: d.cityTransition.to, travelTime: d.cityTransition.travelTime }
-      : undefined,
-    activities: (d.activities ?? []).map((a): TimelineActivity => ({
-      name:         a.name,
-      location:     a.location,
-      venue:        a.venue,
-      city:         a.city,
-      country:      a.country,
-      time:         a.time,
-      duration:     a.duration,
-      cost:         a.cost,
-      ownerAgent:   a.agent,
-      notes:        a.notes,
-      weatherAlert: a.weatherAlert,
-    })),
-  }))
-})
+function extractItinerary(proposals: RawProposal[]): TimelineDay[] {
+  // Priority: orchestrator refine (highest round with itinerary) > orchestrator propose
+  const withItinerary = proposals
+    .filter((p) => {
+      const c = p.content as Record<string, unknown> | null
+      return p.agent === 'orchestrator' && Array.isArray(c?.['itinerary'])
+    })
+    .sort((a, b) => b.round - a.round)
+
+  const source = withItinerary[0]
+  if (!source) return []
+
+  const content = source.content as Record<string, unknown>
+  const rawDays = content['itinerary'] as Array<Record<string, unknown>>
+
+  return rawDays.map((d, i) => {
+    const rawActivities = Array.isArray(d['activities'])
+      ? (d['activities'] as Array<Record<string, unknown>>)
+      : []
+
+    const activities: TimelineActivity[] = rawActivities.map((a) => ({
+      name:         String(a['activity'] ?? a['name'] ?? ''),
+      location:     String(a['venue'] ?? a['location'] ?? ''),
+      venue:        a['venue'] != null ? String(a['venue']) : undefined,
+      city:         a['city'] != null ? String(a['city']) : (d['city'] != null ? String(d['city']) : undefined),
+      country:      a['country'] != null ? String(a['country']) : (d['country'] != null ? String(d['country']) : undefined),
+      time:         a['time'] != null ? String(a['time']) : undefined,
+      cost:         typeof a['estimatedCostPerPerson'] === 'number'
+        ? a['estimatedCostPerPerson']
+        : (typeof a['cost'] === 'number' ? a['cost'] : undefined),
+      ownerAgent:   a['ownerAgent'] != null ? String(a['ownerAgent']) : (a['agent'] != null ? String(a['agent']) : undefined),
+      notes:        a['description'] != null ? String(a['description']) : (a['notes'] != null ? String(a['notes']) : undefined),
+      weatherAlert: a['weatherAlert'] != null ? String(a['weatherAlert']) : undefined,
+    }))
+
+    const rawTransition = d['cityTransition'] as Record<string, unknown> | undefined
+
+    return {
+      day:  typeof d['day'] === 'number' ? d['day'] : i + 1,
+      date: d['date'] != null ? String(d['date']) : undefined,
+      city: d['city'] != null ? String(d['city']) : undefined,
+      country: d['country'] != null ? String(d['country']) : undefined,
+      cityTransition: rawTransition
+        ? { to: String(rawTransition['to'] ?? ''), travelTime: String(rawTransition['travelTime'] ?? '') }
+        : undefined,
+      activities,
+    }
+  })
+}
+
+const timelineDays = computed((): TimelineDay[] => extractItinerary(rawProposals.value))
 
 const currencySymbol = computed(() =>
   trip.value?.budgetCurrency === 'USD' ? '$' : '€',
@@ -79,6 +108,17 @@ onMounted(async () => {
   try {
     const { data } = await api.get<{ success: boolean; data: Trip }>(`/api/v1/trips/${tripId.value}`)
     trip.value = data.data
+
+    if (trip.value.status === 'confirmed' || trip.value.status === 'completed') {
+      try {
+        const { data: pData } = await api.get<{ success: boolean; data: RawProposal[] }>(
+          `/api/v1/trips/${tripId.value}/proposals`,
+        )
+        rawProposals.value = Array.isArray(pData.data) ? pData.data : []
+      } catch {
+        // proposals missing — page still loads, shows empty state
+      }
+    }
   } catch (err: unknown) {
     error.value = err instanceof Error ? err.message : 'Failed to load trip'
   } finally {
