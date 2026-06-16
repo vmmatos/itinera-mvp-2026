@@ -35,6 +35,8 @@ import type { AttractionDB } from '@/services/AttractionDB';
 import type { RedisService } from '@/services/RedisService';
 import type { TimingValidator } from '@/validators/TimingValidator';
 import type { WeatherAnalyzer } from '@/agents/WeatherAnalyzer';
+import type { HolidayService } from '@/services/HolidayService';
+import type { RestrictionsValidator } from '@/validators/RestrictionsValidator';
 import type { Place } from '@/services/PlacesService';
 
 const VALID_UUID = '550e8400-e29b-41d4-a716-446655440000';
@@ -92,11 +94,16 @@ const mockAttractions = { getAttractions: vi.fn() } as unknown as AttractionDB;
 const mockRedis = { get: vi.fn(), set: vi.fn() } as unknown as RedisService;
 const mockTiming = { validate: vi.fn() } as unknown as TimingValidator;
 const mockAnalyzer = { analyze: vi.fn() } as unknown as WeatherAnalyzer;
+const mockHolidayService = { getHolidays: vi.fn() } as unknown as HolidayService;
+const mockRestrictionsValidator = { validate: vi.fn() } as unknown as RestrictionsValidator;
 
 function buildApp(): express.Express {
   const app = express();
   app.use(express.json());
-  app.use(createLogisticsRouter(mockWeather, mockAttractions, mockTiming, mockAnalyzer, mockRedis));
+  app.use(createLogisticsRouter(
+    mockWeather, mockAttractions, mockTiming, mockAnalyzer, mockRedis,
+    mockHolidayService, mockRestrictionsValidator,
+  ));
   app.use((err: Error & { statusCode?: number }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     res.status(err.statusCode ?? 400).json({ success: false, error: { message: err.message } });
   });
@@ -111,6 +118,9 @@ describe('POST /validate', () => {
     vi.mocked(mockWeather.getMultiDayForecast).mockResolvedValue([MOCK_FORECAST]);
     vi.mocked(mockTiming.validate).mockReturnValue(MOCK_TIMING_RESULT);
     vi.mocked(mockAnalyzer.analyze).mockResolvedValue(MOCK_AGENT_EVENT);
+    vi.mocked(mockAttractions.getAttractions).mockResolvedValue(MOCK_PLACES);
+    vi.mocked(mockHolidayService.getHolidays).mockResolvedValue([]);
+    vi.mocked(mockRestrictionsValidator.validate).mockReturnValue({ warnings: [] });
   });
 
   it('400 when tripId is missing', async () => {
@@ -261,7 +271,7 @@ describe('POST /validate', () => {
     });
 
     expect(mockAnalyzer.analyze).toHaveBeenCalledWith(
-      VALID_UUID, 1, expect.any(Array), expect.any(Array), expect.any(Object), dateInput,
+      VALID_UUID, 1, expect.any(Array), expect.any(Array), expect.any(Object), dateInput, expect.any(Array),
     );
   });
 
@@ -324,7 +334,7 @@ describe('POST /validate', () => {
     });
 
     expect(mockAnalyzer.analyze).toHaveBeenCalledWith(
-      VALID_UUID, 1, expect.any(Array), [], expect.any(Object), dateInput,
+      VALID_UUID, 1, expect.any(Array), [], expect.any(Object), dateInput, expect.any(Array),
     );
   });
 

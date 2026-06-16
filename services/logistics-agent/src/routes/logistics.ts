@@ -7,6 +7,9 @@ import type { AttractionDB } from '@/services/AttractionDB';
 import type { RedisService } from '@/services/RedisService';
 import type { TimingValidator, ScheduledActivity, ScheduledTransport } from '@/validators/TimingValidator';
 import type { WeatherAnalyzer } from '@/agents/WeatherAnalyzer';
+import type { HolidayService } from '@/services/HolidayService';
+import type { RestrictionsValidator } from '@/validators/RestrictionsValidator';
+import { toCountryCode } from '@/utils/countryCodeMapper';
 import { config } from '@/config';
 
 const DateInputSchema = z.discriminatedUnion('mode', [
@@ -46,6 +49,8 @@ export function createLogisticsRouter(
   timing: TimingValidator,
   analyzer: WeatherAnalyzer,
   redis: RedisService,
+  holidayService: HolidayService,
+  restrictionsValidator: RestrictionsValidator,
 ): Router {
   const router = Router();
 
@@ -95,6 +100,38 @@ export function createLogisticsRouter(
 
     const timingResult = timing.validate(allActivities, allTransport);
 
+    // --- Local restrictions ---
+    const countryCode = toCountryCode(region);
+
+    const tripDates: string[] = [];
+    if (dateInput?.mode === 'fixed') {
+      const start = new Date((dateInput as { startDate: string }).startDate);
+      const n = Math.max(rawItinerary.length, 1);
+      for (let i = 0; i < n; i++) {
+        const d = new Date(start);
+        d.setUTCDate(start.getUTCDate() + i);
+        tripDates.push(d.toISOString().slice(0, 10));
+      }
+    }
+
+    const tripYears = [...new Set(tripDates.map((d) => Number(d.slice(0, 4))))];
+    const holidays =
+      countryCode && tripYears.length > 0
+        ? (await Promise.all(tripYears.map((y) => holidayService.getHolidays(countryCode, y)))).flat()
+        : [];
+
+    const places = await attractions.getAttractions(region);
+    const openingHoursMap = new Map(places.map((p) => [p.name.toLowerCase(), p.openingHours]));
+
+    const restrictionsResult = restrictionsValidator.validate({
+      activities: allActivities,
+      tripDates,
+      countryCode,
+      holidays,
+      openingHoursMap,
+    });
+    // --- end restrictions ---
+
     const isFlexible = dateInput?.mode === 'flexible';
     const flexibleNoMonth = isFlexible && !(dateInput as { preferredMonth?: string }).preferredMonth;
 
@@ -131,9 +168,18 @@ export function createLogisticsRouter(
       forecasts,
       timingResult,
       dateInput ?? null,
+      restrictionsResult.warnings,
     );
 
-    res.json({ validation });
+    const augmentedValidation = {
+      ...validation,
+      content: {
+        ...(validation.content as Record<string, unknown>),
+        restrictionWarnings: restrictionsResult.warnings,
+      },
+    };
+
+    res.json({ validation: augmentedValidation });
   });
 
   router.get('/attractions/:region', async (req: Request, res: Response, next: NextFunction): Promise<void> => {

@@ -4,6 +4,7 @@ import type { AgentEvent, AgentName, AIMessage, DateInput } from '@itinera/share
 import { BaseLogisticsAgent } from '@/agents/BaseLogisticsAgent';
 import type { WeatherForecast } from '@/services/WeatherService';
 import type { TimingValidationResult } from '@/validators/TimingValidator';
+import type { RestrictionWarning } from '@/validators/RestrictionsValidator';
 import { config } from '@/config';
 
 export class WeatherAnalyzer extends BaseLogisticsAgent {
@@ -25,6 +26,7 @@ export class WeatherAnalyzer extends BaseLogisticsAgent {
     weatherForecasts: WeatherForecast[],
     timingResult: TimingValidationResult,
     dateInput?: DateInput | null,
+    restrictionWarnings?: RestrictionWarning[],
   ): Promise<AgentEvent> {
     return this.handleAsync(async () => {
       const cacheKey = `logistics:${tripId}:weather-analyzer:${round}:propose`;
@@ -45,6 +47,16 @@ export class WeatherAnalyzer extends BaseLogisticsAgent {
           ]
         : [];
 
+      const restrictionsSection: string[] =
+        restrictionWarnings && restrictionWarnings.length > 0
+          ? [
+              '',
+              'Local restriction warnings (pre-computed):',
+              JSON.stringify(restrictionWarnings, null, 2),
+              'Factor these into your affectedActivities — propose specific real alternative venues for each restricted activity.',
+            ]
+          : [];
+
       const messages: AIMessage[] = [
         {
           role: 'user',
@@ -60,6 +72,7 @@ export class WeatherAnalyzer extends BaseLogisticsAgent {
             '',
             'Timing validation result:',
             JSON.stringify(timingResult, null, 2),
+            ...restrictionsSection,
             ...flexSection,
             '',
             'Analyse the weather impact on outdoor activities, flag risky days, and suggest alternative times or indoor fallbacks where needed. Respond with valid JSON only.',
