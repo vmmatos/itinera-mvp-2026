@@ -22,11 +22,23 @@ export interface TimelineDay {
   meals?:          Array<{ type: string; name: string }>
 }
 
-defineProps<{
-  days:            TimelineDay[]
-  isDebug?:        boolean
-  currencySymbol?: string
+interface RestrictionWarning {
+  day:          number
+  activityName: string
+  warningType:  string
+  message:      string
+}
+
+const props = defineProps<{
+  days:                 TimelineDay[]
+  isDebug?:             boolean
+  currencySymbol?:      string
+  restrictionWarnings?: RestrictionWarning[]
 }>()
+
+function warningsForDay(dayNum: number): RestrictionWarning[] {
+  return (props.restrictionWarnings ?? []).filter((w) => w.day === dayNum)
+}
 
 type TimeSlot = 'morning' | 'afternoon' | 'evening' | 'unscheduled'
 
@@ -71,6 +83,18 @@ function activitiesForSlot(activities: TimelineActivity[], slot: TimeSlot): Time
       <div class="tl-day-head">
         <span class="tl-day-badge">{{ formatDayHeader(day) }}</span>
         <span v-if="day.date" class="tl-day-date">{{ day.date }}</span>
+      </div>
+
+      <!-- Restriction warnings (public holidays, closure rules, opening hours) -->
+      <div
+        v-if="warningsForDay(day.day).length > 0"
+        class="tl-restrictions"
+      >
+        <p
+          v-for="(w, wi) in warningsForDay(day.day)"
+          :key="wi"
+          class="tl-restriction-item"
+        >{{ w.message }}</p>
       </div>
 
       <!-- Activities grouped by time slot -->
@@ -199,6 +223,23 @@ function activitiesForSlot(activities: TimelineActivity[], slot: TimeSlot): Time
   flex-wrap: wrap;
   padding-top: var(--s-2);
   border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.tl-restrictions {
+  background: var(--amber-bg);
+  border-top: 1px solid var(--amber-line);
+  padding: var(--s-2) var(--s-4);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tl-restriction-item {
+  font-family: var(--mono);
+  font-size: var(--t-12);
+  color: var(--amber);
+  margin: 0;
+  line-height: 1.5;
 }
 
 .tl-transition {
