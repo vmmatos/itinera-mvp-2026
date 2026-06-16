@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import type { Trip, CreateTripInput } from '~/types/index'
+import type { Trip } from '~/types/index'
 import type { TimelineDay, TimelineActivity } from '~/components/trip/Timeline.vue'
 
 definePageMeta({
@@ -15,9 +15,13 @@ const api       = useApi()
 
 const tripId = computed(() => route.params.id as string)
 
-const trip    = ref<Trip | null>(null)
-const loading = ref(true)
-const error   = ref<string | null>(null)
+const trip      = ref<Trip | null>(null)
+const loading   = ref(true)
+const error     = ref<string | null>(null)
+
+// Raw proposal content extracted from proposals endpoint
+type RawProposal = { agent: string; round: number; content: unknown }
+const rawProposals = ref<RawProposal[]>([])
 
 const statusColour: Record<Trip['status'], string> = {
   draft:       'var(--fg-3)',
@@ -27,31 +31,69 @@ const statusColour: Record<Trip['status'], string> = {
   cancelled:   'var(--red)',
 }
 
-const timelineDays = computed((): TimelineDay[] => {
-  const plan = trip.value?.finalPlan
-  if (!plan?.days?.length) return []
-  return plan.days.map((d, i) => ({
-    day:  i + 1,
-    date: d.date,
-    city: d.city,
-    country: d.country,
-    cityTransition: d.cityTransition
-      ? { to: d.cityTransition.to, travelTime: d.cityTransition.travelTime }
-      : undefined,
-    activities: (d.activities ?? []).map((a): TimelineActivity => ({
-      name:         a.name,
-      location:     a.location,
-      venue:        a.venue,
-      city:         a.city,
-      country:      a.country,
-      time:         a.time,
-      duration:     a.duration,
-      cost:         a.cost,
-      ownerAgent:   a.agent,
-      notes:        a.notes,
-      weatherAlert: a.weatherAlert,
-    })),
-  }))
+function extractItinerary(proposals: RawProposal[]): TimelineDay[] {
+  // Priority: orchestrator refine (highest round with itinerary) > orchestrator propose
+  const withItinerary = proposals
+    .filter((p) => {
+      const c = p.content as Record<string, unknown> | null
+      return p.agent === 'orchestrator' && Array.isArray(c?.['itinerary'])
+    })
+    .sort((a, b) => b.round - a.round)
+
+  const source = withItinerary[0]
+  if (!source) return []
+
+  const content = source.content as Record<string, unknown>
+  const rawDays = content['itinerary'] as Array<Record<string, unknown>>
+
+  return rawDays.map((d, i) => {
+    const rawActivities = Array.isArray(d['activities'])
+      ? (d['activities'] as Array<Record<string, unknown>>)
+      : []
+
+    const activities: TimelineActivity[] = rawActivities.map((a) => ({
+      name:         String(a['activity'] ?? a['name'] ?? ''),
+      location:     String(a['venue'] ?? a['location'] ?? ''),
+      venue:        a['venue'] != null ? String(a['venue']) : undefined,
+      city:         a['city'] != null ? String(a['city']) : (d['city'] != null ? String(d['city']) : undefined),
+      country:      a['country'] != null ? String(a['country']) : (d['country'] != null ? String(d['country']) : undefined),
+      time:         a['time'] != null ? String(a['time']) : undefined,
+      cost:         typeof a['estimatedCostPerPerson'] === 'number'
+        ? a['estimatedCostPerPerson']
+        : (typeof a['cost'] === 'number' ? a['cost'] : undefined),
+      ownerAgent:   a['ownerAgent'] != null ? String(a['ownerAgent']) : (a['agent'] != null ? String(a['agent']) : undefined),
+      notes:        a['description'] != null ? String(a['description']) : (a['notes'] != null ? String(a['notes']) : undefined),
+      weatherAlert: a['weatherAlert'] != null ? String(a['weatherAlert']) : undefined,
+    }))
+
+    const rawTransition = d['cityTransition'] as Record<string, unknown> | undefined
+
+    return {
+      day:  typeof d['day'] === 'number' ? d['day'] : i + 1,
+      date: d['date'] != null ? String(d['date']) : undefined,
+      city: d['city'] != null ? String(d['city']) : undefined,
+      country: d['country'] != null ? String(d['country']) : undefined,
+      cityTransition: rawTransition
+        ? { to: String(rawTransition['to'] ?? ''), travelTime: String(rawTransition['travelTime'] ?? '') }
+        : undefined,
+      activities,
+    }
+  })
+}
+
+const timelineDays = computed((): TimelineDay[] => extractItinerary(rawProposals.value))
+
+const suggestedDates = computed(() => {
+  if (trip.value?.dateInput?.mode !== 'flexible') return null
+  const lp = rawProposals.value.find((p) => p.agent === 'logistics')
+  const c = lp?.content as Record<string, unknown> | null
+  const sd = c?.['suggestedDates'] as Record<string, unknown> | undefined
+  if (!sd?.['startDate'] || !sd?.['endDate']) return null
+  return {
+    startDate: String(sd['startDate']),
+    endDate:   String(sd['endDate']),
+    rationale: sd['rationale'] ? String(sd['rationale']) : null,
+  }
 })
 
 const currencySymbol = computed(() =>
@@ -79,6 +121,17 @@ onMounted(async () => {
   try {
     const { data } = await api.get<{ success: boolean; data: Trip }>(`/api/v1/trips/${tripId.value}`)
     trip.value = data.data
+
+    if (trip.value.status === 'confirmed' || trip.value.status === 'completed') {
+      try {
+        const { data: pData } = await api.get<{ success: boolean; data: RawProposal[] }>(
+          `/api/v1/trips/${tripId.value}/proposals`,
+        )
+        rawProposals.value = Array.isArray(pData.data) ? pData.data : []
+      } catch {
+        // proposals missing — page still loads, shows empty state
+      }
+    }
   } catch (err: unknown) {
     error.value = err instanceof Error ? err.message : 'Failed to load trip'
   } finally {
@@ -109,14 +162,14 @@ onMounted(async () => {
     </div>
 
     <!-- Error -->
-    <div v-else-if="error" class="max-w-3xl mx-auto px-6 py-10">
+    <div v-else-if="error" class="px-6 py-10">
       <div class="card" style="border-color:rgba(255,93,93,0.32)">
         <p class="text-danger text-13">{{ error }}</p>
       </div>
     </div>
 
     <!-- Trip content -->
-    <main v-else-if="trip" class="max-w-5xl mx-auto px-6 py-10">
+    <main v-else-if="trip" class="px-6 py-10">
 
       <!-- Trip header -->
       <div class="mb-8">
@@ -147,6 +200,15 @@ onMounted(async () => {
           <span>{{ trip.region }}</span>
           <span>{{ trip.startDate }} → {{ trip.endDate }}</span>
           <span>{{ trip.budgetCurrency }} {{ trip.budgetTotal.toLocaleString() }} budget</span>
+        </div>
+
+        <!-- Flexible dates: suggested window + rationale -->
+        <div
+          v-if="suggestedDates"
+          style="margin-top:var(--s-3);padding:var(--s-3) var(--s-4);background:var(--bg-2);border:var(--hair);border-radius:var(--r-2);font-size:var(--t-13);color:var(--fg-2);line-height:1.5"
+        >
+          <span style="font-family:var(--mono);font-size:var(--t-11);text-transform:uppercase;letter-spacing:.06em;color:var(--green);margin-right:var(--s-2)">suggested window</span>
+          {{ suggestedDates.startDate }} – {{ suggestedDates.endDate }}<span v-if="suggestedDates.rationale" style="color:var(--fg-3)"> · {{ suggestedDates.rationale }}</span>
         </div>
       </div>
 

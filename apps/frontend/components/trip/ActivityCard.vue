@@ -23,17 +23,13 @@ const props = withDefaults(defineProps<{
   currencySymbol: '€',
 })
 
-// venue shown in fg-1 (prominent); city+country in green below
-const venueLine = computed((): string => props.activity.venue?.trim() ?? '')
+const venueLine = computed(() => {
+  const location = props.activity.location?.trim() ?? ''
+  const country = props.activity.country?.trim() ?? ''
 
-const cityLine = computed((): string => {
-  const city    = props.activity.city?.trim()
-  const country = props.activity.country?.trim()
-  if (city && country) return `${city}, ${country}`
-  if (city)            return city
-  // no structured city — fall back to legacy location only when venue absent
-  if (!venueLine.value) return props.activity.location?.trim() ?? ''
-  return ''
+  return (country && location) 
+    ? `${location}, ${country}` 
+    : location
 })
 
 const COLOUR_CODE: Record<string, string> = {
@@ -77,12 +73,11 @@ function agentLineVar(agent: string): string {
         >{{ activity.ownerAgent }}</span>
       </div>
     </div>
-    <p v-if="venueLine" class="act-venue">{{ venueLine }}</p>
-    <div v-if="cityLine" class="act-city">
+    <div v-if="venueLine" class="act-city">
       <svg class="pin-green" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
         <path d="M8 1.5C5.51 1.5 3.5 3.51 3.5 6c0 3.75 4.5 8.5 4.5 8.5s4.5-4.75 4.5-8.5c0-2.49-2.01-4.5-4.5-4.5zm0 6a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z" fill="currentColor"/>
       </svg>
-      <span>{{ cityLine }}</span>
+      <span>{{ venueLine }}</span>
     </div>
     <p v-if="activity.notes" class="act-notes">{{ activity.notes }}</p>
   </div>
@@ -132,7 +127,7 @@ function agentLineVar(agent: string): string {
 .badge-cost {
   font-family: var(--mono);
   font-size: var(--t-12);
-  color: var(--fg-2);
+  color: var(--red);
 }
 
 .badge-agent {

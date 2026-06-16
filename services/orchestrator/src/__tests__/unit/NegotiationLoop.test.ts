@@ -30,11 +30,13 @@ vi.mock('@/config', () => ({
 vi.mock('@/services/StateManager');
 vi.mock('@/services/AgentCaller');
 vi.mock('@/services/EventPublisher');
+vi.mock('@/services/TripService');
 
 import { NegotiationLoop } from '@/services/NegotiationLoop';
 import { StateManager } from '@/services/StateManager';
 import { AgentCaller } from '@/services/AgentCaller';
 import { EventPublisher } from '@/services/EventPublisher';
+import { TripService } from '@/services/TripService';
 
 const AGENT_RESULT = {
   content: { destination: 'paris' },
@@ -68,6 +70,7 @@ describe('NegotiationLoop', () => {
   let stateManager: StateManager;
   let agentCaller: AgentCaller;
   let eventPublisher: EventPublisher;
+  let tripService: TripService;
   let loop: NegotiationLoop;
 
   beforeEach(() => {
@@ -75,7 +78,11 @@ describe('NegotiationLoop', () => {
     stateManager = new StateManager();
     agentCaller = new AgentCaller();
     eventPublisher = new EventPublisher();
+    tripService = new TripService(stateManager, null as never);
     loop = new NegotiationLoop(stateManager, agentCaller, eventPublisher);
+    loop.setTripService(tripService);
+
+    vi.mocked(tripService.resolveFlexibleDates).mockResolvedValue(undefined);
 
     vi.mocked(stateManager.claimNegotiating).mockResolvedValue(true);
     vi.mocked(stateManager.transitionStatus).mockResolvedValue(undefined);
@@ -196,6 +203,59 @@ describe('NegotiationLoop', () => {
     await loop.run(TRIP_ID);
 
     expect(eventPublisher.publishToExchange).not.toHaveBeenCalled();
+    expect(stateManager.transitionStatus).toHaveBeenCalledWith(TRIP_ID, 'confirmed');
+  });
+
+  // ── Flexible dates tests ─────────────────────────────────────
+
+  it('passes dateInput from trip into AgentTripContext for logistics call', async () => {
+    const dateInput = { mode: 'flexible' as const, days: 7, preferredMonth: '2026-07', window: 'moderate' as const };
+    vi.mocked(stateManager.getTrip).mockResolvedValue({ ...MOCK_TRIP, dateInput } as never);
+
+    await loop.run(TRIP_ID);
+
+    expect(agentCaller.callLogisticsAgent).toHaveBeenCalledWith(
+      TRIP_ID,
+      expect.any(Number),
+      expect.any(Object),
+      expect.objectContaining({ dateInput }),
+    );
+  });
+
+  it('calls resolveFlexibleDates after logistics round when suggestedDates returned', async () => {
+    const dateInput = { mode: 'flexible' as const, days: 7, preferredMonth: '2026-07', window: 'moderate' as const };
+    vi.mocked(stateManager.getTrip).mockResolvedValue({ ...MOCK_TRIP, dateInput } as never);
+
+    const logisticsResult = {
+      ...AGENT_RESULT,
+      content: {
+        overallRisk: 'low',
+        suggestedDates: { startDate: '2026-07-10', endDate: '2026-07-17', rationale: 'Best weather window.' },
+      },
+    };
+    vi.mocked(agentCaller.callLogisticsAgent).mockResolvedValue(logisticsResult);
+
+    await loop.run(TRIP_ID);
+
+    expect(tripService.resolveFlexibleDates).toHaveBeenCalledWith(TRIP_ID, '2026-07-10', '2026-07-17');
+  });
+
+  it('does NOT call resolveFlexibleDates when mode is fixed', async () => {
+    const dateInput = { mode: 'fixed' as const, startDate: '2026-07-01', endDate: '2026-07-08' };
+    vi.mocked(stateManager.getTrip).mockResolvedValue({ ...MOCK_TRIP, dateInput } as never);
+
+    await loop.run(TRIP_ID);
+
+    expect(tripService.resolveFlexibleDates).not.toHaveBeenCalled();
+  });
+
+  it('does NOT crash when logistics returns no suggestedDates in flexible mode', async () => {
+    const dateInput = { mode: 'flexible' as const, days: 7, preferredMonth: '2026-07', window: 'moderate' as const };
+    vi.mocked(stateManager.getTrip).mockResolvedValue({ ...MOCK_TRIP, dateInput } as never);
+
+    await loop.run(TRIP_ID);
+
+    expect(tripService.resolveFlexibleDates).not.toHaveBeenCalled();
     expect(stateManager.transitionStatus).toHaveBeenCalledWith(TRIP_ID, 'confirmed');
   });
 });

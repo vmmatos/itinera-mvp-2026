@@ -456,6 +456,7 @@ services:
         condition: service_healthy
     volumes:
       - ../services/validator/src:/app/services/validator/src
+      - ../services/validator/vitest.config.ts:/app/services/validator/vitest.config.ts:ro
       - ../services/shared/src:/app/services/shared/src
       - ../services/shared/dist:/app/services/shared/dist:ro
 
@@ -494,6 +495,7 @@ services:
         condition: service_healthy
     volumes:
       - ../services/notification/src:/app/services/notification/src
+      - ../services/notification/vitest.config.ts:/app/services/notification/vitest.config.ts:ro
       - ../services/shared/src:/app/services/shared/src
       - ../services/shared/dist:/app/services/shared/dist:ro
 
@@ -524,6 +526,7 @@ services:
         condition: service_healthy
     volumes:
       - ../services/sharing/src:/app/services/sharing/src
+      - ../services/sharing/vitest.config.ts:/app/services/sharing/vitest.config.ts:ro
       - ../services/shared/src:/app/services/shared/src
       - ../services/shared/dist:/app/services/shared/dist:ro
 
@@ -554,6 +557,7 @@ services:
         condition: service_healthy
     volumes:
       - ../services/ws-relay/src:/app/services/ws-relay/src
+      - ../services/ws-relay/vitest.config.ts:/app/services/ws-relay/vitest.config.ts:ro
       - ../services/shared/src:/app/services/shared/src
       - ../services/shared/dist:/app/services/shared/dist:ro
 

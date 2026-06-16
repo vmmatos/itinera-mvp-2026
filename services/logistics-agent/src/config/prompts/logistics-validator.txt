@@ -53,3 +53,9 @@ Rules:
 - Suggestions must be specific and actionable, naming a real alternative venue (e.g. "Replace with Museu Nacional de Arte Antiga — 10 min walk, open until 18h, €6/person" or "Move surfing to afternoon session at Surf Academy Lagos, 14h–16h slot")
 - Do NOT include any text outside the JSON object
 - Do NOT wrap the response in markdown code blocks
+
+OPTIONAL — FLEXIBLE DATE SELECTION:
+When the user message contains "DATE SELECTION MODE: flexible", also output a "suggestedDates" key at the root of your JSON object:
+  "suggestedDates": { "startDate": "YYYY-MM-DD", "endDate": "YYYY-MM-DD", "rationale": "<why these dates have best weather>" }
+Pick the N-day consecutive window in the provided forecasts with the lowest overall weather risk.
+If forecast data covers fewer days than requested, include only a "rationale" key explaining the limitation and omit "startDate"/"endDate".

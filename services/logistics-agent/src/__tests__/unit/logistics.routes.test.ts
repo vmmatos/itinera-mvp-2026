@@ -245,6 +245,104 @@ describe('POST /validate', () => {
       1800,
     );
   });
+
+  // ── Flexible dateInput ────────────────────────────────────────
+
+  it('flexible mode: passes dateInput to analyzer.analyze', async () => {
+    const app = buildApp();
+    const dateInput = { mode: 'flexible', days: 7, preferredMonth: '2026-07', window: 'moderate' };
+
+    await request(app).post('/validate').send({
+      tripId: VALID_UUID,
+      round: 1,
+      proposal: { itinerary: [VALID_ITINERARY_DAY] },
+      region: 'Paris',
+      dateInput,
+    });
+
+    expect(mockAnalyzer.analyze).toHaveBeenCalledWith(
+      VALID_UUID, 1, expect.any(Array), expect.any(Array), expect.any(Object), dateInput,
+    );
+  });
+
+  it('flexible mode: fetches days + 7 days of weather', async () => {
+    const app = buildApp();
+    const dateInput = { mode: 'flexible', days: 7, preferredMonth: '2026-07', window: 'moderate' };
+
+    await request(app).post('/validate').send({
+      tripId: VALID_UUID,
+      round: 1,
+      proposal: { itinerary: [VALID_ITINERARY_DAY] },
+      region: 'Paris',
+      dateInput,
+    });
+
+    expect(mockWeather.getMultiDayForecast).toHaveBeenCalledWith('Paris', 14); // 7 + 7
+  });
+
+  it('flexible mode: uses flex month-scoped cache key', async () => {
+    const app = buildApp();
+    const dateInput = { mode: 'flexible', days: 7, preferredMonth: '2026-07', window: 'moderate' };
+
+    await request(app).post('/validate').send({
+      tripId: VALID_UUID,
+      round: 1,
+      proposal: { itinerary: [VALID_ITINERARY_DAY] },
+      region: 'Paris',
+      dateInput,
+    });
+
+    expect(mockRedis.get).toHaveBeenCalledWith('weather:Paris:flex:2026-07');
+  });
+
+  it('flexible mode without preferredMonth: skips weather fetch entirely', async () => {
+    const app = buildApp();
+    const dateInput = { mode: 'flexible', days: 5, window: 'open' };
+
+    await request(app).post('/validate').send({
+      tripId: VALID_UUID,
+      round: 1,
+      proposal: { itinerary: [VALID_ITINERARY_DAY] },
+      region: 'Paris',
+      dateInput,
+    });
+
+    expect(mockWeather.getMultiDayForecast).not.toHaveBeenCalled();
+    expect(mockRedis.get).not.toHaveBeenCalledWith(expect.stringContaining('flex'));
+  });
+
+  it('flexible mode without preferredMonth: passes empty forecasts to analyzer', async () => {
+    const app = buildApp();
+    const dateInput = { mode: 'flexible', days: 5, window: 'open' };
+
+    await request(app).post('/validate').send({
+      tripId: VALID_UUID,
+      round: 1,
+      proposal: { itinerary: [VALID_ITINERARY_DAY] },
+      region: 'Paris',
+      dateInput,
+    });
+
+    expect(mockAnalyzer.analyze).toHaveBeenCalledWith(
+      VALID_UUID, 1, expect.any(Array), [], expect.any(Object), dateInput,
+    );
+  });
+
+  it('fixed mode: uses standard multi cache key and standard day count', async () => {
+    const app = buildApp();
+    const dateInput = { mode: 'fixed', startDate: '2026-07-01', endDate: '2026-07-08' };
+
+    await request(app).post('/validate').send({
+      tripId: VALID_UUID,
+      round: 1,
+      proposal: { itinerary: [VALID_ITINERARY_DAY] },
+      region: 'Paris',
+      dateInput,
+    });
+
+    expect(mockRedis.get).toHaveBeenCalledWith('weather:Paris:multi');
+    expect(mockWeather.getMultiDayForecast).toHaveBeenCalledWith('Paris', 2); // max(1,1)+1
+  });
 });
 
 describe('GET /attractions/:region', () => {

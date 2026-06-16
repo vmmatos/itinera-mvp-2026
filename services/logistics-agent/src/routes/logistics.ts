@@ -9,12 +9,27 @@ import type { TimingValidator, ScheduledActivity, ScheduledTransport } from '@/v
 import type { WeatherAnalyzer } from '@/agents/WeatherAnalyzer';
 import { config } from '@/config';
 
+const DateInputSchema = z.discriminatedUnion('mode', [
+  z.object({
+    mode:      z.literal('fixed'),
+    startDate: z.string(),
+    endDate:   z.string(),
+  }),
+  z.object({
+    mode:           z.literal('flexible'),
+    days:           z.number().int().min(1),
+    preferredMonth: z.string().optional(),
+    window:         z.enum(['tight', 'moderate', 'open']),
+  }),
+]).nullable().optional();
+
 const ValidateSchema = z.object({
-  tripId: z.string().uuid(),
-  round: z.number().int().min(1),
-  proposal: z.record(z.unknown()),
-  region: z.string().default('unknown'),
-  context: z.string().optional().default(''),
+  tripId:    z.string().uuid(),
+  round:     z.number().int().min(1),
+  proposal:  z.record(z.unknown()),
+  region:    z.string().default('unknown'),
+  context:   z.string().optional().default(''),
+  dateInput: DateInputSchema,
 });
 
 const AttractionQuerySchema = z.object({
@@ -41,7 +56,7 @@ export function createLogisticsRouter(
       return;
     }
 
-    const { tripId, round, proposal, region } = parsed.data;
+    const { tripId, round, proposal, region, dateInput } = parsed.data;
 
     const allActivities: ScheduledActivity[] = [];
     const allTransport: ScheduledTransport[] = [];
@@ -80,16 +95,32 @@ export function createLogisticsRouter(
 
     const timingResult = timing.validate(allActivities, allTransport);
 
-    const weatherCacheKey = `weather:${region}:multi`;
-    let forecasts = await redis.get(weatherCacheKey);
-    if (!forecasts) {
-      try {
-        forecasts = await weather.getMultiDayForecast(region, Math.max(rawItinerary.length, 1) + 1);
-        if (Array.isArray(forecasts) && forecasts.length > 0) {
-          await redis.set(weatherCacheKey, forecasts, config.WEATHER_CACHE_TTL_SECONDS);
+    const isFlexible = dateInput?.mode === 'flexible';
+    const flexibleNoMonth = isFlexible && !(dateInput as { preferredMonth?: string }).preferredMonth;
+
+    let forecasts: Awaited<ReturnType<WeatherService['getMultiDayForecast']>> = [];
+
+    if (!flexibleNoMonth) {
+      const flexDays = isFlexible ? (dateInput as { days: number }).days : 0;
+      const daysToFetch = isFlexible
+        ? flexDays + 7
+        : Math.max(rawItinerary.length, 1) + 1;
+      const weatherCacheKey = isFlexible
+        ? `weather:${region}:flex:${(dateInput as { preferredMonth?: string }).preferredMonth}`
+        : `weather:${region}:multi`;
+
+      const cached = await redis.get(weatherCacheKey);
+      if (cached) {
+        forecasts = cached as Awaited<ReturnType<WeatherService['getMultiDayForecast']>>;
+      } else {
+        try {
+          forecasts = await weather.getMultiDayForecast(region, daysToFetch);
+          if (Array.isArray(forecasts) && forecasts.length > 0) {
+            await redis.set(weatherCacheKey, forecasts, config.WEATHER_CACHE_TTL_SECONDS);
+          }
+        } catch {
+          forecasts = [];
         }
-      } catch {
-        forecasts = [];
       }
     }
 
@@ -97,8 +128,9 @@ export function createLogisticsRouter(
       tripId,
       round,
       rawItinerary,
-      forecasts as Awaited<ReturnType<WeatherService['getMultiDayForecast']>>,
+      forecasts,
       timingResult,
+      dateInput ?? null,
     );
 
     res.json({ validation });

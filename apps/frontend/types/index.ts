@@ -59,6 +59,27 @@ export const PERSONA_AGENT: Record<Persona, AgentName> = {
   gastronomy: 'diana',
 }
 
+// ── Date input ────────────────────────────────────────────────
+export type DateWindow = 'tight' | 'moderate' | 'open'
+
+export interface FixedDateInput {
+  mode:      'fixed'
+  startDate: string  // YYYY-MM-DD
+  endDate:   string  // YYYY-MM-DD
+}
+
+export interface FlexibleDateInput {
+  mode:           'flexible'
+  days:           number
+  preferredMonth?: string  // YYYY-MM
+  window:         DateWindow
+  resolvedStart?: string
+  resolvedEnd?:   string
+  rationale?:     string
+}
+
+export type DateInput = FixedDateInput | FlexibleDateInput
+
 // ── Trip input ────────────────────────────────────────────────
 export interface Destination {
   country: string
@@ -84,9 +105,8 @@ export interface TravellerInput {
 export interface CreateTripInput {
   name:           string
   destinations:   Destination[]
-  region?:        string        // derived from destinations if not set
-  startDate:      string        // YYYY-MM-DD
-  endDate?:       string        // YYYY-MM-DD — auto-calculated from sum of nights
+  region?:        string   // derived from destinations if not set
+  dateInput:      DateInput
   budgetTotal:    number
   budgetCurrency: Currency
   travellers:     TravellerInput[]
@@ -155,6 +175,7 @@ export interface Trip {
   endDate:        string
   budgetTotal:    number
   budgetCurrency: Currency
+  dateInput?:     DateInput | null
   finalPlan?:     FinalPlan
   ownerId?:       string
   ownerName?:     string

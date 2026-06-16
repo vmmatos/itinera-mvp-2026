@@ -198,6 +198,7 @@ describe('POST /review', () => {
       MOCK_BREAKDOWN,
       MOCK_VALIDATION,
       'Paris trip',
+      null,
     );
   });
 
@@ -212,7 +213,7 @@ describe('POST /review', () => {
     });
 
     expect(mockFinder.findAlternatives).toHaveBeenCalledWith(
-      VALID_UUID, 1, expect.any(Object), expect.any(Object), expect.any(Object), '',
+      VALID_UUID, 1, expect.any(Object), expect.any(Object), expect.any(Object), '', null,
     );
   });
 });

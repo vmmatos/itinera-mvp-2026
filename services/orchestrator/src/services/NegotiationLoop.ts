@@ -4,6 +4,7 @@ import { StateManager } from '@/services/StateManager';
 import { AgentCaller } from '@/services/AgentCaller';
 import type { AgentTripContext } from '@/services/AgentCaller';
 import { EventPublisher } from '@/services/EventPublisher';
+import type { TripService } from '@/services/TripService';
 
 const NOTIFICATIONS_EXCHANGE = 'notifications';
 const ROUTING_KEY_ITINERARY_READY = 'notification.email.itinerary-ready';
@@ -14,12 +15,18 @@ type RoundName = 'preferences' | 'analyze' | 'propose' | 'finance' | 'logistics'
 const ROUNDS: RoundName[] = ['preferences', 'analyze', 'propose', 'finance', 'logistics', 'refine'];
 
 export class NegotiationLoop extends BaseService {
+  private tripService?: TripService;
+
   constructor(
     private readonly stateManager: StateManager,
     private readonly agentCaller: AgentCaller,
     private readonly eventPublisher: EventPublisher,
   ) {
     super('negotiation-loop');
+  }
+
+  setTripService(tripService: TripService): void {
+    this.tripService = tripService;
   }
 
   async run(tripId: string): Promise<void> {
@@ -39,6 +46,7 @@ export class NegotiationLoop extends BaseService {
         budgetTotal: trip?.budgetTotal ?? null,
         budgetCurrency: trip?.budgetCurrency ?? 'EUR',
         region: trip?.region ?? null,
+        dateInput: trip?.dateInput ?? null,
       };
 
       const agentContext = this.buildAgentContext(trip);
@@ -63,9 +71,20 @@ export class NegotiationLoop extends BaseService {
           case 'finance':
             latestProposal = await this.runFinanceRound(tripId, round, latestProposal, tripContext);
             break;
-          case 'logistics':
+          case 'logistics': {
             latestProposal = await this.runLogisticsRound(tripId, round, latestProposal, tripContext);
+            try {
+              const logisticsContent = latestProposal['logistics'] as Record<string, unknown> | undefined;
+              const suggested = logisticsContent?.['suggestedDates'] as
+                { startDate: string; endDate: string } | undefined;
+              if (tripContext.dateInput?.mode === 'flexible' && suggested?.startDate && suggested?.endDate) {
+                await this.tripService?.resolveFlexibleDates(tripId, suggested.startDate, suggested.endDate);
+              }
+            } catch (err) {
+              this.logger.warn('Failed to resolve flexible dates from logistics output', { tripId, error: String(err) });
+            }
             break;
+          }
           case 'refine':
             latestProposal = await this.runRefineRound(tripId, round, latestProposal);
             break;
@@ -133,7 +152,12 @@ export class NegotiationLoop extends BaseService {
       lines.push(`DESTINATION (MANDATORY): ${trip.region ?? 'unknown'}`);
     }
 
-    lines.push(`\nDATES: ${trip.startDate ? String(trip.startDate).slice(0, 10) : 'TBD'} → ${trip.endDate ? String(trip.endDate).slice(0, 10) : 'TBD'}`);
+    if (trip.dateInput?.mode === 'flexible') {
+      const monthPart = trip.dateInput.preferredMonth ? ` in ${trip.dateInput.preferredMonth}` : '';
+      lines.push(`\nDATES: Flexible — ${trip.dateInput.days} days${monthPart} (window: ${trip.dateInput.window})`);
+    } else {
+      lines.push(`\nDATES: ${trip.startDate ? String(trip.startDate).slice(0, 10) : 'TBD'} → ${trip.endDate ? String(trip.endDate).slice(0, 10) : 'TBD'}`);
+    }
     lines.push(`BUDGET: ${trip.budgetTotal ?? '?'} ${trip.budgetCurrency}${budgetPerNight ? ` (≈ ${trip.budgetCurrency} ${budgetPerNight}/night)` : ''}`);
     const rawPace = (trip.travellers?.[0]?.preferences as Record<string, unknown>)?.['pace'];
     const paceLabel = rawPace === 'low' ? 'slow' : rawPace === 'high' ? 'packed' : 'moderate';
