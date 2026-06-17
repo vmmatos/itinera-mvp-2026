@@ -128,8 +128,29 @@ export function createLogisticsRouter(
       // Google Places unavailable — opening hours check skipped, other restriction checks still run
     }
 
+    // Orchestrator sends act['activity'] + act['time'] (slot) rather than name/startTime/endTime.
+    // Build a separate list for restriction checks that handles both field shapes.
+    const TIME_SLOT_MAP: Record<string, string> = { morning: '09:00', afternoon: '14:00', evening: '19:00' };
+    const activitiesForRestrictions: ScheduledActivity[] = rawItinerary.flatMap((day) => {
+      const dayNum = typeof day['day'] === 'number' ? day['day'] : 1;
+      const acts = Array.isArray(day['activities']) ? (day['activities'] as RawDay[]) : [];
+      return acts
+        .map((act) => {
+          const name =
+            typeof act['name'] === 'string' ? act['name'] :
+            typeof act['activity'] === 'string' ? act['activity'] : null;
+          if (!name) return null;
+          const timeSlot = typeof act['time'] === 'string' ? act['time'].toLowerCase() : '';
+          const startTime =
+            typeof act['startTime'] === 'string' ? act['startTime'] :
+            TIME_SLOT_MAP[timeSlot] ?? '10:00';
+          return { day: dayNum, name, startTime, endTime: '', location: region } satisfies ScheduledActivity;
+        })
+        .filter((a): a is ScheduledActivity => a !== null);
+    });
+
     const restrictionsResult = restrictionsValidator.validate({
-      activities: allActivities,
+      activities: activitiesForRestrictions,
       tripDates,
       countryCode,
       holidays,
