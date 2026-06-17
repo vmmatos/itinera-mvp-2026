@@ -120,8 +120,13 @@ export function createLogisticsRouter(
         ? (await Promise.all(tripYears.map((y) => holidayService.getHolidays(countryCode, y)))).flat()
         : [];
 
-    const places = await attractions.getAttractions(region);
-    const openingHoursMap = new Map(places.map((p) => [p.name.toLowerCase(), p.openingHours]));
+    let openingHoursMap: Map<string, Record<string, string>> = new Map();
+    try {
+      const places = await attractions.getAttractions(region);
+      openingHoursMap = new Map(places.map((p) => [p.name.toLowerCase(), p.openingHours]));
+    } catch {
+      // Google Places unavailable — opening hours check skipped, other restriction checks still run
+    }
 
     const restrictionsResult = restrictionsValidator.validate({
       activities: allActivities,
