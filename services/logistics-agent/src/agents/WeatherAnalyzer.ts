@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import type { AgentEvent, AgentName, AIMessage, DateInput } from '@itinera/shared';
+import type { AgentEvent, AgentName, AIMessage, DateInput, TransportOption } from '@itinera/shared';
 import { BaseLogisticsAgent } from '@/agents/BaseLogisticsAgent';
 import type { WeatherForecast } from '@/services/WeatherService';
 import type { TimingValidationResult } from '@/validators/TimingValidator';
@@ -27,6 +27,7 @@ export class WeatherAnalyzer extends BaseLogisticsAgent {
     timingResult: TimingValidationResult,
     dateInput?: DateInput | null,
     restrictionWarnings?: RestrictionWarning[],
+    transportOptions?: Record<number, TransportOption>,
   ): Promise<AgentEvent> {
     return this.handleAsync(async () => {
       const cacheKey = `logistics:${tripId}:weather-analyzer:${round}:propose`;
@@ -57,6 +58,15 @@ export class WeatherAnalyzer extends BaseLogisticsAgent {
             ]
           : [];
 
+      const transportSection: string[] =
+        transportOptions && Object.keys(transportOptions).length > 0
+          ? [
+              '',
+              'Transport legs (resolved):',
+              JSON.stringify(transportOptions, null, 2),
+            ]
+          : [];
+
       const messages: AIMessage[] = [
         {
           role: 'user',
@@ -73,6 +83,7 @@ export class WeatherAnalyzer extends BaseLogisticsAgent {
             'Timing validation result:',
             JSON.stringify(timingResult, null, 2),
             ...restrictionsSection,
+            ...transportSection,
             ...flexSection,
             '',
             'Analyse the weather impact on outdoor activities, flag risky days, and suggest alternative times or indoor fallbacks where needed. Respond with valid JSON only.',

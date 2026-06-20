@@ -1,5 +1,5 @@
 import { BaseService, PREFERENCE_AGENT_NAMES } from '@itinera/shared';
-import type { AgentName } from '@itinera/shared';
+import type { AgentName, TransportMode } from '@itinera/shared';
 import { StateManager } from '@/services/StateManager';
 import { AgentCaller } from '@/services/AgentCaller';
 import type { AgentTripContext } from '@/services/AgentCaller';
@@ -47,6 +47,7 @@ export class NegotiationLoop extends BaseService {
         budgetCurrency: trip?.budgetCurrency ?? 'EUR',
         region: trip?.region ?? null,
         dateInput: trip?.dateInput ?? null,
+        transportPreference: (trip?.transportPreference as TransportMode) ?? 'best',
       };
 
       const agentContext = this.buildAgentContext(trip);

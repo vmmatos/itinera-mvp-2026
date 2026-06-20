@@ -22,12 +22,13 @@ const FlexibleDateInputSchema = z.object({
 export const DateInputSchema = z.discriminatedUnion('mode', [FixedDateInputSchema, FlexibleDateInputSchema]);
 
 export const CreateTripSchema = z.object({
-  name:           z.string().min(1).max(255),
-  destinations:   z.array(DestinationSchema).min(1).optional(),
-  region:         z.string().min(1).max(255).optional(),
-  dateInput:      DateInputSchema.optional(),
-  budgetTotal:    z.number().positive().optional(),
-  budgetCurrency: z.enum(['EUR', 'USD']).default('EUR'),
+  name:                z.string().min(1).max(255),
+  destinations:        z.array(DestinationSchema).min(1).optional(),
+  region:              z.string().min(1).max(255).optional(),
+  dateInput:           DateInputSchema.optional(),
+  budgetTotal:         z.number().positive().optional(),
+  budgetCurrency:      z.enum(['EUR', 'USD']).default('EUR'),
+  transportPreference: z.enum(['flight', 'train', 'car', 'best']).default('best').optional(),
   travellers: z
     .array(
       z.object({

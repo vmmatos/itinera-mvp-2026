@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onUnmounted, onMounted } from 'vue'
 import { PERSONA_LABELS, PERSONA_AGENT, AGENT_COLOURS } from '~/types/index'
-import type { Persona, Flexibility, Currency, DateWindow, DateInput, CreateTripInput, TravellerInput, SatisfactionScore, AgentStreamEvent } from '~/types/index'
+import type { Persona, Flexibility, Currency, DateWindow, DateInput, CreateTripInput, TravellerInput, SatisfactionScore, AgentStreamEvent, TransportMode, TransportOption } from '~/types/index'
 
 const props = withDefaults(defineProps<{ viewTripId?: string }>(), { viewTripId: undefined })
 
@@ -97,6 +97,15 @@ const mustHaves      = ref<string[]>([])
 const dealBreakerInput = ref('')
 const dealBreakers   = ref<string[]>([])
 
+const transportPreference = ref<TransportMode>('best')
+
+const TRANSPORT_OPTIONS = [
+  { value: 'flight' as TransportMode, label: 'Flight',      icon: '✈️' },
+  { value: 'train'  as TransportMode, label: 'Train',       icon: '🚆' },
+  { value: 'car'    as TransportMode, label: 'Car',         icon: '🚗' },
+  { value: 'best'   as TransportMode, label: 'Best option', icon: '⭐' },
+]
+
 const nights = computed(() => {
   if (!startDate.value || !endDate.value) return 0
   const ms = new Date(endDate.value).getTime() - new Date(startDate.value).getTime()
@@ -187,6 +196,9 @@ onMounted(() => {
       startDate.value = legacy.startDate ?? ''
       endDate.value   = legacy.endDate ?? ''
     }
+    if (li.transportPreference) {
+      transportPreference.value = li.transportPreference as TransportMode
+    }
     const first = li.travellers[0]
     if (first) {
       tripFlexibility.value = first.preferences.pace ?? 'medium'
@@ -209,14 +221,15 @@ const submit = async (): Promise<void> => {
   if (!step1Valid.value || !step2Valid.value) return
 
   const payload: CreateTripInput = {
-    name:           tripName.value.trim(),
-    region:         region.value.trim(),
-    dateInput:      dateMode.value === 'fixed'
+    name:                tripName.value.trim(),
+    region:              region.value.trim(),
+    dateInput:           dateMode.value === 'fixed'
       ? { mode: 'fixed', startDate: startDate.value, endDate: endDate.value }
       : { mode: 'flexible', days: flexDays.value, preferredMonth: preferredMonth.value || undefined, window: flexWindow.value },
-    budgetTotal:    budgetTotal.value,
-    budgetCurrency: budgetCurrency.value,
-    travellers:     travellers.value.map((t): TravellerInput => ({
+    budgetTotal:         budgetTotal.value,
+    budgetCurrency:      budgetCurrency.value,
+    transportPreference: transportPreference.value,
+    travellers:          travellers.value.map((t): TravellerInput => ({
       userId: t.isCurrentUser ? currentUserId.value : undefined,
       name:   t.name,
       preferences: {
@@ -420,8 +433,9 @@ interface ItineraryActivity {
 }
 
 interface ItineraryCityTransition {
-  to:         string
-  travelTime: string
+  to:               string
+  travelTime:       string
+  transportOption?: TransportOption
 }
 
 interface ItineraryDay {
@@ -465,11 +479,18 @@ function buildDays(obj: unknown): ItineraryDay[] {
   if (!Array.isArray(arr) || arr.length === 0) return []
   return (arr as Array<Record<string, unknown>>).map((d, i) => {
     const rawTransition = d['cityTransition']
+    const rt = rawTransition as Record<string, unknown> | null | undefined
+    const rawTransportOption = rt ? rt['transportOption'] : undefined
+    const parsedTransportOption: TransportOption | undefined =
+      rawTransportOption && typeof rawTransportOption === 'object'
+        ? (rawTransportOption as TransportOption)
+        : undefined
     const cityTransition: ItineraryCityTransition | undefined =
-      rawTransition && typeof rawTransition === 'object'
+      rt && typeof rt === 'object'
         ? {
-            to:         String((rawTransition as Record<string, unknown>)['to'] ?? ''),
-            travelTime: String((rawTransition as Record<string, unknown>)['travelTime'] ?? ''),
+            to:               String(rt['to'] ?? ''),
+            travelTime:       String(rt['travelTime'] ?? ''),
+            transportOption:  parsedTransportOption,
           }
         : undefined
 
@@ -1194,6 +1215,22 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
         </div>
 
         <div class="field-row">
+          <div class="field-label">Transport</div>
+          <div class="field-input">
+            <button
+              v-for="opt in TRANSPORT_OPTIONS"
+              :key="opt.value"
+              class="chip"
+              :class="{ on: transportPreference === opt.value }"
+              :data-testid="`transport-${opt.value}`"
+              @click="transportPreference = opt.value"
+            >
+              {{ opt.icon }} {{ opt.label }}
+            </button>
+          </div>
+        </div>
+
+        <div class="field-row">
           <div class="field-label">Must-haves</div>
           <div class="field-input" style="width:100%">
             <span
@@ -1282,6 +1319,8 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
             <div class="v"><span class="mono">{{ currencySymbol }}{{ budgetPerPerson.toLocaleString() }}</span></div>
             <div class="k">pace</div>
             <div class="v">{{ tripFlexibility === 'low' ? 'slow' : tripFlexibility === 'medium' ? 'moderate' : 'packed' }}</div>
+            <div class="k">transport</div>
+            <div class="v">{{ TRANSPORT_OPTIONS.find(o => o.value === transportPreference)?.label ?? '—' }}</div>
             <div class="k">est. rounds</div>
             <div class="v"><span class="mono">{{ estRounds }}</span></div>
             <div class="k">must-haves</div>

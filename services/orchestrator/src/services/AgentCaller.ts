@@ -1,5 +1,5 @@
 import { BaseService } from '@itinera/shared';
-import type { DateInput } from '@itinera/shared';
+import type { DateInput, TransportMode } from '@itinera/shared';
 import jwt from 'jsonwebtoken';
 import { config } from '@/config';
 
@@ -15,6 +15,7 @@ export interface AgentTripContext {
   budgetCurrency?: string;
   region?: string | null;
   dateInput?: DateInput | null;
+  transportPreference?: TransportMode;
 }
 
 interface AgentEventLike {
@@ -155,6 +156,7 @@ export class AgentCaller extends BaseService {
         proposal,
         region: tripContext?.region ?? 'unknown',
         dateInput: tripContext?.dateInput ?? null,
+        transportPreference: tripContext?.transportPreference ?? 'best',
       },
     );
     return toAgentCallResult(resp.validation, Date.now() - start);

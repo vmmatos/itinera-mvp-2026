@@ -31,6 +31,9 @@ const EnvSchema = z.object({
   GOOGLE_MAPS_BASE_URL: z.string().default('https://maps.googleapis.com/maps/api'),
   GOOGLE_PLACES_BASE_URL: z.string().default('https://places.googleapis.com/v1'),
   OPENWEATHERMAP_BASE_URL: z.string().default('https://api.openweathermap.org'),
+  SKYSCANNER_RAPIDAPI_KEY: z.string().default(''),
+  SKYSCANNER_RAPIDAPI_HOST: z.string().default('skyscanner50.p.rapidapi.com'),
+  SKYSCANNER_BASE_URL: z.string().default('https://skyscanner50.p.rapidapi.com/api/v1'),
 });
 
 const parsed = EnvSchema.safeParse(process.env);
