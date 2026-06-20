@@ -27,7 +27,7 @@ export class WeatherAnalyzer extends BaseLogisticsAgent {
     timingResult: TimingValidationResult,
     dateInput?: DateInput | null,
     restrictionWarnings?: RestrictionWarning[],
-    transportOptions?: Record<number, TransportOption>,
+    transportOptions?: Record<number, TransportOption[]>,
   ): Promise<AgentEvent> {
     return this.handleAsync(async () => {
       const cacheKey = `logistics:${tripId}:weather-analyzer:${round}:propose`;
@@ -58,12 +58,18 @@ export class WeatherAnalyzer extends BaseLogisticsAgent {
             ]
           : [];
 
+      // Pass only the best option (first) per day to keep the prompt concise
       const transportSection: string[] =
         transportOptions && Object.keys(transportOptions).length > 0
           ? [
               '',
-              'Transport legs (resolved):',
-              JSON.stringify(transportOptions, null, 2),
+              'Transport legs (resolved — best option per day):',
+              JSON.stringify(
+                Object.fromEntries(
+                  Object.entries(transportOptions).map(([k, v]) => [k, v[0]]),
+                ),
+                null, 2,
+              ),
             ]
           : [];
 

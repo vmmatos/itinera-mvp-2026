@@ -1,27 +1,19 @@
 <script setup lang="ts">
 import type { ActivityCardProps } from '~/components/trip/ActivityCard.vue'
-import { formatDayHeader, formatTransition, modeIcon, formatDuration } from '~/utils/itinerary'
-import type { TransportOption } from '~/types'
+import { formatDayHeader } from '~/utils/itinerary'
 
 export interface TimelineActivity extends ActivityCardProps {
   time?:      string
   satisfies?: string[]
 }
 
-export interface TimelineCityTransition {
-  to:               string
-  travelTime:       string
-  transportOption?: TransportOption
-}
-
 export interface TimelineDay {
-  day:             number
-  date?:           string
-  city?:           string
-  country?:        string
-  cityTransition?: TimelineCityTransition
-  activities:      TimelineActivity[]
-  meals?:          Array<{ type: string; name: string }>
+  day:        number
+  date?:      string
+  city?:      string
+  country?:   string
+  activities: TimelineActivity[]
+  meals?:     Array<{ type: string; name: string }>
 }
 
 interface RestrictionWarning {
@@ -129,33 +121,6 @@ function activitiesForSlot(activities: TimelineActivity[], slot: TimeSlot): Time
         </div>
       </div>
 
-      <!-- City transition -->
-      <div v-if="day.cityTransition" class="tl-transition">
-        <template v-if="day.cityTransition.transportOption">
-          <span class="tl-transport-icon">{{ modeIcon(day.cityTransition.transportOption.mode) }}</span>
-          <span>→ {{ day.cityTransition.to }}</span>
-          <span class="tl-transport-duration">
-            ({{ formatDuration(day.cityTransition.transportOption.durationMinutes) }})
-          </span>
-          <span v-if="day.cityTransition.transportOption.priceEur" class="tl-transport-price">
-            ~€{{ day.cityTransition.transportOption.priceEur }}
-          </span>
-          <span v-if="day.cityTransition.transportOption.provider" class="tl-transport-provider">
-            via {{ day.cityTransition.transportOption.provider }}
-          </span>
-          <span
-            v-for="(w, wi) in day.cityTransition.transportOption.warnings"
-            :key="wi"
-            class="tl-transport-warning"
-          >⚠ {{ w }}</span>
-        </template>
-        <template v-else>
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path d="M8 1.5C5.51 1.5 3.5 3.51 3.5 6c0 3.75 4.5 8.5 4.5 8.5s4.5-4.75 4.5-8.5c0-2.49-2.01-4.5-4.5-4.5zm0 6a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z" fill="currentColor"/>
-          </svg>
-          <span>{{ formatTransition(day.cityTransition) }}</span>
-        </template>
-      </div>
     </div>
   </div>
 </template>
@@ -264,43 +229,4 @@ function activitiesForSlot(activities: TimelineActivity[], slot: TimeSlot): Time
   line-height: 1.5;
 }
 
-.tl-transition {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: var(--s-2) var(--s-4);
-  background: var(--amber-bg);
-  border-top: 1px dashed var(--amber-line);
-  font-family: var(--mono);
-  font-size: var(--t-12);
-  color: var(--amber);
-  flex-wrap: wrap;
-}
-
-.tl-transport-icon {
-  font-size: 14px;
-  line-height: 1;
-}
-
-.tl-transport-duration {
-  opacity: 0.8;
-}
-
-.tl-transport-price {
-  color: var(--green);
-  font-weight: 600;
-}
-
-.tl-transport-provider {
-  opacity: 0.6;
-}
-
-.tl-transport-warning {
-  color: var(--amber);
-  font-size: 10px;
-  background: rgba(255, 165, 0, 0.1);
-  border: 1px solid var(--amber-line);
-  border-radius: var(--r-1);
-  padding: 1px 6px;
-}
 </style>

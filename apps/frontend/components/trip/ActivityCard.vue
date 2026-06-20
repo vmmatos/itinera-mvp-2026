@@ -1,17 +1,20 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { AGENT_COLOURS } from '~/types/index'
+import type { TransportActivityData } from '~/types/index'
+import { modeIcon } from '~/utils/itinerary'
 
 export interface ActivityCardProps {
-  venue?:        string
-  city?:         string
-  country?:      string
-  location?:     string
-  name:          string
-  cost?:         number
-  weatherAlert?: string
-  ownerAgent?:   string
-  notes?:        string
+  venue?:         string
+  city?:          string
+  country?:       string
+  location?:      string
+  name:           string
+  cost?:          number
+  weatherAlert?:  string
+  ownerAgent?:    string
+  notes?:         string
+  transportData?: TransportActivityData
 }
 
 const props = withDefaults(defineProps<{
@@ -54,7 +57,37 @@ function agentLineVar(agent: string): string {
 </script>
 
 <template>
-  <div class="act-card">
+  <!-- Transport leg card -->
+  <div v-if="activity.transportData" class="ac-transport">
+    <div class="ac-transport-head">
+      <span class="ac-transport-icon">{{ modeIcon(activity.transportData.selectedOption.mode) }}</span>
+      <span class="ac-transport-label">{{ activity.name }}</span>
+    </div>
+    <div
+      v-for="(w, wi) in activity.transportData.selectedOption.warnings"
+      :key="wi"
+      class="ac-transport-warn"
+    >⚠ {{ w }}</div>
+    <details v-if="activity.transportData.alternatives.length > 0" class="ac-transport-alts">
+      <summary>{{ activity.transportData.alternatives.length }} alternative{{ activity.transportData.alternatives.length > 1 ? 's' : '' }}</summary>
+      <div
+        v-for="(alt, ai) in activity.transportData.alternatives"
+        :key="ai"
+        class="ac-transport-alt-row"
+      >
+        {{ modeIcon(alt.mode) }}
+        {{ alt.mode === 'flight' ? 'Flight' : alt.mode === 'train' ? 'Train' : 'Drive' }}
+        <template v-if="alt.flightNumber ?? alt.trainLine">{{ alt.flightNumber ?? alt.trainLine }}</template>
+        →{{ activity.transportData.to }}
+        <template v-if="alt.departureTime">{{ alt.departureTime }}</template>
+        <template v-if="alt.priceEur"> · €{{ alt.priceEur }}/person</template>
+        · {{ Math.floor(alt.durationMinutes / 60) }}h{{ alt.durationMinutes % 60 > 0 ? ` ${alt.durationMinutes % 60}m` : '' }}
+      </div>
+    </details>
+  </div>
+
+  <!-- Standard activity card -->
+  <div v-else class="act-card">
     <div class="act-top">
       <p class="act-name">{{ activity.name }}</p>
       <div class="act-badges">
@@ -173,5 +206,67 @@ function agentLineVar(agent: string): string {
   font-size: var(--t-12);
   color: var(--fg-3);
   font-style: italic;
+}
+
+/* ── Transport leg card ──────────────────────────────────────── */
+.ac-transport {
+  padding: var(--s-2) var(--s-3);
+  margin-bottom: 2px;
+  border-radius: var(--r-1);
+  background: rgba(0, 170, 255, 0.06);
+  border: 1px solid rgba(0, 170, 255, 0.18);
+}
+
+.ac-transport-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.ac-transport-icon {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.ac-transport-label {
+  font-family: var(--mono);
+  font-size: var(--t-12);
+  color: var(--fg-0);
+  font-weight: 500;
+}
+
+.ac-transport-warn {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--amber);
+  background: var(--amber-bg);
+  border: 1px solid var(--amber-line);
+  border-radius: var(--r-1);
+  padding: 1px 6px;
+  margin-top: 4px;
+  display: inline-block;
+}
+
+.ac-transport-alts {
+  margin-top: var(--s-2);
+}
+
+.ac-transport-alts summary {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--fg-3);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  user-select: none;
+}
+
+.ac-transport-alt-row {
+  font-family: var(--mono);
+  font-size: var(--t-12);
+  color: var(--fg-2);
+  padding: 3px 0 3px var(--s-3);
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  margin-top: 3px;
 }
 </style>

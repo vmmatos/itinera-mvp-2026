@@ -95,6 +95,12 @@ export interface TransportOption {
   warnings:        string[]
 }
 
+export interface TransportActivityData {
+  to:             string
+  selectedOption: TransportOption
+  alternatives:   TransportOption[]
+}
+
 // ── Trip input ────────────────────────────────────────────────
 export interface Destination {
   country: string

@@ -45,23 +45,19 @@ export class TransportService extends BaseService {
     super('transport-service');
   }
 
-  async resolveTransportOption(
+  async resolveTransportOptions(
     pair: CityPair,
     preference: TransportMode,
-  ): Promise<TransportOption> {
+  ): Promise<TransportOption[]> {
     switch (preference) {
-      case 'car':
-        return this.fetchCar(pair);
-      case 'flight':
-        return this.fetchFlight(pair);
-      case 'train':
-        return this.fetchTrain(pair);
-      case 'best':
-        return this.fetchBest(pair);
+      case 'car':    return [await this.fetchCar(pair)];
+      case 'flight': return this.fetchFlights(pair);
+      case 'train':  return this.fetchTrains(pair);
+      case 'best':   return this.fetchBest(pair);
     }
   }
 
-  private async fetchFlight(pair: CityPair): Promise<TransportOption> {
+  private async fetchFlights(pair: CityPair): Promise<TransportOption[]> {
     if (!config.SKYSCANNER_RAPIDAPI_KEY) {
       throw new Error('Skyscanner API key not configured');
     }
@@ -90,34 +86,44 @@ export class TransportService extends BaseService {
     }
 
     const data = (await res.json()) as SkyscannerResponse;
-    const first = data.data?.itineraries?.[0];
+    const itineraries = data.data?.itineraries;
 
-    if (!first) {
+    if (!itineraries || itineraries.length === 0) {
       throw new Error(`No flight found from "${pair.from}" to "${pair.to}"`);
     }
 
-    const leg = first.legs[0];
-    const durationMinutes = leg?.durationInMinutes ?? 0;
-    const flightNumber = leg?.segments?.[0]?.flightNumber;
+    const options = itineraries.slice(0, 5).map((itin): TransportOption => {
+      const leg = itin.legs[0];
+      const durationMinutes = leg?.durationInMinutes ?? 0;
+      const flightNumber = leg?.segments?.[0]?.flightNumber;
+      return {
+        mode: 'flight',
+        provider: 'Skyscanner',
+        durationMinutes,
+        departureTime: leg?.departure ? leg.departure.slice(11, 16) : undefined,
+        arrivalTime: leg?.arrival ? leg.arrival.slice(11, 16) : undefined,
+        priceEur: Math.round(itin.price.amount),
+        flightNumber,
+        warnings: durationMinutes > 240 ? ['Travel exceeds 4h — consider reducing activities on travel day'] : [],
+      };
+    });
 
-    return {
-      mode: 'flight',
-      provider: 'Skyscanner',
-      durationMinutes,
-      departureTime: leg?.departure ? leg.departure.slice(11, 16) : undefined,
-      arrivalTime: leg?.arrival ? leg.arrival.slice(11, 16) : undefined,
-      priceEur: Math.round(first.price.amount),
-      flightNumber,
-      warnings: durationMinutes > 180 ? ['Travel exceeds 3h — consider reducing activities on travel day'] : [],
-    };
+    return options.sort((a, b) => {
+      const toMins = (t?: string): number => {
+        if (!t) return 9999;
+        const [h, m] = t.split(':').map(Number);
+        return (h ?? 0) * 60 + (m ?? 0);
+      };
+      return toMins(a.departureTime) - toMins(b.departureTime);
+    });
   }
 
-  private async fetchTrain(pair: CityPair): Promise<TransportOption> {
+  private async fetchTrains(pair: CityPair): Promise<TransportOption[]> {
     const url =
       `${config.GOOGLE_MAPS_BASE_URL}/directions/json` +
       `?origin=${encodeURIComponent(pair.from)}` +
       `&destination=${encodeURIComponent(pair.to)}` +
-      `&mode=transit&transit_mode=rail` +
+      `&mode=transit&transit_mode=rail&alternatives=true` +
       `&key=${config.GOOGLE_MAPS_API_KEY}`;
 
     const res = await fetch(url);
@@ -135,78 +141,73 @@ export class TransportService extends BaseService {
       throw new Error(`Google Directions API returned status: ${data.status}`);
     }
 
-    const leg = data.routes?.[0]?.legs?.[0];
-    if (!leg) {
+    const routes = data.routes ?? [];
+    if (routes.length === 0) {
       throw new Error(`No train route found from "${pair.from}" to "${pair.to}"`);
     }
 
-    const durationMinutes = Math.ceil((leg.duration.value ?? 0) / 60);
-    const transitStep = leg.steps.find((s) => s.travel_mode === 'TRANSIT');
-    const trainLine = transitStep?.transit_details?.line?.name;
-
-    return {
-      mode: 'train',
-      provider: 'Google Maps',
-      durationMinutes,
-      departureTime: leg.departure_time?.text,
-      arrivalTime: leg.arrival_time?.text,
-      trainLine,
-      warnings: durationMinutes > 180 ? ['Travel exceeds 3h — consider reducing activities on travel day'] : [],
-    };
+    return routes.map((route): TransportOption => {
+      const leg = route.legs?.[0];
+      const durationMinutes = Math.ceil((leg?.duration.value ?? 0) / 60);
+      const transitStep = leg?.steps.find((s) => s.travel_mode === 'TRANSIT');
+      const trainLine = transitStep?.transit_details?.line?.name;
+      return {
+        mode: 'train',
+        provider: 'Google Maps',
+        durationMinutes,
+        departureTime: leg?.departure_time?.text,
+        arrivalTime: leg?.arrival_time?.text,
+        trainLine,
+        warnings: durationMinutes > 240 ? ['Travel exceeds 4h — consider reducing activities on travel day'] : [],
+      };
+    });
   }
 
   private async fetchCar(pair: CityPair): Promise<TransportOption> {
     const travelTime = await this.mapService.getTravelTime(pair.from, pair.to, 'driving');
     const durationMinutes = travelTime.durationMinutes;
-
     return {
       mode: 'car',
       provider: 'Google Maps',
       durationMinutes,
-      warnings: durationMinutes > 180 ? ['Travel exceeds 3h — consider reducing activities on travel day'] : [],
+      warnings: durationMinutes > 240 ? ['Travel exceeds 4h — consider reducing activities on travel day'] : [],
     };
   }
 
-  private async fetchBest(pair: CityPair): Promise<TransportOption> {
+  private async fetchBest(pair: CityPair): Promise<TransportOption[]> {
     const results = await Promise.allSettled([
-      this.fetchFlight(pair),
-      this.fetchTrain(pair),
-      this.fetchCar(pair),
+      this.fetchFlights(pair),
+      this.fetchTrains(pair),
+      this.fetchCar(pair).then((opt) => [opt]),
     ]);
 
-    const options: TransportOption[] = [];
+    const allOptions: TransportOption[] = [];
     for (const result of results) {
       if (result.status === 'fulfilled') {
-        options.push(result.value);
+        allOptions.push(...result.value);
       } else {
         this.logger.debug('Transport option unavailable', { reason: String(result.reason) });
       }
     }
 
-    if (options.length === 0) {
+    if (allOptions.length === 0) {
       throw new Error(`No transport options found from "${pair.from}" to "${pair.to}"`);
     }
 
-    return this.pickBest(options);
+    return this.sortByScore(allOptions);
   }
 
-  private pickBest(options: TransportOption[]): TransportOption {
+  private sortByScore(options: TransportOption[]): TransportOption[] {
     const hasPrice = options.some((o) => o.priceEur !== undefined);
 
     if (!hasPrice) {
-      // Fall back to fastest
-      return options.reduce((best, opt) =>
-        opt.durationMinutes < best.durationMinutes ? opt : best,
-      );
+      return [...options].sort((a, b) => a.durationMinutes - b.durationMinutes);
     }
 
-    // Score: lower is better. Price weighted 60%, time (hours) weighted 40%.
-    const scored = options.map((opt) => ({
-      opt,
-      score: (opt.priceEur ?? 999) * 0.6 + (opt.durationMinutes / 60) * 40,
-    }));
-
-    scored.sort((a, b) => a.score - b.score);
-    return scored[0]!.opt;
+    return [...options].sort((a, b) => {
+      const scoreA = (a.priceEur ?? 999) * 0.6 + (a.durationMinutes / 60) * 40;
+      const scoreB = (b.priceEur ?? 999) * 0.6 + (b.durationMinutes / 60) * 40;
+      return scoreA - scoreB;
+    });
   }
 }

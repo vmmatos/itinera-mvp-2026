@@ -1,3 +1,5 @@
+import type { TransportOption } from '~/types'
+
 export interface LocationFields {
   venue?:    string
   city?:     string
@@ -57,4 +59,13 @@ export function formatDayHeader(day: DayHeaderFields): string {
 
 export function formatTransition(t: CityTransitionFields): string {
   return `→ Moving to ${t.to} (${t.travelTime})`
+}
+
+export function formatTransportLabel(opt: TransportOption, to: string): string {
+  const modeLabel = opt.mode === 'flight' ? 'Flight' : opt.mode === 'train' ? 'Train' : 'Drive'
+  const ref = opt.flightNumber ?? opt.trainLine ?? ''
+  const parts: string[] = [`${modeLabel}${ref ? ` ${ref}` : ''} →${to}`]
+  if (opt.priceEur) parts.push(`€${opt.priceEur}/person`)
+  parts.push(formatDuration(opt.durationMinutes))
+  return parts.join(' — ')
 }

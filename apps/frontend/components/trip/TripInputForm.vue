@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onUnmounted, onMounted } from 'vue'
 import { PERSONA_LABELS, PERSONA_AGENT, AGENT_COLOURS } from '~/types/index'
-import type { Persona, Flexibility, Currency, DateWindow, DateInput, CreateTripInput, TravellerInput, SatisfactionScore, AgentStreamEvent, TransportMode, TransportOption } from '~/types/index'
+import type { Persona, Flexibility, Currency, DateWindow, DateInput, CreateTripInput, TravellerInput, SatisfactionScore, AgentStreamEvent, TransportMode, TransportOption, TransportActivityData } from '~/types/index'
+import { formatTransportLabel } from '~/utils/itinerary'
 
 const props = withDefaults(defineProps<{ viewTripId?: string }>(), { viewTripId: undefined })
 
@@ -419,23 +420,23 @@ function weatherEmoji(risk: string): string {
 }
 
 interface ItineraryActivity {
-  name:          string
-  time?:         string
-  location?:     string
-  venue?:        string
-  city?:         string
-  country?:      string
-  ownerAgent?:   string
-  notes?:        string
-  cost?:         number
-  weatherAlert?: string
-  satisfies?:    string[]
+  name:           string
+  time?:          string
+  location?:      string
+  venue?:         string
+  city?:          string
+  country?:       string
+  ownerAgent?:    string
+  notes?:         string
+  cost?:          number
+  weatherAlert?:  string
+  satisfies?:     string[]
+  transportData?: TransportActivityData
 }
 
 interface ItineraryCityTransition {
-  to:               string
-  travelTime:       string
-  transportOption?: TransportOption
+  to:        string
+  travelTime: string
 }
 
 interface ItineraryDay {
@@ -480,17 +481,11 @@ function buildDays(obj: unknown): ItineraryDay[] {
   return (arr as Array<Record<string, unknown>>).map((d, i) => {
     const rawTransition = d['cityTransition']
     const rt = rawTransition as Record<string, unknown> | null | undefined
-    const rawTransportOption = rt ? rt['transportOption'] : undefined
-    const parsedTransportOption: TransportOption | undefined =
-      rawTransportOption && typeof rawTransportOption === 'object'
-        ? (rawTransportOption as TransportOption)
-        : undefined
     const cityTransition: ItineraryCityTransition | undefined =
       rt && typeof rt === 'object'
         ? {
-            to:               String(rt['to'] ?? ''),
-            travelTime:       String(rt['travelTime'] ?? ''),
-            transportOption:  parsedTransportOption,
+            to:        String(rt['to'] ?? ''),
+            travelTime: String(rt['travelTime'] ?? ''),
           }
         : undefined
 
@@ -592,6 +587,34 @@ const parsedItinerary = computed((): ItineraryDay[] => {
   }
 
   return []
+})
+
+// Enriches parsedItinerary with transport activities from logistics content
+const timelineDays = computed((): ItineraryDay[] => {
+  const logisticsContent = latestByAgent.value['logistics']?.content as Record<string, unknown> | undefined
+  const rawTransportOpts = logisticsContent?.['transportOptions'] as Record<number, TransportOption[]> | undefined
+  if (!rawTransportOpts || Object.keys(rawTransportOpts).length === 0) {
+    return parsedItinerary.value
+  }
+  return parsedItinerary.value.map((day) => {
+    const opts = rawTransportOpts[day.day]
+    const ct = day.cityTransition
+    if (!opts || opts.length === 0 || !ct?.to) return day
+    const [best, ...rest] = opts
+    if (!best) return day
+    const transportActivity: ItineraryActivity = {
+      name:          formatTransportLabel(best, ct.to),
+      time:          best.departureTime ?? 'morning',
+      transportData: { to: ct.to, selectedOption: best, alternatives: rest },
+    }
+    return { ...day, activities: [...day.activities, transportActivity] }
+  })
+})
+
+const transportCostEur = computed<number | null>(() => {
+  const c = latestByAgent.value['logistics']?.content as Record<string, unknown> | undefined
+  const v = c?.['transportCostEur']
+  return typeof v === 'number' && v > 0 ? v : null
 })
 
 const validatorSummary = computed(() => {
@@ -1629,9 +1652,9 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
         </div>
 
         <!-- Structured itinerary timeline -->
-        <div v-if="parsedItinerary.length > 0" style="margin-bottom:var(--s-6)">
+        <div v-if="timelineDays.length > 0" style="margin-bottom:var(--s-6)">
           <TripTimeline
-            :days="parsedItinerary"
+            :days="timelineDays"
             :currency-symbol="financeSummary?.currency ?? currencySymbol"
           />
         </div>
@@ -1792,6 +1815,10 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
             <template v-for="cat in costCategories" :key="cat.label">
               <div class="k">{{ cat.label }}</div>
               <div class="v mono">{{ financeSummary?.currency ?? '€' }}{{ cat.amount.toLocaleString() }}</div>
+            </template>
+            <template v-if="transportCostEur">
+              <div class="k">transport</div>
+              <div class="v mono">{{ financeSummary?.currency ?? '€' }}{{ transportCostEur.toLocaleString() }}</div>
             </template>
           </div>
           <div v-if="financeSummary?.grandTotal" style="display:flex;justify-content:space-between;align-items:center;padding-top:var(--s-3);margin-top:var(--s-3);border-top:var(--hair)">

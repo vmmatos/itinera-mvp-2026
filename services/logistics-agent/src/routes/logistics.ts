@@ -169,7 +169,7 @@ export function createLogisticsRouter(
 
     // --- Transport resolution ---
     const preference = (transportPreference ?? 'best') as TransportMode;
-    const transportOptions: Record<number, TransportOption> = {};
+    const transportOptions: Record<number, TransportOption[]> = {};
 
     await Promise.allSettled(
       rawItinerary
@@ -181,33 +181,36 @@ export function createLogisticsRouter(
           const dayNum = typeof day['day'] === 'number' ? day['day'] : 0;
           const departureDateIso = tripDates[dayNum - 1];
 
-          const option = await transportService.resolveTransportOption(
+          const options = await transportService.resolveTransportOptions(
             { from, to, departureDateIso },
             preference,
           );
 
-          // <2h connection warning: compare arrival time to first activity on next day
-          const nextDay = rawItinerary.find(
-            (d) => typeof d['day'] === 'number' && d['day'] === dayNum + 1,
-          );
-          const firstActTime =
-            Array.isArray(nextDay?.['activities'])
-              ? String((nextDay['activities'] as RawDay[])[0]?.['startTime'] ?? '')
-              : '';
-          if (option.arrivalTime && firstActTime) {
-            const arrival = option.arrivalTime.slice(0, 5);
-            if (/^\d{2}:\d{2}$/.test(arrival) && /^\d{2}:\d{2}$/.test(firstActTime)) {
-              const arrMins = timeToMinutes(arrival);
-              const actMins = timeToMinutes(firstActTime);
-              if (actMins - arrMins < 120) {
-                option.warnings.push(
-                  `Less than 2h gap before first activity on day ${dayNum + 1}`,
-                );
+          // <2h connection warning on the best option (first in array)
+          const best = options[0];
+          if (best) {
+            const nextDay = rawItinerary.find(
+              (d) => typeof d['day'] === 'number' && d['day'] === dayNum + 1,
+            );
+            const firstActTime =
+              Array.isArray(nextDay?.['activities'])
+                ? String((nextDay['activities'] as RawDay[])[0]?.['startTime'] ?? '')
+                : '';
+            if (best.arrivalTime && firstActTime) {
+              const arrival = best.arrivalTime.slice(0, 5);
+              if (/^\d{2}:\d{2}$/.test(arrival) && /^\d{2}:\d{2}$/.test(firstActTime)) {
+                const arrMins = timeToMinutes(arrival);
+                const actMins = timeToMinutes(firstActTime);
+                if (actMins - arrMins < 120) {
+                  best.warnings.push(
+                    `Less than 2h gap before first activity on day ${dayNum + 1}`,
+                  );
+                }
               }
             }
           }
 
-          transportOptions[dayNum] = option;
+          transportOptions[dayNum] = options;
         }),
     );
     // --- end transport ---
@@ -241,6 +244,7 @@ export function createLogisticsRouter(
       }
     }
 
+    const hasTransport = Object.keys(transportOptions).length > 0;
     const validation = await analyzer.analyze(
       tripId,
       round,
@@ -249,8 +253,11 @@ export function createLogisticsRouter(
       timingResult,
       dateInput ?? null,
       restrictionsResult.warnings,
-      Object.keys(transportOptions).length > 0 ? transportOptions : undefined,
+      hasTransport ? transportOptions : undefined,
     );
+
+    const transportCostEur = Object.values(transportOptions)
+      .reduce((sum, opts) => sum + (opts[0]?.priceEur ?? 0), 0);
 
     const augmentedValidation = {
       ...validation,
@@ -258,6 +265,7 @@ export function createLogisticsRouter(
         ...(validation.content as Record<string, unknown>),
         restrictionWarnings: restrictionsResult.warnings,
         transportOptions,
+        transportCostEur: transportCostEur > 0 ? transportCostEur : undefined,
       },
     };
 

@@ -98,12 +98,12 @@ const mockAnalyzer = { analyze: vi.fn() } as unknown as WeatherAnalyzer;
 const mockHolidayService = { getHolidays: vi.fn() } as unknown as HolidayService;
 const mockRestrictionsValidator = { validate: vi.fn() } as unknown as RestrictionsValidator;
 const mockTransportService = {
-  resolveTransportOption: vi.fn().mockResolvedValue({
+  resolveTransportOptions: vi.fn().mockResolvedValue([{
     mode: 'car',
     provider: 'Google Maps',
     durationMinutes: 120,
     warnings: [],
-  }),
+  }]),
 } as unknown as TransportService;
 
 function buildApp(): express.Express {
@@ -130,12 +130,12 @@ describe('POST /validate', () => {
     vi.mocked(mockAttractions.getAttractions).mockResolvedValue(MOCK_PLACES);
     vi.mocked(mockHolidayService.getHolidays).mockResolvedValue([]);
     vi.mocked(mockRestrictionsValidator.validate).mockReturnValue({ warnings: [] });
-    vi.mocked(mockTransportService.resolveTransportOption).mockResolvedValue({
+    vi.mocked(mockTransportService.resolveTransportOptions).mockResolvedValue([{
       mode: 'car',
       provider: 'Google Maps',
       durationMinutes: 120,
       warnings: [],
-    });
+    }]);
   });
 
   it('400 when tripId is missing', async () => {
