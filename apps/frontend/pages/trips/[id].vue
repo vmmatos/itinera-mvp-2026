@@ -100,6 +100,21 @@ const currencySymbol = computed(() =>
   trip.value?.budgetCurrency === 'USD' ? '$' : '€',
 )
 
+interface RestrictionWarning {
+  day: number
+  activityName: string
+  warningType: string
+  message: string
+}
+
+const restrictionWarnings = computed((): RestrictionWarning[] => {
+  const lp = rawProposals.value.find((p) => p.agent === 'logistics')
+  const c = lp?.content as Record<string, unknown> | null
+  return Array.isArray(c?.['restrictionWarnings'])
+    ? (c['restrictionWarnings'] as RestrictionWarning[])
+    : []
+})
+
 const handleRefine = (): void => {
   if (trip.value && !tripStore.lastInput) {
     tripStore.setLastInput({
@@ -218,6 +233,7 @@ onMounted(async () => {
           <div class="sec-eyebrow mb-4">Itinerary</div>
           <TripTimeline
             :days="timelineDays"
+            :restriction-warnings="restrictionWarnings"
             :currency-symbol="currencySymbol"
           />
         </div>

@@ -7,6 +7,9 @@ import type { AttractionDB } from '@/services/AttractionDB';
 import type { RedisService } from '@/services/RedisService';
 import type { TimingValidator, ScheduledActivity, ScheduledTransport } from '@/validators/TimingValidator';
 import type { WeatherAnalyzer } from '@/agents/WeatherAnalyzer';
+import type { HolidayService } from '@/services/HolidayService';
+import type { RestrictionsValidator } from '@/validators/RestrictionsValidator';
+import { toCountryCode } from '@/utils/countryCodeMapper';
 import { config } from '@/config';
 
 const DateInputSchema = z.discriminatedUnion('mode', [
@@ -46,6 +49,8 @@ export function createLogisticsRouter(
   timing: TimingValidator,
   analyzer: WeatherAnalyzer,
   redis: RedisService,
+  holidayService: HolidayService,
+  restrictionsValidator: RestrictionsValidator,
 ): Router {
   const router = Router();
 
@@ -95,6 +100,64 @@ export function createLogisticsRouter(
 
     const timingResult = timing.validate(allActivities, allTransport);
 
+    // --- Local restrictions ---
+    const countryCode = toCountryCode(region);
+
+    const tripDates: string[] = [];
+    if (dateInput?.mode === 'fixed') {
+      const start = new Date((dateInput as { startDate: string }).startDate);
+      const n = Math.max(rawItinerary.length, 1);
+      for (let i = 0; i < n; i++) {
+        const d = new Date(start);
+        d.setUTCDate(start.getUTCDate() + i);
+        tripDates.push(d.toISOString().slice(0, 10));
+      }
+    }
+
+    const tripYears = [...new Set(tripDates.map((d) => Number(d.slice(0, 4))))];
+    const holidays =
+      countryCode && tripYears.length > 0
+        ? (await Promise.all(tripYears.map((y) => holidayService.getHolidays(countryCode, y)))).flat()
+        : [];
+
+    let openingHoursMap: Map<string, Record<string, string>> = new Map();
+    try {
+      const places = await attractions.getAttractions(region);
+      openingHoursMap = new Map(places.map((p) => [p.name.toLowerCase(), p.openingHours]));
+    } catch {
+      // Google Places unavailable — opening hours check skipped, other restriction checks still run
+    }
+
+    // Orchestrator sends act['activity'] + act['time'] (slot) rather than name/startTime/endTime.
+    // Build a separate list for restriction checks that handles both field shapes.
+    const TIME_SLOT_MAP: Record<string, string> = { morning: '09:00', afternoon: '14:00', evening: '19:00' };
+    const activitiesForRestrictions: ScheduledActivity[] = rawItinerary.flatMap((day) => {
+      const dayNum = typeof day['day'] === 'number' ? day['day'] : 1;
+      const acts = Array.isArray(day['activities']) ? (day['activities'] as RawDay[]) : [];
+      return acts
+        .map((act) => {
+          const name =
+            typeof act['name'] === 'string' ? act['name'] :
+            typeof act['activity'] === 'string' ? act['activity'] : null;
+          if (!name) return null;
+          const timeSlot = typeof act['time'] === 'string' ? act['time'].toLowerCase() : '';
+          const startTime =
+            typeof act['startTime'] === 'string' ? act['startTime'] :
+            TIME_SLOT_MAP[timeSlot] ?? '10:00';
+          return { day: dayNum, name, startTime, endTime: '', location: region } satisfies ScheduledActivity;
+        })
+        .filter((a): a is ScheduledActivity => a !== null);
+    });
+
+    const restrictionsResult = restrictionsValidator.validate({
+      activities: activitiesForRestrictions,
+      tripDates,
+      countryCode,
+      holidays,
+      openingHoursMap,
+    });
+    // --- end restrictions ---
+
     const isFlexible = dateInput?.mode === 'flexible';
     const flexibleNoMonth = isFlexible && !(dateInput as { preferredMonth?: string }).preferredMonth;
 
@@ -131,9 +194,18 @@ export function createLogisticsRouter(
       forecasts,
       timingResult,
       dateInput ?? null,
+      restrictionsResult.warnings,
     );
 
-    res.json({ validation });
+    const augmentedValidation = {
+      ...validation,
+      content: {
+        ...(validation.content as Record<string, unknown>),
+        restrictionWarnings: restrictionsResult.warnings,
+      },
+    };
+
+    res.json({ validation: augmentedValidation });
   });
 
   router.get('/attractions/:region', async (req: Request, res: Response, next: NextFunction): Promise<void> => {

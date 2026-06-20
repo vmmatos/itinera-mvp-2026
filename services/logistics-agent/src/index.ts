@@ -12,7 +12,9 @@ import { WeatherService } from '@/services/WeatherService';
 import { PlacesService } from '@/services/PlacesService';
 import { AttractionDB } from '@/services/AttractionDB';
 import { TimingValidator } from '@/validators/TimingValidator';
+import { RestrictionsValidator } from '@/validators/RestrictionsValidator';
 import { WeatherAnalyzer } from '@/agents/WeatherAnalyzer';
+import { HolidayService } from '@/services/HolidayService';
 import { createHealthRouter } from '@/routes/health';
 import { createLogisticsRouter } from '@/routes/logistics';
 
@@ -39,10 +41,12 @@ async function start(): Promise<void> {
   const attractions = new AttractionDB(places, redis, config.ATTRACTIONS_CACHE_TTL_SECONDS);
   const timing = new TimingValidator();
   const analyzer = new WeatherAnalyzer(anthropic, publisher, redis, storage);
+  const holidays = new HolidayService(redis);
+  const restrictions = new RestrictionsValidator();
 
   app.use(createHealthRouter(publisher, redis));
   app.use(authMiddleware);
-  app.use(createLogisticsRouter(weather, attractions, timing, analyzer, redis));
+  app.use(createLogisticsRouter(weather, attractions, timing, analyzer, redis, holidays, restrictions));
   app.use(errorHandler);
 
   const server = app.listen(config.PORT, () => {
