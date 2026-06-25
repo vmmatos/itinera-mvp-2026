@@ -348,6 +348,55 @@ describe('NegotiationLoop', () => {
 
   // ── G3: cityTransition overwritten by real transport data ─────────
 
+  it('G3+G1: confirmedLegs take precedence over logistics transport options', async () => {
+    vi.mocked(stateManager.getTrip).mockResolvedValue({
+      ...MOCK_TRIP,
+      destinations: [
+        { city: 'Mertola', country: 'PT', nights: 3 },
+        { city: 'Barcelona', country: 'ES', nights: 4 },
+      ],
+    } as never);
+    vi.mocked(agentCaller.callTransportLegs).mockResolvedValue({
+      'Mertola->Barcelona': [{
+        mode: 'flight', provider: 'TAP Air Portugal', durationMinutes: 150, priceEur: 94,
+        warnings: [], displaySummary: 'Bus + Flight — 2h30m total, ~€94/person',
+      }],
+    });
+    vi.mocked(agentCaller.callOrchestratorPropose).mockResolvedValue({
+      ...PROPOSAL_RESULT,
+      content: {
+        itinerary: [{
+          day: 1, city: 'Mertola',
+          cityTransition: { to: 'Barcelona', travelTime: 'invented direct train 12h' },
+          activities: [],
+        }],
+      },
+    });
+    vi.mocked(agentCaller.callLogisticsAgent).mockResolvedValue({
+      ...LOGISTICS_APPROVED,
+      content: {
+        verdict: { approved: true, warnings: [], reasoning: 'feasible' },
+        transportOptions: {
+          '1': [{ mode: 'car', provider: 'Google Maps', durationMinutes: 761, warnings: [] }],
+        },
+      },
+    });
+
+    await loop.run(TRIP_ID);
+
+    const financeCall = vi.mocked(agentCaller.callFinanceAgent).mock.calls[0]!;
+    const proposal = financeCall[2] as Record<string, unknown>;
+    const itinerary = proposal['itinerary'] as Array<Record<string, unknown>>;
+    const day1 = itinerary?.[0] as Record<string, unknown> | undefined;
+    const transport = day1?.['transport'] as Array<Record<string, unknown>> | undefined;
+    // confirmedLegs (flight via TAP) must win over logistics car option
+    expect(transport?.[0]?.['mode']).toBe('flight');
+    expect(transport?.[0]?.['provider']).toBe('TAP Air Portugal');
+    const cityTransition = day1?.['cityTransition'] as Record<string, unknown> | undefined;
+    expect(String(cityTransition?.['travelTime'] ?? '')).toContain('2h30m');
+    expect(String(cityTransition?.['travelTime'] ?? '')).not.toContain('invented');
+  });
+
   it('G3: logistics transport options override LLM-invented cityTransition in merged proposal', async () => {
     vi.mocked(agentCaller.callOrchestratorPropose).mockResolvedValue({
       ...PROPOSAL_RESULT,

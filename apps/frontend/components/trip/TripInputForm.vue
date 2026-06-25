@@ -478,6 +478,8 @@ interface ItineraryDay {
   cityTransition?: ItineraryCityTransition
   activities:      ItineraryActivity[]
   meals?:          Array<{ type: string; name: string }>
+  // Set by mergeTransportIntoProposal in NegotiationLoop; preferred over logistics options.
+  rawTransport?:   Array<Record<string, unknown>>
 }
 
 const latestByAgent = computed((): Record<string, ProposalEntry> => {
@@ -526,6 +528,9 @@ function buildDays(obj: unknown): ItineraryDay[] {
       city:    typeof d['city'] === 'string' && d['city'].trim() ? d['city'].trim() : undefined,
       country: typeof d['country'] === 'string' && d['country'].trim() ? d['country'].trim() : undefined,
       cityTransition: cityTransition?.to ? cityTransition : undefined,
+      rawTransport: Array.isArray(d['transport'])
+        ? (d['transport'] as Array<Record<string, unknown>>)
+        : undefined,
       activities: Array.isArray(d['activities'])
         ? (d['activities'] as Array<Record<string, unknown>>).map((a) => ({
             name:         String(a['name'] ?? a['activity'] ?? a['title'] ?? '—'),
@@ -620,18 +625,47 @@ const parsedItinerary = computed((): ItineraryDay[] => {
   return []
 })
 
-// Enriches parsedItinerary with transport activities from logistics content
+// Enriches parsedItinerary with transport activities.
+// Priority: day.transport from orchestrator proposal (set by mergeTransportIntoProposal
+// with confirmed pre-resolved legs) > logistics content transportOptions.
 const timelineDays = computed((): ItineraryDay[] => {
   const logisticsContent = latestByAgent.value['logistics']?.content as Record<string, unknown> | undefined
   const rawTransportOpts = logisticsContent?.['transportOptions'] as Record<number, TransportOption[]> | undefined
-  if (!rawTransportOpts || Object.keys(rawTransportOpts).length === 0) {
-    return parsedItinerary.value
-  }
+
   return parsedItinerary.value.map((day) => {
-    const opts = rawTransportOpts[day.day]
     const ct = day.cityTransition
-    if (!opts || opts.length === 0 || !ct?.to) return day
-    const [best, ...rest] = opts
+    if (!ct?.to) return day
+
+    // Try orchestrator's day.transport first (has confirmed legs + real alternatives)
+    let best: TransportOption | undefined
+    let rest: TransportOption[] = []
+
+    const rt = day.rawTransport?.[0]
+    if (rt && typeof rt['mode'] === 'string' && typeof rt['durationMinutes'] === 'number' && rt['durationMinutes'] > 0) {
+      best = {
+        mode: rt['mode'] as TransportOption['mode'],
+        provider: typeof rt['provider'] === 'string' ? rt['provider'] : undefined,
+        durationMinutes: rt['durationMinutes'] as number,
+        departureTime: typeof rt['departureTime'] === 'string' ? rt['departureTime'] : undefined,
+        arrivalTime: typeof rt['arrivalTime'] === 'string' ? rt['arrivalTime'] : undefined,
+        priceEur: typeof rt['priceEur'] === 'number' ? rt['priceEur'] : undefined,
+        flightNumber: typeof rt['flightNumber'] === 'string' ? rt['flightNumber'] : undefined,
+        trainLine: typeof rt['trainLine'] === 'string' ? rt['trainLine'] : undefined,
+        warnings: Array.isArray(rt['warnings']) ? (rt['warnings'] as string[]) : [],
+        segments: Array.isArray(rt['segments']) ? (rt['segments'] as TransportOption['segments']) : undefined,
+        displaySummary: typeof rt['displaySummary'] === 'string' ? rt['displaySummary'] : undefined,
+      }
+      rest = Array.isArray(rt['alternatives']) ? (rt['alternatives'] as TransportOption[]) : []
+    } else {
+      // Fall back to logistics transportOptions (keyed by day number)
+      const opts = rawTransportOpts?.[day.day]
+      if (!opts || opts.length === 0) return day
+      const [b, ...r] = opts
+      if (!b || b.durationMinutes === 0) return day
+      best = b
+      rest = r
+    }
+
     if (!best) return day
     const transportActivity: ItineraryActivity = {
       name:          formatTransportLabel(best, ct.to),

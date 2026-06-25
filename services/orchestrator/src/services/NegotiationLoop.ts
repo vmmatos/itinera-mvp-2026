@@ -103,7 +103,7 @@ export class NegotiationLoop extends BaseService {
           // First round: resolve transport first and fold it into the proposal so Finance
           // prices the real legs into the budget (and can block if it overshoots).
           logistics = await this.validateLogistics(tripId, round, proposal, tripContext);
-          proposal = this.mergeTransportIntoProposal(proposal, logistics.content);
+          proposal = this.mergeTransportIntoProposal(proposal, logistics.content, confirmedLegs);
           finance = await this.reviewFinance(tripId, round, proposal, tripContext);
         } else {
           // Both agents evaluate the SAME proposal at the same time.
@@ -155,7 +155,7 @@ export class NegotiationLoop extends BaseService {
 
         // Fold the chosen transport legs into the proposal so the next Finance
         // round counts their cost (folded #72: transport in budget).
-        proposal = this.mergeTransportIntoProposal(proposal, logistics.content);
+        proposal = this.mergeTransportIntoProposal(proposal, logistics.content, confirmedLegs);
 
         // Orchestrator refines, driven by the combined feedback.
         const feedback: NegotiationFeedback = {
@@ -427,13 +427,17 @@ export class NegotiationLoop extends BaseService {
 
   // Inject the chosen (cheapest/best) transport leg into each day's transport so
   // the next Finance round includes its cost in the budget (folded #72).
+  // confirmedLegs (pre-resolved from trip.destinations before negotiations start)
+  // are preferred over logistics-derived options because they use the canonical city
+  // names from DestinationParser, avoiding LLM-generated name variants like
+  // 'Mértola, Portugal' that break getHubs lookups.
   private mergeTransportIntoProposal(
     proposal: Record<string, unknown>,
     logisticsContent: Record<string, unknown>,
+    confirmedLegs: Record<string, TransportOption[]> = {},
   ): Record<string, unknown> {
-    const transportOptions = logisticsContent['transportOptions'] as
+    const logisticsOptions = logisticsContent['transportOptions'] as
       Record<string, TransportOption[]> | undefined;
-    if (!transportOptions) return proposal;
 
     const itinerary = Array.isArray(proposal['itinerary'])
       ? (proposal['itinerary'] as Array<Record<string, unknown>>)
@@ -442,15 +446,22 @@ export class NegotiationLoop extends BaseService {
     for (const day of itinerary) {
       const dayNum = typeof day['day'] === 'number' ? day['day'] : null;
       if (dayNum === null) continue;
-      const options = transportOptions[String(dayNum)];
+      const to = String((day['cityTransition'] as Record<string, unknown> | undefined)?.['to'] ?? '');
+      if (!to) continue;
+      const fromCity = typeof day['city'] === 'string' ? day['city'] : '';
+
+      // Priority: confirmed legs (from pre-flight /transport-legs) > logistics content.
+      const options =
+        this.findInConfirmedLegs(fromCity, to, confirmedLegs) ??
+        logisticsOptions?.[String(dayNum)];
+
       const best = options?.[0];
-      if (!best || typeof best.priceEur !== 'number') continue;
-      const to = (day['cityTransition'] as Record<string, unknown> | undefined)?.['to'] ?? '';
-      // Carry the full leg so the timeline shows real provider/number/times/price,
-      // and so Finance prices priceEur into the budget.
+      // Skip days where resolution returned nothing or a bogus 0-duration placeholder.
+      if (!best || best.durationMinutes === 0) continue;
+
       day['transport'] = [
         {
-          from: day['city'] ?? '',
+          from: fromCity,
           to,
           mode: best.mode,
           provider: best.provider,
@@ -478,6 +489,41 @@ export class NegotiationLoop extends BaseService {
       };
     }
     return { ...proposal, itinerary };
+  }
+
+  // Normalise a city string for matching: strip accents, lowercase, drop country suffix.
+  // e.g. 'Mértola, Portugal' → 'mertola', 'Barcelona' → 'barcelona'
+  private normCity(city: string): string {
+    return city.toLowerCase()
+      .split(',')[0]!
+      .replace(/[àáâãä]/g, 'a')
+      .replace(/[èéêë]/g, 'e')
+      .replace(/[ìíîï]/g, 'i')
+      .replace(/[òóôõö]/g, 'o')
+      .replace(/[ùúûü]/g, 'u')
+      .replace(/[ç]/g, 'c')
+      .replace(/[ñ]/g, 'n')
+      .trim();
+  }
+
+  // Find transport options in confirmedLegs by normalised city-pair match.
+  // Keys in confirmedLegs are 'From->To' (from /transport-legs endpoint).
+  private findInConfirmedLegs(
+    from: string,
+    to: string,
+    confirmedLegs: Record<string, TransportOption[]>,
+  ): TransportOption[] | undefined {
+    if (!from || !to) return undefined;
+    const nFrom = this.normCity(from);
+    const nTo = this.normCity(to);
+    for (const [key, options] of Object.entries(confirmedLegs)) {
+      const sep = key.indexOf('->');
+      if (sep === -1) continue;
+      if (this.normCity(key.slice(0, sep)) === nFrom && this.normCity(key.slice(sep + 2)) === nTo) {
+        return options;
+      }
+    }
+    return undefined;
   }
 
   private async maybeResolveFlexibleDates(
