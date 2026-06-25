@@ -68,3 +68,10 @@ When the user message contains "DATE SELECTION MODE: flexible", also output a "s
   "suggestedDates": { "startDate": "YYYY-MM-DD", "endDate": "YYYY-MM-DD", "rationale": "<why these dates have best weather>" }
 Pick the N-day consecutive window in the provided forecasts with the lowest overall weather risk.
 If forecast data covers fewer days than requested, include only a "rationale" key explaining the limitation and omit "startDate"/"endDate".
+
+TRANSPORT ANALYSIS:
+When "Transport legs (resolved" are provided in the user message:
+- For any leg where durationMinutes > 240 (over 4h): add a timingIssues entry recommending the day's activities be reduced to a maximum of 2.
+- For any leg where the warnings array contains a "<2h gap" warning: add a timingIssues entry advising travellers to allow buffer time before the first activity.
+- Reference estimated transport cost (priceEur) in your summary where available.
+- Do NOT add transport legs to dayAssessments — they are already resolved. Reference them only in timingIssues and summary.

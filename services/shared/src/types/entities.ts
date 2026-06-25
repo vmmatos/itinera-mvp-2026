@@ -40,6 +40,7 @@ export interface Trip {
   budgetTotal: number | null;
   budgetCurrency: string;
   dateInput: DateInput | null;
+  transportPreference: TransportMode;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -104,4 +105,18 @@ export interface Attraction {
   metadata: Record<string, unknown>;
   createdAt: Date;
   updatedAt: Date;
+}
+
+export type TransportMode = 'flight' | 'train' | 'car' | 'best';
+
+export interface TransportOption {
+  mode: 'flight' | 'train' | 'car';
+  provider?: string;
+  durationMinutes: number;
+  departureTime?: string;
+  arrivalTime?: string;
+  priceEur?: number;
+  flightNumber?: string;
+  trainLine?: string;
+  warnings: string[];
 }

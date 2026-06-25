@@ -50,6 +50,9 @@ export class Trip {
   @Column({ name: 'date_input', type: 'jsonb', nullable: true })
   dateInput!: DateInput | null;
 
+  @Column({ name: 'transport_preference', type: 'varchar', length: 10, default: 'best' })
+  transportPreference!: string;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 

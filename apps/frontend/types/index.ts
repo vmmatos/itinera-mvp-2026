@@ -80,6 +80,27 @@ export interface FlexibleDateInput {
 
 export type DateInput = FixedDateInput | FlexibleDateInput
 
+// ── Transport ─────────────────────────────────────────────────
+export type TransportMode = 'flight' | 'train' | 'car' | 'best'
+
+export interface TransportOption {
+  mode:            'flight' | 'train' | 'car'
+  provider?:       string
+  durationMinutes: number
+  departureTime?:  string
+  arrivalTime?:    string
+  priceEur?:       number
+  flightNumber?:   string
+  trainLine?:      string
+  warnings:        string[]
+}
+
+export interface TransportActivityData {
+  to:             string
+  selectedOption: TransportOption
+  alternatives:   TransportOption[]
+}
+
 // ── Trip input ────────────────────────────────────────────────
 export interface Destination {
   country: string
@@ -103,19 +124,21 @@ export interface TravellerInput {
 }
 
 export interface CreateTripInput {
-  name:           string
-  destinations:   Destination[]
-  region?:        string   // derived from destinations if not set
-  dateInput:      DateInput
-  budgetTotal:    number
-  budgetCurrency: Currency
-  travellers:     TravellerInput[]
+  name:                string
+  destinations:        Destination[]
+  region?:             string   // derived from destinations if not set
+  dateInput:           DateInput
+  budgetTotal:         number
+  budgetCurrency:      Currency
+  travellers:          TravellerInput[]
+  transportPreference?: TransportMode
 }
 
 // ── Trip result ───────────────────────────────────────────────
 export interface CityTransition {
-  to:         string
-  travelTime: string
+  to:               string
+  travelTime:       string
+  transportOption?: TransportOption
 }
 
 export interface Activity {

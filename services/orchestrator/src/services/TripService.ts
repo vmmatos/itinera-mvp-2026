@@ -94,6 +94,7 @@ export class TripService extends BaseService {
         budgetTotal: input.budgetTotal ?? null,
         budgetCurrency: input.budgetCurrency ?? 'EUR',
         dateInput: input.dateInput ?? null,
+        transportPreference: input.transportPreference ?? 'best',
         status: 'draft',
       });
       const savedTrip = await manager.save(newTrip);

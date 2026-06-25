@@ -1,25 +1,19 @@
 <script setup lang="ts">
 import type { ActivityCardProps } from '~/components/trip/ActivityCard.vue'
-import { formatDayHeader, formatTransition } from '~/utils/itinerary'
+import { formatDayHeader } from '~/utils/itinerary'
 
 export interface TimelineActivity extends ActivityCardProps {
   time?:      string
   satisfies?: string[]
 }
 
-export interface TimelineCityTransition {
-  to:         string
-  travelTime: string
-}
-
 export interface TimelineDay {
-  day:             number
-  date?:           string
-  city?:           string
-  country?:        string
-  cityTransition?: TimelineCityTransition
-  activities:      TimelineActivity[]
-  meals?:          Array<{ type: string; name: string }>
+  day:        number
+  date?:      string
+  city?:      string
+  country?:   string
+  activities: TimelineActivity[]
+  meals?:     Array<{ type: string; name: string }>
 }
 
 interface RestrictionWarning {
@@ -127,13 +121,6 @@ function activitiesForSlot(activities: TimelineActivity[], slot: TimeSlot): Time
         </div>
       </div>
 
-      <!-- City transition -->
-      <div v-if="day.cityTransition" class="tl-transition">
-        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-          <path d="M8 1.5C5.51 1.5 3.5 3.51 3.5 6c0 3.75 4.5 8.5 4.5 8.5s4.5-4.75 4.5-8.5c0-2.49-2.01-4.5-4.5-4.5zm0 6a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z" fill="currentColor"/>
-        </svg>
-        <span>{{ formatTransition(day.cityTransition) }}</span>
-      </div>
     </div>
   </div>
 </template>
@@ -242,15 +229,4 @@ function activitiesForSlot(activities: TimelineActivity[], slot: TimeSlot): Time
   line-height: 1.5;
 }
 
-.tl-transition {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: var(--s-2) var(--s-4);
-  background: var(--amber-bg);
-  border-top: 1px dashed var(--amber-line);
-  font-family: var(--mono);
-  font-size: var(--t-12);
-  color: var(--amber);
-}
 </style>

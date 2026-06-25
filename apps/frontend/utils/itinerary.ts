@@ -1,3 +1,5 @@
+import type { TransportOption } from '~/types'
+
 export interface LocationFields {
   venue?:    string
   city?:     string
@@ -12,8 +14,27 @@ export interface DayHeaderFields {
 }
 
 export interface CityTransitionFields {
-  to:         string
-  travelTime: string
+  to:               string
+  travelTime:       string
+  transportOption?: {
+    mode?:           string
+    durationMinutes: number
+    priceEur?:       number
+    departureTime?:  string
+    arrivalTime?:    string
+    warnings:        string[]
+  }
+}
+
+export function modeIcon(mode?: string): string {
+  const icons: Record<string, string> = { flight: '✈️', train: '🚆', car: '🚗' }
+  return icons[mode ?? ''] ?? '→'
+}
+
+export function formatDuration(minutes: number): string {
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  return m > 0 ? `${h}h ${m}m` : `${h}h`
 }
 
 export function formatLocation(act: LocationFields): string {
@@ -38,4 +59,13 @@ export function formatDayHeader(day: DayHeaderFields): string {
 
 export function formatTransition(t: CityTransitionFields): string {
   return `→ Moving to ${t.to} (${t.travelTime})`
+}
+
+export function formatTransportLabel(opt: TransportOption, to: string): string {
+  const modeLabel = opt.mode === 'flight' ? 'Flight' : opt.mode === 'train' ? 'Train' : 'Drive'
+  const ref = opt.flightNumber ?? opt.trainLine ?? ''
+  const parts: string[] = [`${modeLabel}${ref ? ` ${ref}` : ''} →${to}`]
+  if (opt.priceEur) parts.push(`€${opt.priceEur}/person`)
+  parts.push(formatDuration(opt.durationMinutes))
+  return parts.join(' — ')
 }

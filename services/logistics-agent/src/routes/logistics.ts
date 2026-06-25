@@ -2,6 +2,7 @@ import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { ValidationError } from '@itinera/shared';
+import type { TransportMode, TransportOption } from '@itinera/shared';
 import type { WeatherService } from '@/services/WeatherService';
 import type { AttractionDB } from '@/services/AttractionDB';
 import type { RedisService } from '@/services/RedisService';
@@ -9,6 +10,7 @@ import type { TimingValidator, ScheduledActivity, ScheduledTransport } from '@/v
 import type { WeatherAnalyzer } from '@/agents/WeatherAnalyzer';
 import type { HolidayService } from '@/services/HolidayService';
 import type { RestrictionsValidator } from '@/validators/RestrictionsValidator';
+import type { TransportService } from '@/services/TransportService';
 import { toCountryCode } from '@/utils/countryCodeMapper';
 import { config } from '@/config';
 
@@ -27,13 +29,19 @@ const DateInputSchema = z.discriminatedUnion('mode', [
 ]).nullable().optional();
 
 const ValidateSchema = z.object({
-  tripId:    z.string().uuid(),
-  round:     z.number().int().min(1),
-  proposal:  z.record(z.unknown()),
-  region:    z.string().default('unknown'),
-  context:   z.string().optional().default(''),
-  dateInput: DateInputSchema,
+  tripId:              z.string().uuid(),
+  round:               z.number().int().min(1),
+  proposal:            z.record(z.unknown()),
+  region:              z.string().default('unknown'),
+  context:             z.string().optional().default(''),
+  dateInput:           DateInputSchema,
+  transportPreference: z.enum(['flight', 'train', 'car', 'best']).default('best').optional(),
 });
+
+function timeToMinutes(hhmm: string): number {
+  const [h, m] = hhmm.split(':').map(Number);
+  return (h ?? 0) * 60 + (m ?? 0);
+}
 
 const AttractionQuerySchema = z.object({
   category: z.string().optional(),
@@ -51,6 +59,7 @@ export function createLogisticsRouter(
   redis: RedisService,
   holidayService: HolidayService,
   restrictionsValidator: RestrictionsValidator,
+  transportService: TransportService,
 ): Router {
   const router = Router();
 
@@ -61,7 +70,7 @@ export function createLogisticsRouter(
       return;
     }
 
-    const { tripId, round, proposal, region, dateInput } = parsed.data;
+    const { tripId, round, proposal, region, dateInput, transportPreference } = parsed.data;
 
     const allActivities: ScheduledActivity[] = [];
     const allTransport: ScheduledTransport[] = [];
@@ -158,6 +167,54 @@ export function createLogisticsRouter(
     });
     // --- end restrictions ---
 
+    // --- Transport resolution ---
+    const preference = (transportPreference ?? 'best') as TransportMode;
+    const transportOptions: Record<number, TransportOption[]> = {};
+
+    await Promise.allSettled(
+      rawItinerary
+        .filter((day) => day['cityTransition'] && typeof (day['cityTransition'] as Record<string, unknown>)['to'] === 'string')
+        .map(async (day) => {
+          const ct = day['cityTransition'] as Record<string, unknown>;
+          const from = typeof day['city'] === 'string' ? day['city'] : region;
+          const to = String(ct['to']);
+          const dayNum = typeof day['day'] === 'number' ? day['day'] : 0;
+          const departureDateIso = tripDates[dayNum - 1];
+
+          const options = await transportService.resolveTransportOptions(
+            { from, to, departureDateIso },
+            preference,
+          );
+
+          // <2h connection warning on the best option (first in array)
+          const best = options[0];
+          if (best) {
+            const nextDay = rawItinerary.find(
+              (d) => typeof d['day'] === 'number' && d['day'] === dayNum + 1,
+            );
+            const firstActTime =
+              Array.isArray(nextDay?.['activities'])
+                ? String((nextDay['activities'] as RawDay[])[0]?.['startTime'] ?? '')
+                : '';
+            if (best.arrivalTime && firstActTime) {
+              const arrival = best.arrivalTime.slice(0, 5);
+              if (/^\d{2}:\d{2}$/.test(arrival) && /^\d{2}:\d{2}$/.test(firstActTime)) {
+                const arrMins = timeToMinutes(arrival);
+                const actMins = timeToMinutes(firstActTime);
+                if (actMins - arrMins < 120) {
+                  best.warnings.push(
+                    `Less than 2h gap before first activity on day ${dayNum + 1}`,
+                  );
+                }
+              }
+            }
+          }
+
+          transportOptions[dayNum] = options;
+        }),
+    );
+    // --- end transport ---
+
     const isFlexible = dateInput?.mode === 'flexible';
     const flexibleNoMonth = isFlexible && !(dateInput as { preferredMonth?: string }).preferredMonth;
 
@@ -187,6 +244,7 @@ export function createLogisticsRouter(
       }
     }
 
+    const hasTransport = Object.keys(transportOptions).length > 0;
     const validation = await analyzer.analyze(
       tripId,
       round,
@@ -195,13 +253,19 @@ export function createLogisticsRouter(
       timingResult,
       dateInput ?? null,
       restrictionsResult.warnings,
+      hasTransport ? transportOptions : undefined,
     );
+
+    const transportCostEur = Object.values(transportOptions)
+      .reduce((sum, opts) => sum + (opts[0]?.priceEur ?? 0), 0);
 
     const augmentedValidation = {
       ...validation,
       content: {
         ...(validation.content as Record<string, unknown>),
         restrictionWarnings: restrictionsResult.warnings,
+        transportOptions,
+        transportCostEur: transportCostEur > 0 ? transportCostEur : undefined,
       },
     };
 

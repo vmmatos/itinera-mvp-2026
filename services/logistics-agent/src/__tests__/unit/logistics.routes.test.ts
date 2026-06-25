@@ -38,6 +38,7 @@ import type { WeatherAnalyzer } from '@/agents/WeatherAnalyzer';
 import type { HolidayService } from '@/services/HolidayService';
 import type { RestrictionsValidator } from '@/validators/RestrictionsValidator';
 import type { Place } from '@/services/PlacesService';
+import type { TransportService } from '@/services/TransportService';
 
 const VALID_UUID = '550e8400-e29b-41d4-a716-446655440000';
 
@@ -96,13 +97,21 @@ const mockTiming = { validate: vi.fn() } as unknown as TimingValidator;
 const mockAnalyzer = { analyze: vi.fn() } as unknown as WeatherAnalyzer;
 const mockHolidayService = { getHolidays: vi.fn() } as unknown as HolidayService;
 const mockRestrictionsValidator = { validate: vi.fn() } as unknown as RestrictionsValidator;
+const mockTransportService = {
+  resolveTransportOptions: vi.fn().mockResolvedValue([{
+    mode: 'car',
+    provider: 'Google Maps',
+    durationMinutes: 120,
+    warnings: [],
+  }]),
+} as unknown as TransportService;
 
 function buildApp(): express.Express {
   const app = express();
   app.use(express.json());
   app.use(createLogisticsRouter(
     mockWeather, mockAttractions, mockTiming, mockAnalyzer, mockRedis,
-    mockHolidayService, mockRestrictionsValidator,
+    mockHolidayService, mockRestrictionsValidator, mockTransportService,
   ));
   app.use((err: Error & { statusCode?: number }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     res.status(err.statusCode ?? 400).json({ success: false, error: { message: err.message } });
@@ -121,6 +130,12 @@ describe('POST /validate', () => {
     vi.mocked(mockAttractions.getAttractions).mockResolvedValue(MOCK_PLACES);
     vi.mocked(mockHolidayService.getHolidays).mockResolvedValue([]);
     vi.mocked(mockRestrictionsValidator.validate).mockReturnValue({ warnings: [] });
+    vi.mocked(mockTransportService.resolveTransportOptions).mockResolvedValue([{
+      mode: 'car',
+      provider: 'Google Maps',
+      durationMinutes: 120,
+      warnings: [],
+    }]);
   });
 
   it('400 when tripId is missing', async () => {
@@ -271,7 +286,7 @@ describe('POST /validate', () => {
     });
 
     expect(mockAnalyzer.analyze).toHaveBeenCalledWith(
-      VALID_UUID, 1, expect.any(Array), expect.any(Array), expect.any(Object), dateInput, expect.any(Array),
+      VALID_UUID, 1, expect.any(Array), expect.any(Array), expect.any(Object), dateInput, expect.any(Array), undefined,
     );
   });
 
@@ -334,7 +349,7 @@ describe('POST /validate', () => {
     });
 
     expect(mockAnalyzer.analyze).toHaveBeenCalledWith(
-      VALID_UUID, 1, expect.any(Array), [], expect.any(Object), dateInput, expect.any(Array),
+      VALID_UUID, 1, expect.any(Array), [], expect.any(Object), dateInput, expect.any(Array), undefined,
     );
   });
 

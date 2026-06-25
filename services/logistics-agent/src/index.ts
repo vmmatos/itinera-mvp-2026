@@ -11,6 +11,8 @@ import { ProposalStorageService } from '@/services/ProposalStorageService';
 import { WeatherService } from '@/services/WeatherService';
 import { PlacesService } from '@/services/PlacesService';
 import { AttractionDB } from '@/services/AttractionDB';
+import { MapService } from '@/services/MapService';
+import { TransportService } from '@/services/TransportService';
 import { TimingValidator } from '@/validators/TimingValidator';
 import { RestrictionsValidator } from '@/validators/RestrictionsValidator';
 import { WeatherAnalyzer } from '@/agents/WeatherAnalyzer';
@@ -39,6 +41,8 @@ async function start(): Promise<void> {
   const weather = new WeatherService();
   const places = new PlacesService();
   const attractions = new AttractionDB(places, redis, config.ATTRACTIONS_CACHE_TTL_SECONDS);
+  const mapService = new MapService();
+  const transport = new TransportService(mapService);
   const timing = new TimingValidator();
   const analyzer = new WeatherAnalyzer(anthropic, publisher, redis, storage);
   const holidays = new HolidayService(redis);
@@ -46,7 +50,7 @@ async function start(): Promise<void> {
 
   app.use(createHealthRouter(publisher, redis));
   app.use(authMiddleware);
-  app.use(createLogisticsRouter(weather, attractions, timing, analyzer, redis, holidays, restrictions));
+  app.use(createLogisticsRouter(weather, attractions, timing, analyzer, redis, holidays, restrictions, transport));
   app.use(errorHandler);
 
   const server = app.listen(config.PORT, () => {
