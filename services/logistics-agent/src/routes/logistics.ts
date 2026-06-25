@@ -285,6 +285,40 @@ export function createLogisticsRouter(
     res.json({ validation: augmentedValidation });
   });
 
+  // Lightweight endpoint: resolve transport legs for destination pairs only.
+  // No weather, no AI — used by orchestrator to inject real routes into the propose context.
+  const TransportLegsSchema = z.object({
+    destinations: z.array(z.object({ city: z.string(), country: z.string() })).min(2),
+    preference: z.enum(['flight', 'train', 'car', 'best']).default('best'),
+    departureDateIso: z.string().optional(),
+  });
+
+  router.post('/transport-legs', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const parsed = TransportLegsSchema.safeParse(req.body);
+    if (!parsed.success) {
+      next(new ValidationError(parsed.error.flatten().fieldErrors.toString()));
+      return;
+    }
+
+    const { destinations, preference, departureDateIso } = parsed.data;
+    const legs: Record<string, TransportOption[]> = {};
+
+    await Promise.allSettled(
+      destinations.slice(0, -1).map(async (origin, i) => {
+        const dest = destinations[i + 1];
+        if (!dest) return;
+        const key = `${origin.city}->${dest.city}`;
+        const options = await transportService.resolveTransportOptions(
+          { from: origin.city, to: dest.city, departureDateIso },
+          preference as TransportMode,
+        );
+        legs[key] = options.slice(0, 4); // top 4 options per pair
+      }),
+    );
+
+    res.json({ legs });
+  });
+
   router.get('/attractions/:region', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const parsedQuery = AttractionQuerySchema.safeParse(req.query);
     if (!parsedQuery.success) {

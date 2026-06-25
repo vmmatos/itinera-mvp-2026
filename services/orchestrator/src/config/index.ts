@@ -24,6 +24,9 @@ const EnvSchema = z.object({
   VALIDATOR_URL: z.string().default('http://validator:3006'),
   // Max negotiation rounds before forced convergence (card #79).
   MAX_ROUNDS: z.coerce.number().int().min(1).default(6),
+  // Anthropic API — used by DestinationParser LLM fallback.
+  ANTHROPIC_API_KEY: z.string().optional(),
+  ANTHROPIC_MODEL: z.string().default('claude-sonnet-4-20250514'),
 });
 
 const parsed = EnvSchema.safeParse(process.env);

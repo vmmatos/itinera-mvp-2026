@@ -3,6 +3,8 @@ import type { AgentEvent, AgentName, AgentAction, AIMessage, IAIProvider } from 
 import { RabbitMQPublisher } from '@/services/RabbitMQPublisher';
 import { RedisService } from '@/services/RedisService';
 import { ProposalStorageService } from '@/services/ProposalStorageService';
+import { ProposalOutputSchema } from '@/schemas/proposalOutput.schema';
+import { auditPrices } from '@/services/PriceGuard';
 
 /** Output-token budget for the full itinerary JSON (propose/refine) so it never truncates. */
 export const ITINERARY_MAX_TOKENS = 8192;
@@ -27,31 +29,47 @@ export abstract class BaseOrchestratorAgent extends BaseService {
     messages: AIMessage[],
     maxTokens?: number,
   ): Promise<AgentEvent> {
-    const { content, latencyMs, tokensUsed } = await this.aiProvider.complete(
-      this.systemPrompt,
-      messages,
-      maxTokens ? { maxTokens } : undefined,
-    );
+    const opts = maxTokens ? { maxTokens } : undefined;
+    let response = await this.aiProvider.complete(this.systemPrompt, messages, opts);
+    let totalTokensUsed = response.tokensUsed;
+    let totalLatencyMs = response.latencyMs;
 
-    let parsedContent: unknown;
-    try {
-      parsedContent = JSON.parse(content);
-    } catch {
-      // Claude sometimes wraps JSON in code fences — strip and retry before falling back to raw
-      const stripped = content
-        .replace(/^```(?:json)?\s*/im, '')
-        .replace(/\s*```\s*$/m, '')
-        .trim();
-      try {
-        parsedContent = JSON.parse(stripped);
-      } catch {
-        parsedContent = { raw: content };
+    let parsedContent = this.tryParseJSON(response.content);
+
+    // G2: validate proposal structure; if invalid, retry once with the error details.
+    if (action === 'propose' || action === 'refine') {
+      const validation = ProposalOutputSchema.safeParse(parsedContent);
+      if (!validation.success && !('raw' in (parsedContent as Record<string, unknown>))) {
+        const issues = validation.error.issues
+          .slice(0, 5)
+          .map((i) => `${i.path.join('.')}: ${i.message}`)
+          .join('; ');
+        this.logger.warn('Proposal failed schema validation — retrying', { tripId, round, issues });
+
+        const retryMessages: AIMessage[] = [
+          ...messages,
+          { role: 'assistant', content: response.content },
+          {
+            role: 'user',
+            content: `Your response failed JSON schema validation: ${issues}. Please reply with corrected JSON only, no explanation.`,
+          },
+        ];
+        const retried = await this.aiProvider.complete(this.systemPrompt, retryMessages, opts);
+        totalTokensUsed += retried.tokensUsed;
+        totalLatencyMs += retried.latencyMs;
+        parsedContent = this.tryParseJSON(retried.content);
+      }
+
+      // G4: price sanity audit — log suspicious costs but never hard-fail.
+      const finalValidation = ProposalOutputSchema.safeParse(parsedContent);
+      if (finalValidation.success) {
+        auditPrices(finalValidation.data, this.logger);
       }
     }
 
-    const event = this.buildAgentEvent(tripId, round, action, parsedContent, content, {
-      latencyMs,
-      tokensUsed,
+    const event = this.buildAgentEvent(tripId, round, action, parsedContent, response.content, {
+      latencyMs: totalLatencyMs,
+      tokensUsed: totalTokensUsed,
     });
 
     // Orchestrator is responsible for persisting proposals — don't double-save here
@@ -62,11 +80,27 @@ export abstract class BaseOrchestratorAgent extends BaseService {
       tripId,
       round,
       action,
-      latencyMs,
-      tokensUsed,
+      latencyMs: totalLatencyMs,
+      tokensUsed: totalTokensUsed,
     });
 
     return event;
+  }
+
+  private tryParseJSON(content: string): unknown {
+    try {
+      return JSON.parse(content);
+    } catch {
+      const stripped = content
+        .replace(/^```(?:json)?\s*/im, '')
+        .replace(/\s*```\s*$/m, '')
+        .trim();
+      try {
+        return JSON.parse(stripped);
+      } catch {
+        return { raw: content };
+      }
+    }
   }
 
   private buildAgentEvent(

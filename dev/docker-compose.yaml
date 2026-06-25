@@ -223,6 +223,8 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       JWT_ISSUER: ${JWT_ISSUER}
       MAX_ROUNDS: ${MAX_ROUNDS:-6}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL:-claude-sonnet-4-20250514}
     ports:
       - "${ORCHESTRATOR_PORT:-3001}:${ORCHESTRATOR_PORT:-3001}"
     depends_on:

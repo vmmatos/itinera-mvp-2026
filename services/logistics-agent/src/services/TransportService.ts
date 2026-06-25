@@ -2,6 +2,7 @@ import { BaseService } from '@itinera/shared';
 import type { TransportMode, TransportOption } from '@itinera/shared';
 import { config } from '@/config';
 import type { MapService } from '@/services/MapService';
+import { resolveMultiLegOptions } from '@/services/MultiLegRouter';
 
 export interface CityPair {
   from: string;
@@ -181,25 +182,55 @@ export class TransportService extends BaseService {
   }
 
   private async fetchBest(pair: CityPair): Promise<TransportOption[]> {
-    const results = await Promise.allSettled([
-      this.fetchFlights(pair),
-      this.fetchTrains(pair),
-      this.fetchCar(pair).then((opt) => [opt]),
+    const [directResults, multiLegResults] = await Promise.allSettled([
+      Promise.allSettled([
+        this.fetchFlights(pair),
+        this.fetchTrains(pair),
+        this.fetchCar(pair).then((opt) => [opt]),
+      ]),
+      resolveMultiLegOptions(pair, (p) => this.fetchBestDirect(p)),
     ]);
 
     const allOptions: TransportOption[] = [];
-    for (const result of results) {
-      if (result.status === 'fulfilled') {
-        allOptions.push(...result.value);
-      } else {
-        this.logger.debug('Transport option unavailable', { reason: String(result.reason) });
+
+    if (directResults.status === 'fulfilled') {
+      for (const result of directResults.value) {
+        if (result.status === 'fulfilled') {
+          allOptions.push(...result.value);
+        } else {
+          this.logger.debug('Direct transport option unavailable', { reason: String(result.reason) });
+        }
       }
+    }
+
+    if (multiLegResults.status === 'fulfilled') {
+      allOptions.push(...multiLegResults.value);
     }
 
     if (allOptions.length === 0) {
       throw new Error(`No transport options found from "${pair.from}" to "${pair.to}"`);
     }
 
+    return allOptions;
+  }
+
+  // fetchBestDirect is used by MultiLegRouter to resolve hub→destination legs
+  // without recursing into multi-leg routing.
+  async fetchBestDirect(pair: CityPair): Promise<TransportOption[]> {
+    const results = await Promise.allSettled([
+      this.fetchFlights(pair),
+      this.fetchTrains(pair),
+      this.fetchCar(pair).then((opt) => [opt]),
+    ]);
+    const allOptions: TransportOption[] = [];
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        allOptions.push(...result.value);
+      }
+    }
+    if (allOptions.length === 0) {
+      throw new Error(`No direct transport options found from "${pair.from}" to "${pair.to}"`);
+    }
     return allOptions;
   }
 

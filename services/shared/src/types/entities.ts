@@ -109,8 +109,20 @@ export interface Attraction {
 
 export type TransportMode = 'flight' | 'train' | 'car' | 'best';
 
+export interface TransportSegment {
+  from: string;
+  to: string;
+  mode: 'flight' | 'train' | 'bus' | 'car';
+  provider?: string;
+  durationMinutes: number;
+  priceEur?: number;
+  departureTime?: string;
+  flightNumber?: string;
+  trainLine?: string;
+}
+
 export interface TransportOption {
-  mode: 'flight' | 'train' | 'car';
+  mode: 'flight' | 'train' | 'car' | 'bus';
   provider?: string;
   durationMinutes: number;
   departureTime?: string;
@@ -119,4 +131,8 @@ export interface TransportOption {
   flightNumber?: string;
   trainLine?: string;
   warnings: string[];
+  /** Present for multi-leg routes composed via hub routing. */
+  segments?: TransportSegment[];
+  /** Human-readable summary, e.g. "Bus + Train + Flight — 9h, ~€172/person" */
+  displaySummary?: string;
 }

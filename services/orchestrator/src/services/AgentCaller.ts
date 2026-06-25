@@ -1,5 +1,5 @@
 import { BaseService } from '@itinera/shared';
-import type { DateInput, TransportMode } from '@itinera/shared';
+import type { DateInput, TransportMode, TransportOption } from '@itinera/shared';
 import jwt from 'jsonwebtoken';
 import { config } from '@/config';
 
@@ -186,5 +186,20 @@ export class AgentCaller extends BaseService {
     proposal: Record<string, unknown>,
   ): Promise<AgentCallResult> {
     return this.post<AgentCallResult>('validator', '/', { tripId, round, proposal });
+  }
+
+  async callTransportLegs(
+    destinations: { city: string; country: string }[],
+    preference: TransportMode,
+    departureDateIso?: string,
+  ): Promise<Record<string, TransportOption[]>> {
+    const start = Date.now();
+    const resp = await this.post<{ legs: Record<string, TransportOption[]> }>(
+      'logistics',
+      '/transport-legs',
+      { destinations, preference, departureDateIso },
+    );
+    this.logger.debug('Transport legs resolved', { latencyMs: Date.now() - start, pairs: Object.keys(resp.legs).length });
+    return resp.legs;
   }
 }

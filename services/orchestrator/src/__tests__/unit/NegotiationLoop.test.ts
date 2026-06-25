@@ -106,6 +106,7 @@ describe('NegotiationLoop', () => {
     vi.mocked(agentCaller.callFinanceAgent).mockResolvedValue(FINANCE_APPROVED);
     vi.mocked(agentCaller.callLogisticsAgent).mockResolvedValue(LOGISTICS_APPROVED);
     vi.mocked(agentCaller.callValidatorAgent).mockResolvedValue(VALIDATION_RESULT);
+    vi.mocked(agentCaller.callTransportLegs).mockResolvedValue({});
 
     vi.mocked(eventPublisher.publish).mockResolvedValue(undefined);
     vi.mocked(eventPublisher.publishToExchange).mockResolvedValue(undefined);
@@ -317,5 +318,66 @@ describe('NegotiationLoop', () => {
     await loop.run(TRIP_ID);
 
     expect(tripService.resolveFlexibleDates).not.toHaveBeenCalled();
+  });
+
+  // ── G1: transport pre-resolution ─────────────────────────────────
+
+  it('G1: callTransportLegs is called before propose when trip has multiple destinations', async () => {
+    vi.mocked(stateManager.getTrip).mockResolvedValue({
+      ...MOCK_TRIP,
+      destinations: [
+        { city: 'Comporta', country: 'PT', nights: 3 },
+        { city: 'Barcelona', country: 'ES', nights: 4 },
+      ],
+    } as never);
+
+    await loop.run(TRIP_ID);
+
+    expect(agentCaller.callTransportLegs).toHaveBeenCalledOnce();
+    const [destinations, preference] = vi.mocked(agentCaller.callTransportLegs).mock.calls[0]!;
+    expect(destinations).toHaveLength(2);
+    expect(destinations[0]!.city).toBe('Comporta');
+    expect(preference).toBe('best');
+  });
+
+  it('G1: callTransportLegs is NOT called for single-destination trips', async () => {
+    // MOCK_TRIP has destinations:[] (treated as single destination)
+    await loop.run(TRIP_ID);
+    expect(agentCaller.callTransportLegs).not.toHaveBeenCalled();
+  });
+
+  // ── G3: cityTransition overwritten by real transport data ─────────
+
+  it('G3: logistics transport options override LLM-invented cityTransition in merged proposal', async () => {
+    vi.mocked(agentCaller.callOrchestratorPropose).mockResolvedValue({
+      ...PROPOSAL_RESULT,
+      content: {
+        itinerary: [{
+          day: 1, city: 'Mertola', cityTransition: { to: 'Barcelona', travelTime: 'direct train 3h (invented)' },
+          activities: [],
+        }],
+      },
+    });
+    vi.mocked(agentCaller.callLogisticsAgent).mockResolvedValue({
+      ...LOGISTICS_APPROVED,
+      content: {
+        verdict: { approved: true, warnings: [], reasoning: 'feasible' },
+        transportOptions: {
+          '1': [{ mode: 'flight', provider: 'TAP', durationMinutes: 120, priceEur: 95, warnings: [] }],
+        },
+      },
+    });
+
+    await loop.run(TRIP_ID);
+
+    // The proposal passed to finance should have the real transport data
+    const financeCall = vi.mocked(agentCaller.callFinanceAgent).mock.calls[0]!;
+    const proposalPassedToFinance = financeCall[2] as Record<string, unknown>;
+    const itinerary = proposalPassedToFinance['itinerary'] as Array<Record<string, unknown>>;
+    const day1 = itinerary?.[0] as Record<string, unknown> | undefined;
+    const cityTransition = day1?.['cityTransition'] as Record<string, unknown> | undefined;
+    // cityTransition should now be from real transport data (flight 2h), not the invented "direct train 3h"
+    expect(String(cityTransition?.['travelTime'] ?? '')).toContain('2h');
+    expect(String(cityTransition?.['travelTime'] ?? '')).not.toContain('invented');
   });
 });

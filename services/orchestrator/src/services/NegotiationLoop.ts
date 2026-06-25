@@ -10,6 +10,7 @@ import type {
   NegotiationCompleteEvent,
   AgentEvent,
 } from '@itinera/shared';
+import type { Trip } from '@/entities/Trip';
 import { config } from '@/config';
 import { StateManager } from '@/services/StateManager';
 import { AgentCaller } from '@/services/AgentCaller';
@@ -73,7 +74,10 @@ export class NegotiationLoop extends BaseService {
         transportPreference: (trip?.transportPreference as TransportMode) ?? 'best',
         groupSize: trip?.travellers?.length ?? 1,
       };
-      const agentContext = this.buildAgentContext(trip);
+
+      // Pre-resolve real transport legs before proposal so the LLM can't invent routes.
+      const confirmedLegs = await this.preResolveTransportLegs(trip, tripContext);
+      const agentContext = this.buildAgentContext(trip, confirmedLegs);
 
       // --- Phase A: setup (run once) ---
       const prefs = await this.runPreferencesRound(tripId, ROUND_PREFERENCES, agentContext);
@@ -459,9 +463,19 @@ export class NegotiationLoop extends BaseService {
           cost: best.priceEur,
           currency: 'EUR',
           warnings: best.warnings,
+          segments: best.segments,
+          displaySummary: best.displaySummary,
           alternatives: options.slice(1),
         },
       ];
+      // G3: override LLM-invented cityTransition with real API data.
+      const h = Math.floor(best.durationMinutes / 60);
+      const m = best.durationMinutes % 60;
+      const timeStr = m > 0 ? `${h}h${m}m` : `${h}h`;
+      day['cityTransition'] = {
+        to,
+        travelTime: `${timeStr} by ${best.mode}`,
+      };
     }
     return { ...proposal, itinerary };
   }
@@ -522,7 +536,29 @@ export class NegotiationLoop extends BaseService {
     }
   }
 
-  private buildAgentContext(trip: import('@/entities/Trip').Trip | null): string {
+  private async preResolveTransportLegs(
+    trip: Trip | null,
+    tripContext: AgentTripContext,
+  ): Promise<Record<string, TransportOption[]>> {
+    const destinations = trip?.destinations ?? [];
+    if (destinations.length < 2) return {};
+    try {
+      const legs = await this.agentCaller.callTransportLegs(
+        destinations.map((d) => ({ city: d.city ?? d.country, country: d.country })),
+        tripContext.transportPreference ?? 'best',
+      );
+      this.logger.info('Pre-resolved transport legs for propose context', {
+        tripId: trip?.id,
+        pairs: Object.keys(legs).length,
+      });
+      return legs;
+    } catch (err) {
+      this.logger.warn('Transport pre-resolution failed — LLM will estimate routes', { error: String(err) });
+      return {};
+    }
+  }
+
+  private buildAgentContext(trip: Trip | null, confirmedLegs: Record<string, TransportOption[]> = {}): string {
     if (!trip) return '';
 
     const destinations = trip.destinations ?? [];
@@ -566,6 +602,24 @@ export class NegotiationLoop extends BaseService {
       lines.push(`\nLOGISTICS NOTE: Plan transit between destinations. Each country segment has a fixed duration — do not extend or skip any leg.`);
     }
 
+    // Inject confirmed transport legs so the LLM uses real routes instead of inventing them.
+    const legKeys = Object.keys(confirmedLegs);
+    if (legKeys.length > 0) {
+      lines.push('\nCONFIRMED TRANSPORT LEGS (real routes resolved from APIs — use these, do not invent alternatives):');
+      for (const key of legKeys) {
+        const options = confirmedLegs[key];
+        if (!options || options.length === 0) continue;
+        const best = options[0];
+        if (!best) continue;
+        const bestDesc = this.formatTransportOption(best);
+        lines.push(`  ${key}: ${bestDesc}`);
+        const alts = options.slice(1, 3);
+        if (alts.length > 0) {
+          lines.push(`    Alternatives: ${alts.map((a) => this.formatTransportOption(a)).join(' | ')}`);
+        }
+      }
+    }
+
     if (trip.travellers?.length) {
       lines.push('\nGROUP PREFERENCES:');
       for (const t of trip.travellers) {
@@ -581,5 +635,16 @@ export class NegotiationLoop extends BaseService {
     }
 
     return lines.join('\n');
+  }
+
+  private formatTransportOption(opt: TransportOption): string {
+    if (opt.displaySummary) return opt.displaySummary;
+    const h = Math.floor(opt.durationMinutes / 60);
+    const m = opt.durationMinutes % 60;
+    const time = m > 0 ? `${h}h${m}m` : `${h}h`;
+    const cost = opt.priceEur !== undefined ? `, ~€${opt.priceEur}/person` : '';
+    const dep = opt.departureTime ? `, depart ${opt.departureTime}` : '';
+    const provider = opt.provider ? ` via ${opt.provider}` : '';
+    return `${opt.mode}${provider}, ${time}${cost}${dep}`;
   }
 }
