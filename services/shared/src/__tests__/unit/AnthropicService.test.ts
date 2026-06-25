@@ -48,6 +48,22 @@ describe('AnthropicService — happy path', () => {
     );
   });
 
+  it('defaults to 4096 max_tokens when no override is given', async () => {
+    mockCreate.mockResolvedValue(HAPPY_RESPONSE);
+
+    await service.complete('sys', [{ role: 'user', content: 'hi' }]);
+
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ max_tokens: 4096 }));
+  });
+
+  it('honours a maxTokens override for large itinerary output', async () => {
+    mockCreate.mockResolvedValue(HAPPY_RESPONSE);
+
+    await service.complete('sys', [{ role: 'user', content: 'hi' }], { maxTokens: 8192 });
+
+    expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ max_tokens: 8192 }));
+  });
+
   it('returns empty string when response has no text block', async () => {
     mockCreate.mockResolvedValue({
       content: [],

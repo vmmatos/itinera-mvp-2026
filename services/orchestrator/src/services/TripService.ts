@@ -8,6 +8,7 @@ import { AgentLog } from '@/entities/AgentLog';
 import { TripMetric } from '@/entities/TripMetric';
 import { StateManager } from '@/services/StateManager';
 import { NegotiationLoop } from '@/services/NegotiationLoop';
+import { DestinationParser } from '@/services/DestinationParser';
 import type { CreateTripInput } from '@/validation/trip.schemas';
 
 export interface TripSummary {
@@ -66,19 +67,38 @@ export interface TripDebugView extends TripSummary {
 }
 
 export class TripService extends BaseService {
+  private readonly destinationParser: DestinationParser;
+
   constructor(
     private readonly stateManager: StateManager,
     private readonly negotiationLoop: NegotiationLoop,
+    destinationParser?: DestinationParser,
   ) {
     super('trip-service');
+    this.destinationParser = destinationParser ?? new DestinationParser();
   }
 
   async createTrip(ownerId: string, input: CreateTripInput): Promise<TripSummary> {
     const tripRepo = AppDataSource.getRepository(Trip);
     const travellerRepo = AppDataSource.getRepository(Traveller);
 
+    // Structured destinations drive nights-per-city enforcement. When the form
+    // only sends a free-text region, parse it so every leg (incl. the last city)
+    // is captured instead of being silently improvised by the AI.
+    let destinationsInput = input.destinations ?? [];
+    if (destinationsInput.length === 0 && input.region) {
+      const requestedNights = this.requestedNights(input);
+      if (requestedNights > 0) {
+        destinationsInput = await this.destinationParser.parse(input.region, requestedNights);
+        this.logger.info('Parsed destinations from region', {
+          region: input.region,
+          destinations: destinationsInput.map((d) => `${d.city}/${d.country}·${d.nights}n`).join(', '),
+        });
+      }
+    }
+
     const trip = await AppDataSource.transaction(async (manager) => {
-      const destinations = input.destinations ?? [];
+      const destinations = destinationsInput;
       const totalNights = destinations.reduce((s, d) => s + d.nights, 0);
       const endDate = input.endDate
         ?? (input.startDate && totalNights > 0
@@ -116,6 +136,20 @@ export class TripService extends BaseService {
 
     this.logger.info('Trip created', { tripId: trip.id, ownerId });
     return this.toSummary(trip);
+  }
+
+  // Read-only parse so the form can echo the understood destinations (option-1 hybrid).
+  async previewDestinations(region: string, nights: number): Promise<ReturnType<DestinationParser['parseHeuristic']>> {
+    return this.destinationParser.parse(region, Math.max(1, nights));
+  }
+
+  // Nights requested by the user: flexible window days, or fixed-date span.
+  private requestedNights(input: CreateTripInput): number {
+    if (input.dateInput?.mode === 'flexible') return input.dateInput.days;
+    const start = input.startDate ? new Date(input.startDate) : null;
+    const end = input.endDate ? new Date(input.endDate) : null;
+    if (start && end) return Math.max(0, Math.round((end.getTime() - start.getTime()) / 86_400_000));
+    return 0;
   }
 
   async getTripProposals(tripId: string): Promise<Proposal[]> {

@@ -1,7 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import type { AgentEvent, AgentName, AIMessage, IAIProvider } from '@itinera/shared';
-import { BaseOrchestratorAgent } from '@/agents/BaseOrchestratorAgent';
+import { BaseOrchestratorAgent, ITINERARY_MAX_TOKENS } from '@/agents/BaseOrchestratorAgent';
 import { RabbitMQPublisher } from '@/services/RabbitMQPublisher';
 import { RedisService } from '@/services/RedisService';
 import { ProposalStorageService } from '@/services/ProposalStorageService';
@@ -40,7 +40,8 @@ export class ProposalRefiner extends BaseOrchestratorAgent {
         },
       ];
 
-      return this.callAIAndBuild(tripId, round, 'refine', messages);
+      // Full itinerary JSON again — keep the large output budget so refinements don't truncate.
+      return this.callAIAndBuild(tripId, round, 'refine', messages, ITINERARY_MAX_TOKENS);
     });
   }
 }

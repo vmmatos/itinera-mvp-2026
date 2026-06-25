@@ -21,7 +21,6 @@ vi.mock('@itinera/shared', async (importOriginal) => {
 
 import { TransportService } from '@/services/TransportService';
 import type { MapService } from '@/services/MapService';
-import { config } from '@/config';
 
 const SKYSCANNER_OK = {
   data: {
@@ -41,31 +40,6 @@ const SKYSCANNER_OK = {
   },
 };
 
-const SKYSCANNER_MULTI = {
-  data: {
-    itineraries: [
-      {
-        price: { amount: 120, currency: 'EUR' },
-        legs: [{
-          durationInMinutes: 90,
-          departure: '2026-08-01T14:00:00',
-          arrival: '2026-08-01T15:30:00',
-          segments: [{ flightNumber: 'IB456' }],
-        }],
-      },
-      {
-        price: { amount: 89, currency: 'EUR' },
-        legs: [{
-          durationInMinutes: 125,
-          departure: '2026-08-01T06:00:00',
-          arrival: '2026-08-01T08:05:00',
-          segments: [{ flightNumber: 'FR1234' }],
-        }],
-      },
-    ],
-  },
-};
-
 const DIRECTIONS_OK = {
   status: 'OK',
   routes: [
@@ -76,16 +50,28 @@ const DIRECTIONS_OK = {
           departure_time: { text: '09:30' },
           arrival_time: { text: '12:15' },
           steps: [
-            {
-              travel_mode: 'TRANSIT',
-              transit_details: { line: { name: 'AVE Madrid-Barcelona' } },
-            },
+            { travel_mode: 'TRANSIT', transit_details: { line: { name: 'AVE Madrid-Barcelona' } } },
           ],
         },
       ],
     },
   ],
 };
+
+// Branch the fetch mock on URL so each mode can be controlled independently.
+// `sky`/`directions` may be a payload (resolves ok) or an Error (rejects).
+function stubFetch(opts: { sky?: unknown; directions?: unknown }): void {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn((url: string) => {
+      const isFlight = String(url).includes('searchFlights');
+      const val = isFlight ? opts.sky : opts.directions;
+      if (val === undefined) return Promise.reject(new Error('not configured'));
+      if (val instanceof Error) return Promise.reject(val);
+      return Promise.resolve({ ok: true, json: () => Promise.resolve(val), text: () => Promise.resolve('') });
+    }),
+  );
+}
 
 function makeMapServiceMock(result?: Partial<Awaited<ReturnType<MapService['getTravelTime']>>>): MapService {
   return {
@@ -114,238 +100,100 @@ describe('TransportService', () => {
     vi.clearAllMocks();
   });
 
-  // ── Car ──────────────────────────────────────────────────────
-  describe('resolveTransportOptions — car', () => {
-    it('delegates to MapService.getTravelTime with driving mode', async () => {
-      const result = await service.resolveTransportOptions(
-        { from: 'Madrid', to: 'Barcelona' },
-        'car',
-      );
-
-      expect(mapService.getTravelTime).toHaveBeenCalledWith('Madrid', 'Barcelona', 'driving');
-      expect(result).toHaveLength(1);
-      expect(result[0].mode).toBe('car');
-      expect(result[0].durationMinutes).toBe(120);
-      expect(result[0].provider).toBe('Google Maps');
+  // ── Mode parsing (isolated by failing the other modes) ───────────────
+  describe('flight parsing', () => {
+    beforeEach(() => {
+      // isolate flight: train + car disabled
+      stubFetch({ sky: SKYSCANNER_OK, directions: new Error('no train') });
+      (mapService.getTravelTime as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('no car'));
     });
 
-    it('does not set priceEur (self-drive)', async () => {
-      const result = await service.resolveTransportOptions(
-        { from: 'Madrid', to: 'Barcelona' },
-        'car',
-      );
-      expect(result[0].priceEur).toBeUndefined();
+    it('parses a Skyscanner flight option', async () => {
+      const result = await service.resolveTransportOptions({ from: 'MAD', to: 'BCN', departureDateIso: '2026-08-01' }, 'best');
+      const flight = result.find((o) => o.mode === 'flight');
+      expect(flight).toBeDefined();
+      expect(flight!.priceEur).toBe(90);
+      expect(flight!.durationMinutes).toBe(125);
+      expect(flight!.flightNumber).toBe('FR1234');
+      expect(flight!.provider).toBe('Skyscanner');
+      expect(flight!.departureTime).toBe('06:00');
+      expect(flight!.arrivalTime).toBe('08:05');
+    });
+  });
+
+  describe('train parsing', () => {
+    beforeEach(() => {
+      stubFetch({ sky: new Error('no flight'), directions: DIRECTIONS_OK });
+      (mapService.getTravelTime as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('no car'));
     });
 
-    it('adds >4h warning when driving exceeds 240 minutes', async () => {
+    it('parses a Google Directions transit option', async () => {
+      const result = await service.resolveTransportOptions({ from: 'Madrid', to: 'Barcelona' }, 'best');
+      const train = result.find((o) => o.mode === 'train');
+      expect(train).toBeDefined();
+      expect(train!.durationMinutes).toBe(165); // ceil(9900 / 60)
+      expect(train!.departureTime).toBe('09:30');
+      expect(train!.arrivalTime).toBe('12:15');
+      expect(train!.trainLine).toBe('AVE Madrid-Barcelona');
+    });
+
+    it('requests transit mode with rail + alternatives', async () => {
+      await service.resolveTransportOptions({ from: 'Madrid', to: 'Barcelona' }, 'best');
+      const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+      const directionsUrl = fetchMock.mock.calls.map((c) => String(c[0])).find((u) => !u.includes('searchFlights'));
+      expect(directionsUrl).toContain('mode=transit');
+      expect(directionsUrl).toContain('transit_mode=rail');
+      expect(directionsUrl).toContain('alternatives=true');
+    });
+  });
+
+  describe('car', () => {
+    it('returns a car option from MapService when flights/trains fail', async () => {
+      stubFetch({ sky: new Error('x'), directions: new Error('y') });
+      const result = await service.resolveTransportOptions({ from: 'Madrid', to: 'Barcelona' }, 'best');
+      const car = result.find((o) => o.mode === 'car');
+      expect(car).toBeDefined();
+      expect(car!.durationMinutes).toBe(120);
+      expect(car!.priceEur).toBeUndefined();
+    });
+
+    it('adds a >4h warning when driving exceeds 240 minutes', async () => {
+      stubFetch({ sky: new Error('x'), directions: new Error('y') });
       mapService = makeMapServiceMock({ durationMinutes: 270 });
       service = new TransportService(mapService);
-
-      const result = await service.resolveTransportOptions(
-        { from: 'Lisbon', to: 'Porto' },
-        'car',
-      );
-
-      expect(result[0].warnings.some((w) => w.includes('4h'))).toBe(true);
-    });
-
-    it('no warnings for trips under 4h', async () => {
-      const result = await service.resolveTransportOptions(
-        { from: 'Madrid', to: 'Barcelona' },
-        'car',
-      );
-      expect(result[0].warnings).toHaveLength(0);
-    });
-
-    it('propagates MapService errors', async () => {
-      (mapService.getTravelTime as ReturnType<typeof vi.fn>).mockRejectedValue(
-        new Error('No route found'),
-      );
-
-      await expect(
-        service.resolveTransportOptions({ from: 'A', to: 'B' }, 'car'),
-      ).rejects.toThrow('No route found');
+      const result = await service.resolveTransportOptions({ from: 'Lisbon', to: 'Porto' }, 'best');
+      const car = result.find((o) => o.mode === 'car');
+      expect(car!.warnings.some((w) => w.includes('4h'))).toBe(true);
     });
   });
 
-  // ── Flight ───────────────────────────────────────────────────
-  describe('resolveTransportOptions — flight', () => {
-    it('returns a TransportOption array with mode=flight on Skyscanner success', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve(SKYSCANNER_OK),
-        text: () => Promise.resolve(''),
-      }));
-
-      const result = await service.resolveTransportOptions(
-        { from: 'Madrid', to: 'Barcelona', departureDateIso: '2026-08-01' },
-        'flight',
-      );
-
-      expect(result[0].mode).toBe('flight');
-      expect(result[0].priceEur).toBe(90);
-      expect(result[0].durationMinutes).toBe(125);
-      expect(result[0].flightNumber).toBe('FR1234');
-      expect(result[0].provider).toBe('Skyscanner');
+  // ── Aggregation + resilience ─────────────────────────────────────────
+  describe('all modes / resilience', () => {
+    it('returns every available mode as an alternative', async () => {
+      stubFetch({ sky: SKYSCANNER_OK, directions: DIRECTIONS_OK });
+      const result = await service.resolveTransportOptions({ from: 'Madrid', to: 'Barcelona' }, 'best');
+      const modes = result.map((o) => o.mode);
+      expect(modes).toContain('flight');
+      expect(modes).toContain('train');
+      expect(modes).toContain('car');
     });
 
-    it('extracts departure and arrival times from ISO timestamp', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve(SKYSCANNER_OK),
-        text: () => Promise.resolve(''),
-      }));
-
-      const result = await service.resolveTransportOptions(
-        { from: 'Madrid', to: 'Barcelona' },
-        'flight',
-      );
-
-      expect(result[0].departureTime).toBe('06:00');
-      expect(result[0].arrivalTime).toBe('08:05');
-    });
-
-    it('returns multiple options sorted by departure time', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve(SKYSCANNER_MULTI),
-        text: () => Promise.resolve(''),
-      }));
-
-      const result = await service.resolveTransportOptions(
-        { from: 'MAD', to: 'BCN' },
-        'flight',
-      );
-
-      expect(result).toHaveLength(2);
-      // Sorted by departure time: FR1234 at 06:00 before IB456 at 14:00
-      expect(result[0].flightNumber).toBe('FR1234');
-      expect(result[0].departureTime).toBe('06:00');
-      expect(result[1].flightNumber).toBe('IB456');
-      expect(result[1].departureTime).toBe('14:00');
-    });
-
-    it('throws when Skyscanner key is empty', async () => {
-      const savedKey = config.SKYSCANNER_RAPIDAPI_KEY;
-      (config as Record<string, unknown>).SKYSCANNER_RAPIDAPI_KEY = '';
-      try {
-        await expect(
-          service.resolveTransportOptions({ from: 'MAD', to: 'BCN' }, 'flight'),
-        ).rejects.toThrow('Skyscanner API key not configured');
-      } finally {
-        (config as Record<string, unknown>).SKYSCANNER_RAPIDAPI_KEY = savedKey;
-      }
-    });
-
-    it('throws when Skyscanner returns HTTP 429', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-        ok: false,
-        status: 429,
-        text: () => Promise.resolve('Too Many Requests'),
-      }));
-
-      await expect(
-        service.resolveTransportOptions({ from: 'MAD', to: 'BCN' }, 'flight'),
-      ).rejects.toThrow('429');
-    });
-
-    it('throws when no itineraries returned', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ data: { itineraries: [] } }),
-        text: () => Promise.resolve(''),
-      }));
-
-      await expect(
-        service.resolveTransportOptions({ from: 'MAD', to: 'BCN' }, 'flight'),
-      ).rejects.toThrow('No flight found');
-    });
-  });
-
-  // ── Train ────────────────────────────────────────────────────
-  describe('resolveTransportOptions — train', () => {
-    it('calls Directions API with transit mode and alternatives=true', async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve(DIRECTIONS_OK),
-        text: () => Promise.resolve(''),
-      });
-      vi.stubGlobal('fetch', mockFetch);
-
-      await service.resolveTransportOptions({ from: 'Madrid', to: 'Barcelona' }, 'train');
-
-      const url = (mockFetch.mock.calls[0] as [string])[0] as string;
-      expect(url).toContain('mode=transit');
-      expect(url).toContain('transit_mode=rail');
-      expect(url).toContain('alternatives=true');
-    });
-
-    it('returns mode=train with duration and transit details', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve(DIRECTIONS_OK),
-        text: () => Promise.resolve(''),
-      }));
-
-      const result = await service.resolveTransportOptions(
-        { from: 'Madrid', to: 'Barcelona' },
-        'train',
-      );
-
-      expect(result[0].mode).toBe('train');
-      expect(result[0].durationMinutes).toBe(165); // ceil(9900 / 60)
-      expect(result[0].departureTime).toBe('09:30');
-      expect(result[0].arrivalTime).toBe('12:15');
-      expect(result[0].trainLine).toBe('AVE Madrid-Barcelona');
-      expect(result[0].provider).toBe('Google Maps');
-    });
-
-    it('throws on ZERO_RESULTS', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ status: 'ZERO_RESULTS', routes: [] }),
-        text: () => Promise.resolve(''),
-      }));
-
-      await expect(
-        service.resolveTransportOptions({ from: 'A', to: 'B' }, 'train'),
-      ).rejects.toThrow('No train route found');
-    });
-
-    it('throws on non-OK API status', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve({ status: 'REQUEST_DENIED' }),
-        text: () => Promise.resolve(''),
-      }));
-
-      await expect(
-        service.resolveTransportOptions({ from: 'A', to: 'B' }, 'train'),
-      ).rejects.toThrow('REQUEST_DENIED');
-    });
-  });
-
-  // ── Best ─────────────────────────────────────────────────────
-  describe('resolveTransportOptions — best', () => {
-    it('queries all three modes in parallel via Promise.allSettled', async () => {
-      const mockFetch = vi.fn()
-        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(SKYSCANNER_OK), text: () => Promise.resolve('') })
-        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(DIRECTIONS_OK), text: () => Promise.resolve('') });
-      vi.stubGlobal('fetch', mockFetch);
-
-      const result = await service.resolveTransportOptions(
-        { from: 'Madrid', to: 'Barcelona' },
-        'best',
-      );
-
-      // Returns sorted array of all available options
-      expect(Array.isArray(result)).toBe(true);
+    it('skips a failed mode without throwing while others succeed', async () => {
+      stubFetch({ sky: new Error('429'), directions: DIRECTIONS_OK });
+      const result = await service.resolveTransportOptions({ from: 'Madrid', to: 'Barcelona' }, 'best');
+      expect(result.find((o) => o.mode === 'flight')).toBeUndefined();
       expect(result.length).toBeGreaterThan(0);
-      // flight (Skyscanner POST) + train (Directions GET) = 2 fetch calls; car uses MapService (no fetch)
-      expect(mockFetch).toHaveBeenCalledTimes(2);
     });
 
-    it('picks cheapest option first when price data available', async () => {
+    it('throws only when every mode fails', async () => {
+      stubFetch({ sky: new Error('x'), directions: new Error('y') });
+      (mapService.getTravelTime as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('Maps down'));
+      await expect(
+        service.resolveTransportOptions({ from: 'A', to: 'B' }, 'best'),
+      ).rejects.toThrow('No transport options found');
+    });
+
+    it("ranks cheapest/fastest first for 'best' (no preference)", async () => {
       const cheapSky = {
         data: {
           itineraries: [{
@@ -354,123 +202,61 @@ describe('TransportService', () => {
           }],
         },
       };
-      vi.stubGlobal('fetch', vi.fn()
-        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(cheapSky), text: () => Promise.resolve('') })
-        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(DIRECTIONS_OK), text: () => Promise.resolve('') }),
-      );
-
-      // Car: 120 min, no price → score = 0*0.6 + 2*40 = 80
-      // Train: 165 min, no price → score = 0*0.6 + 2.75*40 = 110
-      // Flight: 55 min, €45 → score = 45*0.6 + 0.917*40 = 27+36.7 = 63.7  ← wins
-      const result = await service.resolveTransportOptions(
-        { from: 'Madrid', to: 'Barcelona' },
-        'best',
-      );
-
+      stubFetch({ sky: cheapSky, directions: DIRECTIONS_OK });
+      const result = await service.resolveTransportOptions({ from: 'Madrid', to: 'Barcelona' }, 'best');
       expect(result[0].mode).toBe('flight');
       expect(result[0].priceEur).toBe(45);
     });
-
-    it('falls back to car when both flight and train fail', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network error')));
-
-      const result = await service.resolveTransportOptions(
-        { from: 'Madrid', to: 'Barcelona' },
-        'best',
-      );
-
-      expect(result[0].mode).toBe('car');
-    });
-
-    it('skips flight when Skyscanner returns 429 and picks best remaining', async () => {
-      vi.stubGlobal('fetch', vi.fn()
-        .mockResolvedValueOnce({ ok: false, status: 429, text: () => Promise.resolve('rate limited') })
-        .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve(DIRECTIONS_OK), text: () => Promise.resolve('') }),
-      );
-
-      const result = await service.resolveTransportOptions(
-        { from: 'Madrid', to: 'Barcelona' },
-        'best',
-      );
-
-      expect(['train', 'car']).toContain(result[0].mode);
-    });
-
-    it('throws when all options fail', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network error')));
-      (mapService.getTravelTime as ReturnType<typeof vi.fn>).mockRejectedValue(
-        new Error('Maps down'),
-      );
-
-      await expect(
-        service.resolveTransportOptions({ from: 'A', to: 'B' }, 'best'),
-      ).rejects.toThrow('No transport options found');
-    });
   });
 
-  // ── Warning logic ─────────────────────────────────────────────
-  describe('warning generation', () => {
-    it('adds >4h warning for flight over 240 minutes', async () => {
-      const longFlight = {
-        data: {
-          itineraries: [{
-            price: { amount: 199, currency: 'EUR' },
-            legs: [{
-              durationInMinutes: 420,
-              departure: '2026-08-01T06:00:00',
-              arrival: '2026-08-01T13:00:00',
-              segments: [{ flightNumber: 'LH100' }],
-            }],
-          }],
-        },
+  // ── F4: preferred mode favoured, alternatives still shown ────────────
+  describe('preference bias', () => {
+    it('ranks the preferred mode first on a near-tie, keeping alternatives', async () => {
+      // Flight slightly cheaper than train; with train preference the discount lifts train to first.
+      const sky = {
+        data: { itineraries: [{ price: { amount: 80, currency: 'EUR' }, legs: [{ durationInMinutes: 90, departure: '2026-08-01T06:00:00', arrival: '2026-08-01T07:30:00', segments: [{ flightNumber: 'FR1' }] }] }] },
       };
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve(longFlight),
-        text: () => Promise.resolve(''),
-      }));
+      const directions = {
+        status: 'OK',
+        routes: [{ legs: [{ duration: { value: 6000 }, departure_time: { text: '08:00' }, arrival_time: { text: '09:40' }, steps: [{ travel_mode: 'TRANSIT', transit_details: { line: { name: 'AVE' } } }] }] }],
+      };
+      stubFetch({ sky, directions });
+      (mapService.getTravelTime as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('no car'));
 
-      const result = await service.resolveTransportOptions(
-        { from: 'Lisbon', to: 'Tokyo' },
-        'flight',
-      );
-
-      expect(result[0].warnings.some((w) => w.includes('4h'))).toBe(true);
+      const result = await service.resolveTransportOptions({ from: 'Madrid', to: 'Barcelona' }, 'train');
+      expect(result[0].mode).toBe('train');
+      // alternatives still present
+      expect(result.find((o) => o.mode === 'flight')).toBeDefined();
     });
 
-    it('no warnings for flight under 4h', async () => {
-      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve(SKYSCANNER_OK),
-        text: () => Promise.resolve(''),
-      }));
+    it('still lets a clearly better option beat the preferred mode', async () => {
+      // Flight much cheaper + faster than train; even with train preference, flight wins.
+      const sky = {
+        data: { itineraries: [{ price: { amount: 30, currency: 'EUR' }, legs: [{ durationInMinutes: 50, departure: '2026-08-01T06:00:00', arrival: '2026-08-01T06:50:00', segments: [{ flightNumber: 'FR1' }] }] }] },
+      };
+      const directions = {
+        status: 'OK',
+        routes: [{ legs: [{ duration: { value: 18000 }, departure_time: { text: '08:00' }, arrival_time: { text: '13:00' }, steps: [{ travel_mode: 'TRANSIT', transit_details: { line: { name: 'Regional' } } }] }] }],
+      };
+      stubFetch({ sky, directions });
+      (mapService.getTravelTime as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('no car'));
 
-      const result = await service.resolveTransportOptions(
-        { from: 'Madrid', to: 'Barcelona' },
-        'flight',
-      );
-
-      expect(result[0].warnings).toHaveLength(0);
+      const result = await service.resolveTransportOptions({ from: 'Madrid', to: 'Barcelona' }, 'train');
+      expect(result[0].mode).toBe('flight');
     });
   });
 
-  // ── Skyscanner fetch payload ──────────────────────────────────
+  // ── Skyscanner payload contract ──────────────────────────────────────
   describe('Skyscanner API call', () => {
     it('sends POST with correct headers and body', async () => {
-      const mockFetch = vi.fn().mockResolvedValue({
-        ok: true,
-        json: () => Promise.resolve(SKYSCANNER_OK),
-        text: () => Promise.resolve(''),
-      });
-      vi.stubGlobal('fetch', mockFetch);
+      stubFetch({ sky: SKYSCANNER_OK, directions: new Error('no train') });
+      (mapService.getTravelTime as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('no car'));
 
-      await service.resolveTransportOptions(
-        { from: 'Lisbon', to: 'Madrid', departureDateIso: '2026-09-10' },
-        'flight',
-      );
+      await service.resolveTransportOptions({ from: 'Lisbon', to: 'Madrid', departureDateIso: '2026-09-10' }, 'best');
 
-      const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
-      expect(url).toContain('searchFlights');
+      const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+      const flightCall = fetchMock.mock.calls.find((c) => String(c[0]).includes('searchFlights')) as [string, RequestInit];
+      const init = flightCall[1];
       expect((init.headers as Record<string, string>)['X-RapidAPI-Key']).toBe('test-sky-key');
       expect((init.headers as Record<string, string>)['X-RapidAPI-Host']).toBe('skyscanner50.p.rapidapi.com');
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;

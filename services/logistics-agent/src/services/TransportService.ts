@@ -40,6 +40,11 @@ interface GoogleDirectionsResponse {
   routes?: Array<{ legs?: GoogleDirectionsLeg[] }>;
 }
 
+/** Rough European intercity rail fare estimate when no API fare is available. */
+function estimateRailFareEur(durationMinutes: number): number {
+  return Math.round(8 + durationMinutes * 0.4);
+}
+
 export class TransportService extends BaseService {
   constructor(private readonly mapService: MapService) {
     super('transport-service');
@@ -49,12 +54,10 @@ export class TransportService extends BaseService {
     pair: CityPair,
     preference: TransportMode,
   ): Promise<TransportOption[]> {
-    switch (preference) {
-      case 'car':    return [await this.fetchCar(pair)];
-      case 'flight': return this.fetchFlights(pair);
-      case 'train':  return this.fetchTrains(pair);
-      case 'best':   return this.fetchBest(pair);
-    }
+    // Always offer every mode as an alternative; the user's preferred mode is
+    // favoured in the ranking (F4) but a clearly better option can still win.
+    const options = await this.fetchBest(pair);
+    return this.sortByScore(options, preference === 'best' ? undefined : preference);
   }
 
   private async fetchFlights(pair: CityPair): Promise<TransportOption[]> {
@@ -153,10 +156,13 @@ export class TransportService extends BaseService {
       const trainLine = transitStep?.transit_details?.line?.name;
       return {
         mode: 'train',
-        provider: 'Google Maps',
+        // Google Directions transit has no fare — estimate it so trains are
+        // priced into the budget and ranked fairly against flights.
+        provider: 'Google Maps (est. fare)',
         durationMinutes,
         departureTime: leg?.departure_time?.text,
         arrivalTime: leg?.arrival_time?.text,
+        priceEur: estimateRailFareEur(durationMinutes),
         trainLine,
         warnings: durationMinutes > 240 ? ['Travel exceeds 4h — consider reducing activities on travel day'] : [],
       };
@@ -194,20 +200,21 @@ export class TransportService extends BaseService {
       throw new Error(`No transport options found from "${pair.from}" to "${pair.to}"`);
     }
 
-    return this.sortByScore(allOptions);
+    return allOptions;
   }
 
-  private sortByScore(options: TransportOption[]): TransportOption[] {
+  // Lower score = better. The preferred mode gets an ~18% discount so it wins
+  // ties and near-ties, but a clearly cheaper/faster option still ranks first.
+  private sortByScore(options: TransportOption[], preference?: TransportMode): TransportOption[] {
     const hasPrice = options.some((o) => o.priceEur !== undefined);
+    const PREFERENCE_DISCOUNT = 0.82;
 
-    if (!hasPrice) {
-      return [...options].sort((a, b) => a.durationMinutes - b.durationMinutes);
-    }
+    const baseScore = (o: TransportOption): number =>
+      hasPrice ? (o.priceEur ?? 999) * 0.6 + (o.durationMinutes / 60) * 40 : o.durationMinutes;
 
-    return [...options].sort((a, b) => {
-      const scoreA = (a.priceEur ?? 999) * 0.6 + (a.durationMinutes / 60) * 40;
-      const scoreB = (b.priceEur ?? 999) * 0.6 + (b.durationMinutes / 60) * 40;
-      return scoreA - scoreB;
-    });
+    const score = (o: TransportOption): number =>
+      preference && o.mode === preference ? baseScore(o) * PREFERENCE_DISCOUNT : baseScore(o);
+
+    return [...options].sort((a, b) => score(a) - score(b));
   }
 }

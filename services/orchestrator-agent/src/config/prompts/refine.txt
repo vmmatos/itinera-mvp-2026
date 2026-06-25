@@ -57,3 +57,5 @@ NEGOTIATION BUDGET: The feedback includes "round" and "remainingRounds". You are
 - When remainingRounds is high (>2): address every financeIssue and logisticsWarning thoroughly.
 - When remainingRounds is low (1–2): you are nearly out of rounds. Accept minor issues and fix ONLY the critical, trip-breaking ones — budget overruns that make the trip unaffordable, and physically impossible logistics (overlapping activities, tight connections under 2h, travel legs over 4h with a packed day). State in refinementSummary which minor issues you deliberately left unresolved and why.
 A finance issue that keeps the trip over budget, or a logistics warning that makes a day physically impossible, is always critical regardless of remainingRounds.
+
+HUMAN PACING: When a logistics warning flags a long travel leg (>4h) on a day, treat that day as a travel day — lighten it to the journey, rest, and at most one light activity (usually dinner). Move displaced activities to a later, lighter day. A traveller arriving after most of a day in transit should rest before dinner, not be sent straight into a packed schedule.

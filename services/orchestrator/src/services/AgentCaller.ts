@@ -16,6 +16,7 @@ export interface AgentTripContext {
   region?: string | null;
   dateInput?: DateInput | null;
   transportPreference?: TransportMode;
+  groupSize?: number;
 }
 
 interface AgentEventLike {
@@ -150,6 +151,7 @@ export class AgentCaller extends BaseService {
         proposal,
         budgetTotal: Number(tripContext?.budgetTotal ?? 5000),
         budgetCurrency: tripContext?.budgetCurrency ?? 'EUR',
+        groupSize: tripContext?.groupSize ?? 1,
         dateInput: tripContext?.dateInput ?? null,
       },
     );

@@ -165,6 +165,31 @@ const goToStep2 = (): void => {
 const store = useTripPlannerStore()
 const api   = useApi()
 
+// ── Destination preview (option-1 hybrid): echo what the system understood ──
+interface ParsedDestination { city: string; country: string; nights: number }
+const parsedDestinations = ref<ParsedDestination[]>([])
+let previewTimer: ReturnType<typeof setTimeout> | null = null
+
+const previewDays = computed(() => (dateMode.value === 'flexible' ? flexDays.value : nights.value))
+
+watch([region, previewDays], () => {
+  if (previewTimer) clearTimeout(previewTimer)
+  const r = region.value.trim()
+  const days = previewDays.value
+  if (!r || days < 1) { parsedDestinations.value = []; return }
+  previewTimer = setTimeout(() => { void fetchDestinationPreview(r, days) }, 500)
+})
+
+const fetchDestinationPreview = async (regionText: string, days: number): Promise<void> => {
+  try {
+    const resp = await api.post<{ success: boolean; data: { destinations: ParsedDestination[] } }>(
+      '/api/v1/trips/preview-destinations',
+      { region: regionText, days },
+    )
+    parsedDestinations.value = resp.data.data.destinations
+  } catch { /* preview is best-effort */ }
+}
+
 const activeTripId = ref<string | null>(null)
 
 // Reopen existing confirmed trip directly at step 4, or pre-fill from lastInput
@@ -1102,6 +1127,23 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
             >
               Destination is required
             </p>
+            <!-- Echo of how the system understood the destinations + nights split -->
+            <div
+              v-if="parsedDestinations.length"
+              style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 0"
+              data-testid="parsed-destinations"
+            >
+              <span class="helper" style="text-transform:none;letter-spacing:0;width:100%;margin-bottom:2px">
+                Understood as:
+              </span>
+              <span
+                v-for="(d, i) in parsedDestinations"
+                :key="i"
+                style="font-family:var(--mono);font-size:var(--t-12);padding:3px 8px;border:var(--hair);border-radius:var(--r-1);background:var(--bg-2)"
+              >
+                {{ d.city }}<template v-if="d.country">, {{ d.country }}</template> · {{ d.nights }}n
+              </span>
+            </div>
           </div>
         </div>
 

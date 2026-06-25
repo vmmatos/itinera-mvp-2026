@@ -2,7 +2,13 @@ import type { Request, Response, NextFunction } from 'express';
 import type { AuthenticatedRequest } from '@itinera/shared';
 import { ok, NotFoundError } from '@itinera/shared';
 import { TripService } from '@/services/TripService';
+import { z } from 'zod';
 import { CreateTripSchema, TripIdParamSchema, UpdateTripStatusSchema } from '@/validation/trip.schemas';
+
+const PreviewDestinationsSchema = z.object({
+  region: z.string().min(1),
+  days: z.number().int().min(1).max(60),
+});
 
 export class TripController {
   constructor(private readonly tripService: TripService) {}
@@ -25,6 +31,16 @@ export class TripController {
       const trip = await this.tripService.createTrip(authedReq.user.sub, input);
       this.tripService.startOrchestration(trip.id);
       res.status(202).json(ok({ tripId: trip.id, status: trip.status, message: 'Trip created' }));
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  previewDestinations = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const { region, days } = PreviewDestinationsSchema.parse(req.body);
+      const destinations = await this.tripService.previewDestinations(region, days);
+      res.json(ok({ destinations }));
     } catch (err) {
       next(err);
     }

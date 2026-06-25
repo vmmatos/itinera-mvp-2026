@@ -4,6 +4,9 @@ import { RabbitMQPublisher } from '@/services/RabbitMQPublisher';
 import { RedisService } from '@/services/RedisService';
 import { ProposalStorageService } from '@/services/ProposalStorageService';
 
+/** Output-token budget for the full itinerary JSON (propose/refine) so it never truncates. */
+export const ITINERARY_MAX_TOKENS = 8192;
+
 export abstract class BaseOrchestratorAgent extends BaseService {
   abstract readonly agentName: AgentName;
   abstract readonly systemPrompt: string;
@@ -22,10 +25,12 @@ export abstract class BaseOrchestratorAgent extends BaseService {
     round: number,
     action: AgentAction,
     messages: AIMessage[],
+    maxTokens?: number,
   ): Promise<AgentEvent> {
     const { content, latencyMs, tokensUsed } = await this.aiProvider.complete(
       this.systemPrompt,
       messages,
+      maxTokens ? { maxTokens } : undefined,
     );
 
     let parsedContent: unknown;

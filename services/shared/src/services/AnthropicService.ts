@@ -1,8 +1,10 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { BaseService } from './BaseService';
-import type { AIMessage, CompletionResult, IAIProvider } from '../types/aiProvider';
+import type { AIMessage, CompletionOptions, CompletionResult, IAIProvider } from '../types/aiProvider';
 
 export type { CompletionResult } from '../types/aiProvider';
+
+const DEFAULT_MAX_TOKENS = 4096;
 
 export class AnthropicService extends BaseService implements IAIProvider {
   private readonly client: Anthropic;
@@ -14,13 +16,17 @@ export class AnthropicService extends BaseService implements IAIProvider {
     this.model = model;
   }
 
-  async complete(systemPrompt: string, messages: AIMessage[]): Promise<CompletionResult> {
+  async complete(
+    systemPrompt: string,
+    messages: AIMessage[],
+    options?: CompletionOptions,
+  ): Promise<CompletionResult> {
     const MAX_RETRIES = 3;
     let lastError: unknown;
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       try {
-        return await this.callOnce(systemPrompt, messages);
+        return await this.callOnce(systemPrompt, messages, options);
       } catch (err: unknown) {
         lastError = err;
         const isLast = attempt === MAX_RETRIES;
@@ -36,12 +42,16 @@ export class AnthropicService extends BaseService implements IAIProvider {
     throw lastError;
   }
 
-  private async callOnce(systemPrompt: string, messages: AIMessage[]): Promise<CompletionResult> {
+  private async callOnce(
+    systemPrompt: string,
+    messages: AIMessage[],
+    options?: CompletionOptions,
+  ): Promise<CompletionResult> {
     const startMs = Date.now();
 
     const response = await this.client.messages.create({
       model: this.model,
-      max_tokens: 4096,
+      max_tokens: options?.maxTokens ?? DEFAULT_MAX_TOKENS,
       system: systemPrompt,
       messages: messages.map((m) => ({ role: m.role, content: m.content })),
     });
@@ -50,6 +60,15 @@ export class AnthropicService extends BaseService implements IAIProvider {
     const tokensUsed = response.usage.input_tokens + response.usage.output_tokens;
     const firstBlock = response.content[0];
     const content = firstBlock?.type === 'text' ? firstBlock.text : '';
+
+    // Truncated output produces invalid JSON downstream — make it loud.
+    if (response.stop_reason === 'max_tokens') {
+      this.logger.warn('Anthropic response hit max_tokens — output truncated', {
+        model: this.model,
+        maxTokens: options?.maxTokens ?? DEFAULT_MAX_TOKENS,
+        tokensUsed,
+      });
+    }
 
     this.logger.debug('Anthropic call complete', {
       model: this.model,

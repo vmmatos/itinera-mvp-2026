@@ -28,8 +28,10 @@ import type { ProposalStorageService } from '@/services/ProposalStorageService';
 const VALID_UUID = '550e8400-e29b-41d4-a716-446655440000';
 
 const MOCK_BREAKDOWN = {
-  byCategory: { activities: 100, meals: 50, transport: 30 },
+  byCategory: { accommodation: 0, activities: 100, meals: 50, transport: 30 },
+  perPersonTotal: 180,
   grandTotal: 180,
+  groupSize: 1,
   currency: 'EUR',
   items: [],
 };

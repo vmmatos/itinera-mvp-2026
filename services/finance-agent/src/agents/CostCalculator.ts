@@ -1,14 +1,22 @@
 export interface CostItem {
-  name: string;
-  cost: number;
-  currency: string;
+  name?: string;
+  // The orchestrator emits per-person costs; older fixtures use a flat `cost`.
+  cost?: number;
+  estimatedCostPerPerson?: number;
+  currency?: string;
 }
 
 export interface TransportItem {
-  from: string;
-  to: string;
-  cost: number;
-  currency: string;
+  from?: string;
+  to?: string;
+  cost?: number;
+  priceEur?: number;
+  currency?: string;
+}
+
+export interface AccommodationItem {
+  pricePerNightPerPerson?: number;
+  nights?: number;
 }
 
 export interface ItineraryDay {
@@ -20,32 +28,65 @@ export interface ItineraryDay {
 
 export interface CostBreakdown {
   byCategory: {
+    accommodation: number;
     activities: number;
     meals: number;
     transport: number;
   };
+  /** Total cost for one traveller across the whole trip. */
+  perPersonTotal: number;
+  /** Total cost for the whole group (perPersonTotal × groupSize) — compared to the budget. */
   grandTotal: number;
+  groupSize: number;
   currency: string;
   items: ItineraryDay[];
 }
 
+function perPersonCost(item: CostItem): number {
+  return item.estimatedCostPerPerson ?? item.cost ?? 0;
+}
+
+function perPersonTransport(item: TransportItem): number {
+  return item.priceEur ?? item.cost ?? 0;
+}
+
 export class CostCalculator {
-  calculate(itinerary: ItineraryDay[], currency: string): CostBreakdown {
+  calculate(
+    itinerary: ItineraryDay[],
+    currency: string,
+    accommodation: AccommodationItem[] = [],
+    groupSize = 1,
+  ): CostBreakdown {
+    const size = Math.max(1, groupSize);
+
     let activities = 0;
     let meals = 0;
     let transport = 0;
 
     for (const day of itinerary) {
-      for (const item of day.activities) activities += item.cost;
-      for (const item of day.meals) meals += item.cost;
-      for (const item of day.transport) transport += item.cost;
+      for (const item of day.activities) activities += perPersonCost(item);
+      for (const item of day.meals) meals += perPersonCost(item);
+      for (const item of day.transport) transport += perPersonTransport(item);
     }
 
-    const grandTotal = activities + meals + transport;
+    const accommodationPerPerson = accommodation.reduce(
+      (sum, a) => sum + (a.pricePerNightPerPerson ?? 0) * (a.nights ?? 0),
+      0,
+    );
+
+    // All categories above are per-person; the budget is the group total.
+    const perPersonTotal = accommodationPerPerson + activities + meals + transport;
 
     return {
-      byCategory: { activities, meals, transport },
-      grandTotal,
+      byCategory: {
+        accommodation: accommodationPerPerson * size,
+        activities: activities * size,
+        meals: meals * size,
+        transport: transport * size,
+      },
+      perPersonTotal,
+      grandTotal: perPersonTotal * size,
+      groupSize: size,
       currency,
       items: itinerary,
     };

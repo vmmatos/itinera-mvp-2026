@@ -9,6 +9,15 @@ export interface CompletionResult {
   tokensUsed: number;
 }
 
+export interface CompletionOptions {
+  /** Max output tokens for this call. Large itinerary JSON needs more than the default. */
+  maxTokens?: number;
+}
+
 export interface IAIProvider {
-  complete(systemPrompt: string, messages: AIMessage[]): Promise<CompletionResult>;
+  complete(
+    systemPrompt: string,
+    messages: AIMessage[],
+    options?: CompletionOptions,
+  ): Promise<CompletionResult>;
 }

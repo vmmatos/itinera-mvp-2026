@@ -71,6 +71,7 @@ export class NegotiationLoop extends BaseService {
         region: trip?.region ?? null,
         dateInput: trip?.dateInput ?? null,
         transportPreference: (trip?.transportPreference as TransportMode) ?? 'best',
+        groupSize: trip?.travellers?.length ?? 1,
       };
       const agentContext = this.buildAgentContext(trip);
 
@@ -92,11 +93,21 @@ export class NegotiationLoop extends BaseService {
       let round = FIRST_NEGOTIATION_ROUND;
 
       for (; round <= config.MAX_ROUNDS; round++) {
-        // Both agents evaluate the SAME proposal at the same time.
-        const [finance, logistics] = await Promise.all([
-          this.reviewFinance(tripId, round, proposal, tripContext),
-          this.validateLogistics(tripId, round, proposal, tripContext),
-        ]);
+        let finance: Awaited<ReturnType<typeof this.reviewFinance>>;
+        let logistics: Awaited<ReturnType<typeof this.validateLogistics>>;
+        if (round === FIRST_NEGOTIATION_ROUND) {
+          // First round: resolve transport first and fold it into the proposal so Finance
+          // prices the real legs into the budget (and can block if it overshoots).
+          logistics = await this.validateLogistics(tripId, round, proposal, tripContext);
+          proposal = this.mergeTransportIntoProposal(proposal, logistics.content);
+          finance = await this.reviewFinance(tripId, round, proposal, tripContext);
+        } else {
+          // Both agents evaluate the SAME proposal at the same time.
+          [finance, logistics] = await Promise.all([
+            this.reviewFinance(tripId, round, proposal, tripContext),
+            this.validateLogistics(tripId, round, proposal, tripContext),
+          ]);
+        }
         totalTokensUsed += finance.tokensUsed + logistics.tokensUsed;
         financeVerdict = finance.verdict;
 
@@ -427,10 +438,30 @@ export class NegotiationLoop extends BaseService {
     for (const day of itinerary) {
       const dayNum = typeof day['day'] === 'number' ? day['day'] : null;
       if (dayNum === null) continue;
-      const best = transportOptions[String(dayNum)]?.[0];
+      const options = transportOptions[String(dayNum)];
+      const best = options?.[0];
       if (!best || typeof best.priceEur !== 'number') continue;
       const to = (day['cityTransition'] as Record<string, unknown> | undefined)?.['to'] ?? '';
-      day['transport'] = [{ from: day['city'] ?? '', to, cost: best.priceEur, currency: 'EUR' }];
+      // Carry the full leg so the timeline shows real provider/number/times/price,
+      // and so Finance prices priceEur into the budget.
+      day['transport'] = [
+        {
+          from: day['city'] ?? '',
+          to,
+          mode: best.mode,
+          provider: best.provider,
+          flightNumber: best.flightNumber,
+          trainLine: best.trainLine,
+          departureTime: best.departureTime,
+          arrivalTime: best.arrivalTime,
+          durationMinutes: best.durationMinutes,
+          priceEur: best.priceEur,
+          cost: best.priceEur,
+          currency: 'EUR',
+          warnings: best.warnings,
+          alternatives: options.slice(1),
+        },
+      ];
     }
     return { ...proposal, itinerary };
   }

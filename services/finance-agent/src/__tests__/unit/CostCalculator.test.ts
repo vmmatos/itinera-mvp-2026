@@ -80,4 +80,42 @@ describe('CostCalculator', () => {
     expect(result.byCategory.transport).toBe(10);
     expect(result.grandTotal).toBe(100);
   });
+
+  // ── F2: real budget — accommodation, group size, estimatedCostPerPerson ──────
+
+  it('reads estimatedCostPerPerson when cost is absent (orchestrator field)', () => {
+    const day: ItineraryDay = {
+      day: 1,
+      activities: [{ activity: 'Museum', estimatedCostPerPerson: 12 } as never],
+      meals: [],
+      transport: [],
+    };
+    const result = calc.calculate([day], 'EUR');
+    expect(result.byCategory.activities).toBe(12);
+  });
+
+  it('includes accommodation (pricePerNightPerPerson × nights) per person', () => {
+    const result = calc.calculate([], 'EUR', [{ pricePerNightPerPerson: 100, nights: 3 }], 1);
+    expect(result.byCategory.accommodation).toBe(300);
+    expect(result.grandTotal).toBe(300);
+  });
+
+  it('multiplies per-person totals by group size for the group budget', () => {
+    const result = calc.calculate([DAY_1], 'EUR', [{ pricePerNightPerPerson: 50, nights: 2 }], 2);
+    // per person: 100 activities/meals/transport + 100 accommodation = 200; × 2 travellers = 400
+    expect(result.perPersonTotal).toBe(200);
+    expect(result.grandTotal).toBe(400);
+    expect(result.groupSize).toBe(2);
+  });
+
+  it('reads transport priceEur from merged logistics legs', () => {
+    const day: ItineraryDay = {
+      day: 1,
+      activities: [],
+      meals: [],
+      transport: [{ from: 'A', to: 'B', priceEur: 89 } as never],
+    };
+    const result = calc.calculate([day], 'EUR', [], 1);
+    expect(result.byCategory.transport).toBe(89);
+  });
 });

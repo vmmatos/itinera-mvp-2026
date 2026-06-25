@@ -3,10 +3,13 @@ import { buildFinanceVerdict } from '@/services/FinanceVerdict';
 import type { CostBreakdown } from '@/agents/CostCalculator';
 import type { BudgetValidation } from '@/agents/BudgetValidator';
 
-function breakdown(activities: number, meals: number, transport: number): CostBreakdown {
+function breakdown(activities: number, meals: number, transport: number, accommodation = 0): CostBreakdown {
+  const grandTotal = accommodation + activities + meals + transport;
   return {
-    byCategory: { activities, meals, transport },
-    grandTotal: activities + meals + transport,
+    byCategory: { accommodation, activities, meals, transport },
+    perPersonTotal: grandTotal,
+    grandTotal,
+    groupSize: 1,
     currency: 'EUR',
     items: [],
   };
