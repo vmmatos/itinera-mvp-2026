@@ -11,6 +11,7 @@ import type { WeatherAnalyzer } from '@/agents/WeatherAnalyzer';
 import type { HolidayService } from '@/services/HolidayService';
 import type { RestrictionsValidator } from '@/validators/RestrictionsValidator';
 import type { TransportService } from '@/services/TransportService';
+import { buildLogisticsVerdict } from '@/services/LogisticsVerdict';
 import { toCountryCode } from '@/utils/countryCodeMapper';
 import { config } from '@/config';
 
@@ -259,13 +260,25 @@ export function createLogisticsRouter(
     const transportCostEur = Object.values(transportOptions)
       .reduce((sum, opts) => sum + (opts[0]?.priceEur ?? 0), 0);
 
+    const validationContent = (validation.content ?? {}) as Record<string, unknown>;
+    const verdict = buildLogisticsVerdict({
+      overallRisk: validationContent['overallRisk'],
+      aiTimingIssues: Array.isArray(validationContent['timingIssues'])
+        ? (validationContent['timingIssues'] as unknown[])
+        : [],
+      timingResult,
+      restrictionWarnings: restrictionsResult.warnings,
+      transportOptions,
+    });
+
     const augmentedValidation = {
       ...validation,
       content: {
-        ...(validation.content as Record<string, unknown>),
+        ...validationContent,
         restrictionWarnings: restrictionsResult.warnings,
         transportOptions,
         transportCostEur: transportCostEur > 0 ? transportCostEur : undefined,
+        verdict,
       },
     };
 

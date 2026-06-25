@@ -274,6 +274,7 @@ interface ProposalEntry {
 
 const liveProposals    = ref<ProposalEntry[]>([])
 const negotiationStatus = ref<string>('negotiating')
+const rejectionReason  = ref<string>('')
 let pollInterval: ReturnType<typeof setInterval> | null = null
 
 const AGENT_COLOUR: Record<string, string> = {
@@ -309,7 +310,7 @@ const startNegotiationPolling = (tripId: string): void => {
   const poll = async (): Promise<void> => {
     try {
       const [tripResp, propResp] = await Promise.all([
-        api.get<{ success: boolean; data: { status: string } }>(`/api/v1/trips/${tripId}`),
+        api.get<{ success: boolean; data: { status: string; rejectionReason?: string | null } }>(`/api/v1/trips/${tripId}`),
         api.get<{ success: boolean; data: ProposalEntry[] }>(`/api/v1/trips/${tripId}/proposals`),
       ])
       negotiationStatus.value = tripResp.data.data.status
@@ -318,6 +319,11 @@ const startNegotiationPolling = (tripId: string): void => {
       if (negotiationStatus.value === 'confirmed') {
         stopPolling()
         setTimeout(() => { step.value = 4 }, 800)
+      } else if (negotiationStatus.value === 'rejected') {
+        // Budget impossible — agents could not reach a bookable plan. Ask to reformulate.
+        rejectionReason.value = tripResp.data.data.rejectionReason
+          || 'Budget unrealistic for this trip — increase the budget or reduce the scope.'
+        stopPolling()
       } else if (negotiationStatus.value === 'cancelled') {
         stopPolling()
       }
@@ -1392,6 +1398,9 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
             <span v-else-if="negotiationStatus === 'cancelled'" style="color:var(--red);font-family:var(--mono);font-size:var(--t-13)">
               ✗ cancelled
             </span>
+            <span v-else-if="negotiationStatus === 'rejected'" style="color:var(--amber, #f59e0b);font-family:var(--mono);font-size:var(--t-13)">
+              ⚠ needs reformulation
+            </span>
           </div>
         </div>
 
@@ -1426,6 +1435,13 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
           <p style="color:var(--red);font-size:var(--t-15);margin:0 0 var(--s-3)">Negotiation failed</p>
           <p class="helper" style="margin:0 0 var(--s-4)">The agents could not agree on an itinerary. Please try again.</p>
           <button class="btn" @click="emit('cancel')">Back to dashboard</button>
+        </div>
+
+        <!-- Rejected state — budget impossible, ask user to reformulate -->
+        <div v-else-if="negotiationStatus === 'rejected'" style="padding:var(--s-6);background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.28);border-radius:var(--r-2);text-align:center">
+          <p style="color:var(--amber, #f59e0b);font-size:var(--t-15);margin:0 0 var(--s-3)">This trip needs reformulating</p>
+          <p class="helper" style="margin:0 0 var(--s-4);text-transform:none;letter-spacing:0">{{ rejectionReason }}</p>
+          <button class="btn" @click="step = 2">Adjust trip &amp; budget</button>
         </div>
 
         <!-- Live event feed -->

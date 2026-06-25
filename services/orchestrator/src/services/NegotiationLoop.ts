@@ -1,5 +1,16 @@
 import { BaseService, PREFERENCE_AGENT_NAMES } from '@itinera/shared';
-import type { AgentName, TransportMode } from '@itinera/shared';
+import type {
+  AgentName,
+  TransportMode,
+  TransportOption,
+  FinanceVerdict,
+  LogisticsVerdict,
+  NegotiationFeedback,
+  RoundCompleteEvent,
+  NegotiationCompleteEvent,
+  AgentEvent,
+} from '@itinera/shared';
+import { config } from '@/config';
 import { StateManager } from '@/services/StateManager';
 import { AgentCaller } from '@/services/AgentCaller';
 import type { AgentTripContext } from '@/services/AgentCaller';
@@ -11,8 +22,20 @@ const ROUTING_KEY_ITINERARY_READY = 'notification.email.itinerary-ready';
 
 const PREFERENCE_AGENTS: AgentName[] = PREFERENCE_AGENT_NAMES;
 
-type RoundName = 'preferences' | 'analyze' | 'propose' | 'finance' | 'logistics' | 'refine';
-const ROUNDS: RoundName[] = ['preferences', 'analyze', 'propose', 'finance', 'logistics', 'refine'];
+// Setup rounds run once before the iterative negotiation begins.
+const ROUND_PREFERENCES = 1;
+const ROUND_ANALYZE = 2;
+const ROUND_PROPOSE = 3;
+const FIRST_NEGOTIATION_ROUND = 4;
+
+interface AgentStep {
+  content: Record<string, unknown>;
+  tokensUsed: number;
+}
+
+interface ReviewStep extends AgentStep {
+  reasoning?: string;
+}
 
 export class NegotiationLoop extends BaseService {
   private tripService?: TripService;
@@ -31,10 +54,10 @@ export class NegotiationLoop extends BaseService {
 
   async run(tripId: string): Promise<void> {
     this.logger.info('Negotiation loop started', { tripId });
+    const loopStart = Date.now();
 
     try {
       // Atomic claim: UPDATE SET status='negotiating' WHERE status='draft'
-      // Prevents concurrent runs from both passing a non-atomic read+write guard
       const claimed = await this.stateManager.claimNegotiating(tripId);
       if (!claimed) {
         this.logger.warn('Negotiation already claimed by another process, skipping', { tripId });
@@ -49,56 +72,133 @@ export class NegotiationLoop extends BaseService {
         dateInput: trip?.dateInput ?? null,
         transportPreference: (trip?.transportPreference as TransportMode) ?? 'best',
       };
-
       const agentContext = this.buildAgentContext(trip);
 
-      let latestProposal: Record<string, unknown> = {};
+      // --- Phase A: setup (run once) ---
+      const prefs = await this.runPreferencesRound(tripId, ROUND_PREFERENCES, agentContext);
+      const analysis = await this.runAnalyzeRound(tripId, ROUND_ANALYZE, [prefs.content]);
+      const proposeStep = await this.runProposeRound(tripId, ROUND_PROPOSE, analysis.content, agentContext);
 
-      for (let i = 0; i < ROUNDS.length; i++) {
-        const round = i + 1;
-        const roundName = ROUNDS[i] as RoundName;
-        this.logger.info('Round started', { tripId, round, roundName });
+      let proposal: Record<string, unknown> = proposeStep.content;
+      let totalTokensUsed = prefs.tokensUsed + analysis.tokensUsed + proposeStep.tokensUsed;
 
-        switch (roundName) {
-          case 'preferences':
-            latestProposal = await this.runPreferencesRound(tripId, round, agentContext);
-            break;
-          case 'analyze':
-            latestProposal = await this.runAnalyzeRound(tripId, round, [latestProposal]);
-            break;
-          case 'propose':
-            latestProposal = await this.runProposeRound(tripId, round, latestProposal, agentContext);
-            break;
-          case 'finance':
-            latestProposal = await this.runFinanceRound(tripId, round, latestProposal, tripContext);
-            break;
-          case 'logistics': {
-            latestProposal = await this.runLogisticsRound(tripId, round, latestProposal, tripContext);
-            try {
-              const logisticsContent = latestProposal['logistics'] as Record<string, unknown> | undefined;
-              const suggested = logisticsContent?.['suggestedDates'] as
-                { startDate: string; endDate: string } | undefined;
-              if (tripContext.dateInput?.mode === 'flexible' && suggested?.startDate && suggested?.endDate) {
-                await this.tripService?.resolveFlexibleDates(tripId, suggested.startDate, suggested.endDate);
-              }
-            } catch (err) {
-              this.logger.warn('Failed to resolve flexible dates from logistics output', { tripId, error: String(err) });
-            }
-            break;
-          }
-          case 'refine':
-            latestProposal = await this.runRefineRound(tripId, round, latestProposal);
-            break;
+      // --- Phase B: iterative negotiation (Finance + Logistics in parallel) ---
+      let financeBlockCount = 0;
+      let logisticsBlockCount = 0;
+      let financeVerdict: FinanceVerdict | null = null;
+      let converged = false;
+      let forcedConvergence = false;
+      let flexibleResolved = false;
+      let round = FIRST_NEGOTIATION_ROUND;
+
+      for (; round <= config.MAX_ROUNDS; round++) {
+        // Both agents evaluate the SAME proposal at the same time.
+        const [finance, logistics] = await Promise.all([
+          this.reviewFinance(tripId, round, proposal, tripContext),
+          this.validateLogistics(tripId, round, proposal, tripContext),
+        ]);
+        totalTokensUsed += finance.tokensUsed + logistics.tokensUsed;
+        financeVerdict = finance.verdict;
+
+        if (!finance.verdict.approved) financeBlockCount++;
+        if (!logistics.verdict.approved) logisticsBlockCount++;
+
+        // Resolve flexible dates once, from the first logistics assessment.
+        if (!flexibleResolved && tripContext.dateInput?.mode === 'flexible') {
+          flexibleResolved = await this.maybeResolveFlexibleDates(tripId, logistics.content);
         }
+
+        const roundConverged = finance.verdict.approved && logistics.verdict.approved;
+        const isLastRound = round === config.MAX_ROUNDS;
+
+        await this.publishRoundComplete(tripId, round, {
+          financeApproved: finance.verdict.approved,
+          logisticsApproved: logistics.verdict.approved,
+          issues: [...finance.verdict.issues, ...logistics.verdict.warnings],
+          converged: roundConverged,
+        });
 
         await this.stateManager.saveMetric({
           tripId,
           round,
-          metadata: { roundName, proposal: latestProposal },
+          metadata: {
+            roundName: 'negotiation',
+            financeApproved: finance.verdict.approved,
+            logisticsApproved: logistics.verdict.approved,
+            proposal,
+          },
         });
+
+        if (roundConverged) {
+          converged = true;
+          break;
+        }
+        if (isLastRound) {
+          forcedConvergence = true;
+          break;
+        }
+
+        // Fold the chosen transport legs into the proposal so the next Finance
+        // round counts their cost (folded #72: transport in budget).
+        proposal = this.mergeTransportIntoProposal(proposal, logistics.content);
+
+        // Orchestrator refines, driven by the combined feedback.
+        const feedback: NegotiationFeedback = {
+          financeIssues: finance.verdict.issues,
+          logisticsWarnings: logistics.verdict.warnings,
+          round,
+          remainingRounds: config.MAX_ROUNDS - round,
+        };
+        const refined = await this.runRefineRound(tripId, round, proposal, feedback, agentContext);
+        totalTokensUsed += refined.tokensUsed;
+        proposal = refined.content;
+      }
+
+      const convergenceRounds = Math.min(round, config.MAX_ROUNDS);
+
+      // --- Phase C: finalize ---
+      const validation = await this.runValidationRound(tripId, convergenceRounds, proposal);
+      totalTokensUsed += validation.tokensUsed;
+      const consensusScore = this.extractConsensusScore(validation.content);
+      proposal = { ...proposal, validation: validation.content };
+
+      // Orchestrator's human-like final decision: ship best-effort, unless the
+      // budget is impossible even after maximum savings — then reject.
+      const budgetImpossible = financeVerdict !== null && financeVerdict.budgetFeasible === false;
+
+      await this.stateManager.saveFinalMetric({
+        tripId,
+        round: convergenceRounds,
+        consensusScore,
+        convergenceRounds,
+        forcedConvergence,
+        financeBlockCount,
+        logisticsBlockCount,
+        totalTokensUsed,
+        totalTimeMs: Date.now() - loopStart,
+      });
+
+      if (budgetImpossible) {
+        const reason = financeVerdict?.issues.join(' ')
+          || 'Budget is unrealistic for this trip. Please increase the budget or reduce the scope.';
+        await this.stateManager.rejectTrip(tripId, reason);
+        await this.publishNegotiationComplete(tripId, convergenceRounds, {
+          rounds: convergenceRounds,
+          forcedConvergence,
+          consensusScore,
+          rejected: true,
+        });
+        this.logger.info('Negotiation loop completed — trip rejected', { tripId, convergenceRounds });
+        return;
       }
 
       await this.stateManager.transitionStatus(tripId, 'confirmed');
+      await this.publishNegotiationComplete(tripId, convergenceRounds, {
+        rounds: convergenceRounds,
+        forcedConvergence,
+        consensusScore,
+        rejected: false,
+      });
 
       if (trip?.owner?.email) {
         await this.eventPublisher.publishToExchange(
@@ -118,10 +218,276 @@ export class NegotiationLoop extends BaseService {
         this.logger.warn('Trip owner email missing — skipping itinerary-ready notification', { tripId });
       }
 
-      this.logger.info('Negotiation loop completed', { tripId });
+      this.logger.info('Negotiation loop completed', { tripId, converged, forcedConvergence, convergenceRounds });
     } catch (err) {
       this.logger.error('Negotiation loop failed', { tripId, error: String(err) });
       await this.stateManager.transitionStatus(tripId, 'cancelled').catch(() => undefined);
+    }
+  }
+
+  // -------------------------------------------------------------------------
+  // Phase A — setup rounds
+  // -------------------------------------------------------------------------
+
+  private async runPreferencesRound(
+    tripId: string,
+    round: number,
+    agentContext: string,
+  ): Promise<AgentStep> {
+    let tokensUsed = 0;
+    const results = await Promise.all(
+      PREFERENCE_AGENTS.map(async (agentName) => {
+        const start = Date.now();
+        const result = await this.agentCaller.callPreferenceAgent(tripId, agentName, round, agentContext);
+        tokensUsed += result.tokensUsed;
+        await this.stateManager.saveProposal({
+          tripId, agent: agentName, round, content: result.content, action: 'propose', reasoning: result.reasoning,
+        });
+        await this.stateManager.logAgentCall({
+          tripId, agent: agentName, round, action: 'propose',
+          latencyMs: Date.now() - start, tokensUsed: result.tokensUsed, reasoning: result.reasoning,
+        });
+        return result.content;
+      }),
+    );
+    return { content: { preferences: results }, tokensUsed };
+  }
+
+  private async runAnalyzeRound(
+    tripId: string,
+    round: number,
+    proposals: Record<string, unknown>[],
+  ): Promise<AgentStep> {
+    const start = Date.now();
+    const result = await this.agentCaller.callOrchestratorAgent(tripId, round, proposals);
+    await this.stateManager.saveProposal({
+      tripId, agent: 'orchestrator', round, content: result.content, action: 'propose', reasoning: result.reasoning,
+    });
+    await this.stateManager.logAgentCall({
+      tripId, agent: 'orchestrator', round, action: 'propose',
+      latencyMs: Date.now() - start, tokensUsed: result.tokensUsed, reasoning: result.reasoning,
+    });
+    return { content: result.content, tokensUsed: result.tokensUsed };
+  }
+
+  private async runProposeRound(
+    tripId: string,
+    round: number,
+    conflicts: Record<string, unknown>,
+    agentContext: string,
+  ): Promise<AgentStep> {
+    const start = Date.now();
+    const result = await this.agentCaller.callOrchestratorPropose(tripId, round, conflicts, agentContext);
+    await this.stateManager.saveProposal({
+      tripId, agent: 'orchestrator', round, content: result.content, action: 'propose', reasoning: result.reasoning,
+    });
+    await this.stateManager.logAgentCall({
+      tripId, agent: 'orchestrator', round, action: 'propose',
+      latencyMs: Date.now() - start, tokensUsed: result.tokensUsed, reasoning: result.reasoning,
+    });
+    return { content: result.content, tokensUsed: result.tokensUsed };
+  }
+
+  // -------------------------------------------------------------------------
+  // Phase B — negotiation (parallel finance + logistics, then refine)
+  // -------------------------------------------------------------------------
+
+  private async reviewFinance(
+    tripId: string,
+    round: number,
+    proposal: Record<string, unknown>,
+    tripContext: AgentTripContext,
+  ): Promise<ReviewStep & { verdict: FinanceVerdict }> {
+    const start = Date.now();
+    const result = await this.agentCaller.callFinanceAgent(tripId, round, proposal, tripContext);
+    const verdict = this.extractFinanceVerdict(result.content);
+    await this.stateManager.saveProposal({
+      tripId, agent: 'finance', round, content: result.content,
+      action: verdict.approved ? 'accept' : 'reject', reasoning: verdict.reasoning,
+    });
+    await this.stateManager.logAgentCall({
+      tripId, agent: 'finance', round, action: 'score',
+      latencyMs: Date.now() - start, tokensUsed: result.tokensUsed, reasoning: verdict.reasoning,
+    });
+    return { content: result.content, tokensUsed: result.tokensUsed, verdict };
+  }
+
+  private async validateLogistics(
+    tripId: string,
+    round: number,
+    proposal: Record<string, unknown>,
+    tripContext: AgentTripContext,
+  ): Promise<ReviewStep & { verdict: LogisticsVerdict }> {
+    const start = Date.now();
+    const result = await this.agentCaller.callLogisticsAgent(tripId, round, proposal, tripContext);
+    const verdict = this.extractLogisticsVerdict(result.content);
+    await this.stateManager.saveProposal({
+      tripId, agent: 'logistics', round, content: result.content,
+      action: verdict.approved ? 'accept' : 'reject', reasoning: verdict.reasoning,
+    });
+    await this.stateManager.logAgentCall({
+      tripId, agent: 'logistics', round, action: 'score',
+      latencyMs: Date.now() - start, tokensUsed: result.tokensUsed, reasoning: verdict.reasoning,
+    });
+    return { content: result.content, tokensUsed: result.tokensUsed, verdict };
+  }
+
+  private async runRefineRound(
+    tripId: string,
+    round: number,
+    proposal: Record<string, unknown>,
+    feedback: NegotiationFeedback,
+    agentContext: string,
+  ): Promise<AgentStep> {
+    const start = Date.now();
+    const feedbackText = this.formatFeedback(feedback);
+    const result = await this.agentCaller.callOrchestratorRefine(tripId, round, proposal, feedbackText, agentContext);
+    await this.stateManager.saveProposal({
+      tripId, agent: 'orchestrator', round, content: result.content, action: 'refine', reasoning: result.reasoning,
+    });
+    await this.stateManager.logAgentCall({
+      tripId, agent: 'orchestrator', round, action: 'refine',
+      latencyMs: Date.now() - start, tokensUsed: result.tokensUsed, reasoning: result.reasoning,
+    });
+    return { content: result.content, tokensUsed: result.tokensUsed };
+  }
+
+  // -------------------------------------------------------------------------
+  // Phase C — validation
+  // -------------------------------------------------------------------------
+
+  private async runValidationRound(
+    tripId: string,
+    round: number,
+    proposal: Record<string, unknown>,
+  ): Promise<AgentStep> {
+    const start = Date.now();
+    const result = await this.agentCaller.callValidatorAgent(tripId, round, proposal);
+    await this.stateManager.saveProposal({
+      tripId, agent: 'validator', round, content: result.content, action: 'propose', reasoning: result.reasoning,
+    });
+    await this.stateManager.logAgentCall({
+      tripId, agent: 'validator', round, action: 'score',
+      latencyMs: Date.now() - start, tokensUsed: result.tokensUsed, reasoning: result.reasoning,
+    });
+    return { content: result.content, tokensUsed: result.tokensUsed };
+  }
+
+  // -------------------------------------------------------------------------
+  // Helpers
+  // -------------------------------------------------------------------------
+
+  private extractFinanceVerdict(content: Record<string, unknown>): FinanceVerdict {
+    const v = content['verdict'] as Partial<FinanceVerdict> | undefined;
+    if (v && typeof v.approved === 'boolean' && typeof v.budgetFeasible === 'boolean') {
+      return { approved: v.approved, budgetFeasible: v.budgetFeasible, issues: v.issues ?? [], reasoning: v.reasoning ?? '' };
+    }
+    // Defensive fallback if a verdict is missing — treat as unresolved, not fatal.
+    return { approved: false, budgetFeasible: true, issues: ['Finance verdict missing'], reasoning: 'No finance verdict returned' };
+  }
+
+  private extractLogisticsVerdict(content: Record<string, unknown>): LogisticsVerdict {
+    const v = content['verdict'] as Partial<LogisticsVerdict> | undefined;
+    if (v && typeof v.approved === 'boolean') {
+      return { approved: v.approved, warnings: v.warnings ?? [], reasoning: v.reasoning ?? '' };
+    }
+    return { approved: false, warnings: ['Logistics verdict missing'], reasoning: 'No logistics verdict returned' };
+  }
+
+  private extractConsensusScore(content: Record<string, unknown>): number {
+    const scoring = content['scoring'] as { overallScore?: number } | undefined;
+    return typeof scoring?.overallScore === 'number' ? scoring.overallScore : 0;
+  }
+
+  private formatFeedback(feedback: NegotiationFeedback): string {
+    const lines = [
+      `Round ${feedback.round} — ${feedback.remainingRounds} round(s) remaining before forced convergence.`,
+    ];
+    lines.push('', 'FINANCE ISSUES:');
+    lines.push(feedback.financeIssues.length ? feedback.financeIssues.map((i) => `- ${i}`).join('\n') : '- none');
+    lines.push('', 'LOGISTICS WARNINGS:');
+    lines.push(feedback.logisticsWarnings.length ? feedback.logisticsWarnings.map((w) => `- ${w}`).join('\n') : '- none');
+    return lines.join('\n');
+  }
+
+  // Inject the chosen (cheapest/best) transport leg into each day's transport so
+  // the next Finance round includes its cost in the budget (folded #72).
+  private mergeTransportIntoProposal(
+    proposal: Record<string, unknown>,
+    logisticsContent: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const transportOptions = logisticsContent['transportOptions'] as
+      Record<string, TransportOption[]> | undefined;
+    if (!transportOptions) return proposal;
+
+    const itinerary = Array.isArray(proposal['itinerary'])
+      ? (proposal['itinerary'] as Array<Record<string, unknown>>)
+      : [];
+
+    for (const day of itinerary) {
+      const dayNum = typeof day['day'] === 'number' ? day['day'] : null;
+      if (dayNum === null) continue;
+      const best = transportOptions[String(dayNum)]?.[0];
+      if (!best || typeof best.priceEur !== 'number') continue;
+      const to = (day['cityTransition'] as Record<string, unknown> | undefined)?.['to'] ?? '';
+      day['transport'] = [{ from: day['city'] ?? '', to, cost: best.priceEur, currency: 'EUR' }];
+    }
+    return { ...proposal, itinerary };
+  }
+
+  private async maybeResolveFlexibleDates(
+    tripId: string,
+    logisticsContent: Record<string, unknown>,
+  ): Promise<boolean> {
+    try {
+      const suggested = logisticsContent['suggestedDates'] as
+        { startDate?: string; endDate?: string } | undefined;
+      if (suggested?.startDate && suggested?.endDate) {
+        await this.tripService?.resolveFlexibleDates(tripId, suggested.startDate, suggested.endDate);
+        return true;
+      }
+    } catch (err) {
+      this.logger.warn('Failed to resolve flexible dates from logistics output', { tripId, error: String(err) });
+    }
+    return false;
+  }
+
+  private async publishRoundComplete(
+    tripId: string,
+    round: number,
+    data: Omit<RoundCompleteEvent, 'type' | 'round'>,
+  ): Promise<void> {
+    const payload: RoundCompleteEvent = { type: 'round_complete', round, ...data };
+    await this.publishOrchestratorEvent(tripId, round, 'score', payload);
+  }
+
+  private async publishNegotiationComplete(
+    tripId: string,
+    round: number,
+    data: Omit<NegotiationCompleteEvent, 'type'>,
+  ): Promise<void> {
+    const payload: NegotiationCompleteEvent = { type: 'negotiation_complete', ...data };
+    await this.publishOrchestratorEvent(tripId, round, data.rejected ? 'reject' : 'accept', payload);
+  }
+
+  private async publishOrchestratorEvent(
+    tripId: string,
+    round: number,
+    action: 'score' | 'accept' | 'reject',
+    payload: RoundCompleteEvent | NegotiationCompleteEvent,
+  ): Promise<void> {
+    const event: AgentEvent = {
+      tripId,
+      type: payload.type,
+      agent: 'orchestrator',
+      round,
+      timestamp: new Date().toISOString(),
+      content: payload,
+    };
+    try {
+      await this.eventPublisher.publish('orchestrator', action, event);
+    } catch (err) {
+      this.logger.warn('Failed to publish negotiation event', { tripId, type: payload.type, error: String(err) });
     }
   }
 
@@ -184,133 +550,5 @@ export class NegotiationLoop extends BaseService {
     }
 
     return lines.join('\n');
-  }
-
-  private async runPreferencesRound(
-    tripId: string,
-    round: number,
-    agentContext: string,
-  ): Promise<Record<string, unknown>> {
-    const results = await Promise.all(
-      PREFERENCE_AGENTS.map(async (agentName) => {
-        const start = Date.now();
-        const result = await this.agentCaller.callPreferenceAgent(tripId, agentName, round, agentContext);
-        await this.stateManager.saveProposal({ tripId, agent: agentName, round, content: result.content });
-        await this.stateManager.logAgentCall({
-          tripId,
-          agent: agentName,
-          round,
-          action: 'propose',
-          latencyMs: Date.now() - start,
-          tokensUsed: result.tokensUsed,
-          reasoning: result.reasoning,
-        });
-        return result.content;
-      }),
-    );
-    return { preferences: results };
-  }
-
-  private async runAnalyzeRound(
-    tripId: string,
-    round: number,
-    proposals: Record<string, unknown>[],
-  ): Promise<Record<string, unknown>> {
-    const start = Date.now();
-    const result = await this.agentCaller.callOrchestratorAgent(tripId, round, proposals);
-    await this.stateManager.saveProposal({ tripId, agent: 'orchestrator', round, content: result.content });
-    await this.stateManager.logAgentCall({
-      tripId,
-      agent: 'orchestrator',
-      round,
-      action: 'propose',
-      latencyMs: Date.now() - start,
-      tokensUsed: result.tokensUsed,
-      reasoning: result.reasoning,
-    });
-    return result.content;
-  }
-
-  private async runProposeRound(
-    tripId: string,
-    round: number,
-    conflicts: Record<string, unknown>,
-    agentContext: string,
-  ): Promise<Record<string, unknown>> {
-    const start = Date.now();
-    const result = await this.agentCaller.callOrchestratorPropose(tripId, round, conflicts, agentContext);
-    await this.stateManager.saveProposal({ tripId, agent: 'orchestrator', round, content: result.content });
-    await this.stateManager.logAgentCall({
-      tripId,
-      agent: 'orchestrator',
-      round,
-      action: 'propose',
-      latencyMs: Date.now() - start,
-      tokensUsed: result.tokensUsed,
-      reasoning: result.reasoning,
-    });
-    return result.content;
-  }
-
-  private async runFinanceRound(
-    tripId: string,
-    round: number,
-    proposal: Record<string, unknown>,
-    tripContext: AgentTripContext,
-  ): Promise<Record<string, unknown>> {
-    const start = Date.now();
-    const result = await this.agentCaller.callFinanceAgent(tripId, round, proposal, tripContext);
-    await this.stateManager.saveProposal({ tripId, agent: 'finance', round, content: result.content });
-    await this.stateManager.logAgentCall({
-      tripId,
-      agent: 'finance',
-      round,
-      action: 'score',
-      latencyMs: Date.now() - start,
-      tokensUsed: result.tokensUsed,
-      reasoning: result.reasoning,
-    });
-    return { ...proposal, finance: result.content };
-  }
-
-  private async runLogisticsRound(
-    tripId: string,
-    round: number,
-    proposal: Record<string, unknown>,
-    tripContext: AgentTripContext,
-  ): Promise<Record<string, unknown>> {
-    const start = Date.now();
-    const result = await this.agentCaller.callLogisticsAgent(tripId, round, proposal, tripContext);
-    await this.stateManager.saveProposal({ tripId, agent: 'logistics', round, content: result.content });
-    await this.stateManager.logAgentCall({
-      tripId,
-      agent: 'logistics',
-      round,
-      action: 'score',
-      latencyMs: Date.now() - start,
-      tokensUsed: result.tokensUsed,
-      reasoning: result.reasoning,
-    });
-    return { ...proposal, logistics: result.content };
-  }
-
-  private async runRefineRound(
-    tripId: string,
-    round: number,
-    proposal: Record<string, unknown>,
-  ): Promise<Record<string, unknown>> {
-    const start = Date.now();
-    const result = await this.agentCaller.callValidatorAgent(tripId, round, proposal);
-    await this.stateManager.saveProposal({ tripId, agent: 'validator', round, content: result.content });
-    await this.stateManager.logAgentCall({
-      tripId,
-      agent: 'validator',
-      round,
-      action: 'score',
-      latencyMs: Date.now() - start,
-      tokensUsed: result.tokensUsed,
-      reasoning: result.reasoning,
-    });
-    return { ...proposal, validation: result.content };
   }
 }

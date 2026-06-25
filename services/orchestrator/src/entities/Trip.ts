@@ -53,6 +53,9 @@ export class Trip {
   @Column({ name: 'transport_preference', type: 'varchar', length: 10, default: 'best' })
   transportPreference!: string;
 
+  @Column({ name: 'rejection_reason', type: 'text', nullable: true })
+  rejectionReason!: string | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 

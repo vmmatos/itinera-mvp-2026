@@ -6,6 +6,7 @@ import type { CostCalculator, ItineraryDay, CostItem, TransportItem } from '@/ag
 import type { BudgetValidator } from '@/agents/BudgetValidator';
 import type { AlternativeFinder } from '@/agents/AlternativeFinder';
 import type { ProposalStorageService } from '@/services/ProposalStorageService';
+import { buildFinanceVerdict } from '@/services/FinanceVerdict';
 
 const ReviewSchema = z.object({
   tripId:         z.string().uuid(),
@@ -55,6 +56,14 @@ export function createFinanceRouter(
     const breakdown = calculator.calculate(itinerary, budgetCurrency);
     const validation = validator.validate(breakdown, budgetTotal, budgetCurrency);
     const review = await finder.findAlternatives(tripId, round, proposal, breakdown, validation, context, dateInput ?? null);
+
+    // Attach Finance's structured verdict so the Orchestrator can decide whether
+    // the trip has converged (or is impossible and must be rejected).
+    const reviewContent = (review.content ?? {}) as Record<string, unknown>;
+    const alternatives = reviewContent['alternatives'] as
+      { revisedBudgetEstimate?: number; totalPotentialSaving?: number } | undefined;
+    reviewContent['verdict'] = buildFinanceVerdict(breakdown, validation, alternatives ?? null);
+    review.content = reviewContent;
 
     res.json({ review });
   });

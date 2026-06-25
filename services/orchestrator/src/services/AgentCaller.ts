@@ -118,6 +118,22 @@ export class AgentCaller extends BaseService {
     return toAgentCallResult(resp.compromise, Date.now() - start);
   }
 
+  async callOrchestratorRefine(
+    tripId: string,
+    round: number,
+    proposal: Record<string, unknown>,
+    feedback: string,
+    context = '',
+  ): Promise<AgentCallResult> {
+    const start = Date.now();
+    const resp = await this.post<{ refined: AgentEventLike }>(
+      'orchestrator-agent',
+      '/refine',
+      { tripId, round, proposal, feedback, context },
+    );
+    return toAgentCallResult(resp.refined, Date.now() - start);
+  }
+
   async callFinanceAgent(
     tripId: string,
     round: number,

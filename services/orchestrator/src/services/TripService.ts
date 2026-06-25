@@ -24,6 +24,7 @@ export interface TripSummary {
   budgetTotal: number | null;
   budgetCurrency: string;
   dateInput: DateInput | null;
+  rejectionReason: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -185,6 +186,7 @@ export class TripService extends BaseService {
       budgetTotal: trip.budgetTotal,
       budgetCurrency: trip.budgetCurrency,
       dateInput: trip.dateInput ?? null,
+      rejectionReason: trip.rejectionReason ?? null,
       createdAt: trip.createdAt,
       updatedAt: trip.updatedAt,
     };

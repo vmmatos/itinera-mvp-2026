@@ -22,6 +22,8 @@ const EnvSchema = z.object({
   FINANCE_AGENT_URL: z.string().default('http://finance-agent:3004'),
   LOGISTICS_AGENT_URL: z.string().default('http://logistics-agent:3005'),
   VALIDATOR_URL: z.string().default('http://validator:3006'),
+  // Max negotiation rounds before forced convergence (card #79).
+  MAX_ROUNDS: z.coerce.number().int().min(1).default(6),
 });
 
 const parsed = EnvSchema.safeParse(process.env);

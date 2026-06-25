@@ -90,6 +90,23 @@ describe('AgentCaller', () => {
     );
   });
 
+  it('callOrchestratorRefine: posts to /refine with proposal and feedback', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ refined: AGENT_EVENT }),
+    });
+
+    await caller.callOrchestratorRefine('trip-1', 4, { itinerary: [] }, 'FINANCE ISSUES:\n- Over budget', 'ctx');
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://orchestrator-agent:3003/refine',
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringContaining('"feedback":"FINANCE ISSUES'),
+      }),
+    );
+  });
+
   it('callFinanceAgent: posts to /review with budget context', async () => {
     fetchMock.mockResolvedValue({
       ok: true,

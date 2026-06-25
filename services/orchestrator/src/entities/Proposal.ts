@@ -32,6 +32,12 @@ export class Proposal {
   @Column({ type: 'varchar', length: 50, default: 'pending' })
   status!: string;
 
+  @Column({ type: 'varchar', length: 50, nullable: true })
+  action!: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  reasoning!: string | null;
+
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;
 

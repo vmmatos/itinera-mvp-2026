@@ -40,6 +40,8 @@ export const AGENT_RESULT = {
     satisfactionEstimates: { alice: 0.85, bob: 0.80, carlos: 0.75, diana: 0.78 },
     unresolvedConflicts: [],
     compromiseRationale: 'Balanced mix of culture, gastronomy, and relaxation.',
+    // Approving verdict so the negotiation loop converges on the first round.
+    verdict: { approved: true, budgetFeasible: true, issues: [], warnings: [], reasoning: 'ok' },
   },
   reasoning: 'All agents agreed on core activities.',
   latencyMs: 350,

@@ -7,12 +7,29 @@ import { Proposal } from '@/entities/Proposal';
 import { AgentLog } from '@/entities/AgentLog';
 import { TripMetric } from '@/entities/TripMetric';
 
+type ProposalAction = 'propose' | 'refine' | 'accept' | 'reject';
+
 interface SaveProposalParams {
   tripId: string;
   agent: string;
   round: number;
   content: Record<string, unknown>;
   score?: number;
+  action?: ProposalAction;
+  reasoning?: string;
+}
+
+interface SaveFinalMetricParams {
+  tripId: string;
+  round: number;
+  consensusScore?: number;
+  convergenceRounds: number;
+  forcedConvergence: boolean;
+  financeBlockCount: number;
+  logisticsBlockCount: number;
+  totalTokensUsed: number;
+  totalTimeMs: number;
+  metadata?: Record<string, unknown>;
 }
 
 interface LogAgentCallParams {
@@ -81,6 +98,8 @@ export class StateManager extends BaseService {
       content: params.content,
       score: params.score ?? null,
       status: 'pending',
+      action: params.action ?? null,
+      reasoning: params.reasoning ?? null,
     });
     return repo.save(proposal);
   }
@@ -109,5 +128,32 @@ export class StateManager extends BaseService {
       metadata: params.metadata ?? {},
     });
     await repo.save(metric);
+  }
+
+  // Final aggregate metric written once the loop exits — the research signal.
+  async saveFinalMetric(params: SaveFinalMetricParams): Promise<void> {
+    const repo = AppDataSource.getRepository(TripMetric);
+    const metric = repo.create({
+      tripId: params.tripId,
+      round: params.round,
+      consensusScore: params.consensusScore ?? null,
+      convergenceRounds: params.convergenceRounds,
+      forcedConvergence: params.forcedConvergence,
+      financeBlockCount: params.financeBlockCount,
+      logisticsBlockCount: params.logisticsBlockCount,
+      totalTokensUsed: params.totalTokensUsed,
+      totalTimeMs: params.totalTimeMs,
+      metadata: params.metadata ?? {},
+    });
+    await repo.save(metric);
+  }
+
+  // Mark a trip rejected (budget impossible) with the reason shown to the user.
+  async rejectTrip(tripId: string, reason: string): Promise<void> {
+    await AppDataSource.getRepository(Trip).update(
+      { id: tripId },
+      { status: 'rejected' as TripStatus, rejectionReason: reason },
+    );
+    this.logger.info('Trip rejected', { tripId, reason });
   }
 }
