@@ -27,8 +27,17 @@ export interface CityTransitionFields {
 }
 
 export function modeIcon(mode?: string): string {
-  const icons: Record<string, string> = { flight: '✈️', train: '🚆', car: '🚗' }
+  const icons: Record<string, string> = { flight: '✈️', train: '🚆', car: '🚗', bus: '🚌' }
   return icons[mode ?? ''] ?? '→'
+}
+
+// For multi-leg routes, use the icon of the main (last) segment so the chip reflects
+// the dominant leg: Bus+Flight → ✈️, Bus+Car → 🚗, Bus+Train → 🚆.
+export function routeIcon(opt: TransportOption): string {
+  if (opt.segments && opt.segments.length > 1) {
+    return modeIcon(opt.segments[opt.segments.length - 1]!.mode)
+  }
+  return modeIcon(opt.mode)
 }
 
 export function formatDuration(minutes: number): string {
@@ -62,7 +71,11 @@ export function formatTransition(t: CityTransitionFields): string {
 }
 
 export function formatTransportLabel(opt: TransportOption, to: string): string {
-  const modeLabel = opt.mode === 'flight' ? 'Flight' : opt.mode === 'train' ? 'Train' : 'Drive'
+  // Multi-leg routes have a pre-built displaySummary (e.g. "Bus + Flight — 4h total, ~€94/person")
+  if (opt.displaySummary) {
+    return `→${to} — ${opt.displaySummary}`
+  }
+  const modeLabel = opt.mode === 'flight' ? 'Flight' : opt.mode === 'train' ? 'Train' : opt.mode === 'bus' ? 'Bus' : 'Drive'
   const ref = opt.flightNumber ?? opt.trainLine ?? ''
   const parts: string[] = [`${modeLabel}${ref ? ` ${ref}` : ''} →${to}`]
   if (opt.priceEur) parts.push(`€${opt.priceEur}/person`)

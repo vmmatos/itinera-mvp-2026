@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { AGENT_COLOURS } from '~/types/index'
 import type { TransportActivityData } from '~/types/index'
-import { modeIcon } from '~/utils/itinerary'
+import { modeIcon, routeIcon } from '~/utils/itinerary'
 
 export interface ActivityCardProps {
   venue?:         string
@@ -60,7 +60,7 @@ function agentLineVar(agent: string): string {
   <!-- Transport leg card -->
   <div v-if="activity.transportData" class="ac-transport">
     <div class="ac-transport-head">
-      <span class="ac-transport-icon">{{ modeIcon(activity.transportData.selectedOption.mode) }}</span>
+      <span class="ac-transport-icon">{{ routeIcon(activity.transportData.selectedOption) }}</span>
       <span class="ac-transport-label">{{ activity.name }}</span>
     </div>
     <div
@@ -68,20 +68,25 @@ function agentLineVar(agent: string): string {
       :key="wi"
       class="ac-transport-warn"
     >⚠ {{ w }}</div>
-    <details v-if="activity.transportData.alternatives.length > 0" class="ac-transport-alts">
-      <summary>{{ activity.transportData.alternatives.length }} alternative{{ activity.transportData.alternatives.length > 1 ? 's' : '' }}</summary>
+    <details v-if="activity.transportData.alternatives.filter(a => a.durationMinutes > 0).length > 0" class="ac-transport-alts">
+      <summary>{{ activity.transportData.alternatives.filter(a => a.durationMinutes > 0).length }} alternative{{ activity.transportData.alternatives.filter(a => a.durationMinutes > 0).length > 1 ? 's' : '' }}</summary>
       <div
-        v-for="(alt, ai) in activity.transportData.alternatives"
+        v-for="(alt, ai) in activity.transportData.alternatives.filter(a => a.durationMinutes > 0)"
         :key="ai"
         class="ac-transport-alt-row"
       >
-        {{ modeIcon(alt.mode) }}
-        {{ alt.mode === 'flight' ? 'Flight' : alt.mode === 'train' ? 'Train' : 'Drive' }}
-        <template v-if="alt.flightNumber ?? alt.trainLine">{{ alt.flightNumber ?? alt.trainLine }}</template>
-        →{{ activity.transportData.to }}
-        <template v-if="alt.departureTime">{{ alt.departureTime }}</template>
-        <template v-if="alt.priceEur"> · €{{ alt.priceEur }}/person</template>
-        · {{ Math.floor(alt.durationMinutes / 60) }}h{{ alt.durationMinutes % 60 > 0 ? ` ${alt.durationMinutes % 60}m` : '' }}
+        <template v-if="alt.displaySummary">
+          {{ routeIcon(alt) }} →{{ activity.transportData.to }} — {{ alt.displaySummary }}
+        </template>
+        <template v-else>
+          {{ modeIcon(alt.mode) }}
+          {{ alt.mode === 'flight' ? 'Flight' : alt.mode === 'train' ? 'Train' : alt.mode === 'bus' ? 'Bus' : 'Drive' }}
+          <template v-if="alt.flightNumber ?? alt.trainLine">{{ alt.flightNumber ?? alt.trainLine }}</template>
+          →{{ activity.transportData.to }}
+          <template v-if="alt.departureTime">{{ alt.departureTime }}</template>
+          <template v-if="alt.priceEur"> · €{{ alt.priceEur }}/person</template>
+          · {{ Math.floor(alt.durationMinutes / 60) }}h{{ alt.durationMinutes % 60 > 0 ? ` ${alt.durationMinutes % 60}m` : '' }}
+        </template>
       </div>
     </details>
   </div>
