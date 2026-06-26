@@ -216,12 +216,22 @@ export class TransportService extends BaseService {
       .filter((o) => o.durationMinutes > 0);
   }
 
-  /** RFC3339 future departure for Routes API transit requests. */
+  // RFC3339 departure for Routes API transit requests.
+  //
+  // Google only publishes transit (rail) schedules a few weeks ahead, so a
+  // far-future trip date (e.g. a flexible trip 12+ months out) returns ZERO
+  // routes. We only need a representative route + duration, not a bookable
+  // service, so clamp to a near-term weekday: use the real date only when it
+  // falls inside the schedule horizon, otherwise ~7 days out.
+  private static readonly TRANSIT_HORIZON_DAYS = 21;
+
   private routesDepartureTime(departureDateIso?: string): string {
-    const fallback = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-    if (!departureDateIso) return fallback.toISOString();
+    const nearTerm = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    if (!departureDateIso) return nearTerm.toISOString();
     const d = new Date(`${departureDateIso.slice(0, 10)}T09:00:00Z`);
-    if (Number.isNaN(d.getTime()) || d.getTime() <= Date.now()) return fallback.toISOString();
+    if (Number.isNaN(d.getTime()) || d.getTime() <= Date.now()) return nearTerm.toISOString();
+    const horizonMs = TransportService.TRANSIT_HORIZON_DAYS * 24 * 60 * 60 * 1000;
+    if (d.getTime() - Date.now() > horizonMs) return nearTerm.toISOString();
     return d.toISOString();
   }
 
