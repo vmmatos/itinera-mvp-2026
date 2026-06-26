@@ -6,8 +6,8 @@ vi.mock('@/config', () => ({
     GOOGLE_MAPS_BASE_URL: 'https://maps.googleapis.com/maps/api',
     GOOGLE_ROUTES_BASE_URL: 'https://routes.googleapis.com',
     SKYSCANNER_RAPIDAPI_KEY: 'test-sky-key',
-    SKYSCANNER_RAPIDAPI_HOST: 'skyscanner50.p.rapidapi.com',
-    SKYSCANNER_BASE_URL: 'https://skyscanner50.p.rapidapi.com/api/v1',
+    SKYSCANNER_RAPIDAPI_HOST: 'sky-scrapper.p.rapidapi.com',
+    SKYSCANNER_BASE_URL: 'https://sky-scrapper.p.rapidapi.com',
     NODE_ENV: 'test',
   },
 }));
@@ -23,23 +23,54 @@ vi.mock('@itinera/shared', async (importOriginal) => {
 import { TransportService } from '@/services/TransportService';
 import type { MapService } from '@/services/MapService';
 
+// sky-scrapper searchAirport response (city → skyId/entityId).
+const AIRPORT_OK = {
+  data: [{ navigation: { relevantFlightParams: { skyId: 'MAD', entityId: '95565077' } } }],
+};
+
+// sky-scrapper searchFlights response.
 const SKYSCANNER_OK = {
   data: {
     itineraries: [
       {
-        price: { amount: 89.99, currency: 'EUR' },
+        price: { raw: 89.99 },
         legs: [
           {
             durationInMinutes: 125,
             departure: '2026-08-01T06:00:00',
             arrival: '2026-08-01T08:05:00',
-            segments: [{ flightNumber: 'FR1234' }],
+            stopCount: 0,
+            carriers: { marketing: [{ name: 'Ryanair', alternateId: 'FR' }] },
+            segments: [{ flightNumber: '1234', marketingCarrier: { name: 'Ryanair', alternateId: 'FR' } }],
           },
         ],
       },
     ],
   },
 };
+
+// Build a sky-scrapper searchFlights payload (single itinerary).
+function flightsPayload(opts: { priceRaw: number; durationInMinutes: number; departure: string; arrival: string; carrier?: string; alt?: string; flightNumber?: string }): unknown {
+  return {
+    data: {
+      itineraries: [
+        {
+          price: { raw: opts.priceRaw },
+          legs: [
+            {
+              durationInMinutes: opts.durationInMinutes,
+              departure: opts.departure,
+              arrival: opts.arrival,
+              stopCount: 0,
+              carriers: { marketing: [{ name: opts.carrier ?? 'TestAir', alternateId: opts.alt ?? 'TA' }] },
+              segments: [{ flightNumber: opts.flightNumber ?? '1', marketingCarrier: { name: opts.carrier ?? 'TestAir', alternateId: opts.alt ?? 'TA' } }],
+            },
+          ],
+        },
+      ],
+    },
+  };
+}
 
 // Google Routes API (v2) transit response — replaces the legacy Directions shape.
 const ROUTES_OK = {
@@ -78,14 +109,18 @@ function routesPayload(durationSeconds: number, line: string): unknown {
 }
 
 // Branch the fetch mock on URL so each mode can be controlled independently.
-// `sky`/`directions` may be a payload (resolves ok) or an Error (rejects).
-// Flights hit `searchFlights`; trains hit the Routes API `computeRoutes`.
-function stubFetch(opts: { sky?: unknown; directions?: unknown }): void {
+// Flights are a two-step API: `searchAirport` (city→ids) then `searchFlights`.
+// Trains hit the Routes API `computeRoutes`. `airport` defaults to AIRPORT_OK
+// so flight tests only need to provide the `sky` (searchFlights) payload.
+function stubFetch(opts: { sky?: unknown; directions?: unknown; airport?: unknown }): void {
   vi.stubGlobal(
     'fetch',
     vi.fn((url: string) => {
-      const isFlight = String(url).includes('searchFlights');
-      const val = isFlight ? opts.sky : opts.directions;
+      const u = String(url);
+      let val: unknown;
+      if (u.includes('searchAirport')) val = opts.airport ?? AIRPORT_OK;
+      else if (u.includes('searchFlights')) val = opts.sky;
+      else val = opts.directions;
       if (val === undefined) return Promise.reject(new Error('not configured'));
       if (val instanceof Error) return Promise.reject(val);
       return Promise.resolve({ ok: true, json: () => Promise.resolve(val), text: () => Promise.resolve('') });
@@ -128,14 +163,14 @@ describe('TransportService', () => {
       (mapService.getTravelTime as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('no car'));
     });
 
-    it('parses a Skyscanner flight option', async () => {
+    it('parses a sky-scrapper flight option', async () => {
       const result = await service.resolveTransportOptions({ from: 'MAD', to: 'BCN', departureDateIso: '2026-08-01' }, 'best');
       const flight = result.find((o) => o.mode === 'flight');
       expect(flight).toBeDefined();
       expect(flight!.priceEur).toBe(90);
       expect(flight!.durationMinutes).toBe(125);
-      expect(flight!.flightNumber).toBe('FR1234');
-      expect(flight!.provider).toBe('Skyscanner');
+      expect(flight!.flightNumber).toBe('FR1234'); // alternateId + segment flightNumber
+      expect(flight!.provider).toBe('Ryanair');
       expect(flight!.departureTime).toBe('06:00');
       expect(flight!.arrivalTime).toBe('08:05');
     });
@@ -221,14 +256,7 @@ describe('TransportService', () => {
     });
 
     it("ranks cheapest/fastest first for 'best' (no preference)", async () => {
-      const cheapSky = {
-        data: {
-          itineraries: [{
-            price: { amount: 45, currency: 'EUR' },
-            legs: [{ durationInMinutes: 55, departure: '2026-08-01T06:00:00', arrival: '2026-08-01T06:55:00', segments: [] }],
-          }],
-        },
-      };
+      const cheapSky = flightsPayload({ priceRaw: 45, durationInMinutes: 55, departure: '2026-08-01T06:00:00', arrival: '2026-08-01T06:55:00' });
       stubFetch({ sky: cheapSky, directions: ROUTES_OK });
       const result = await service.resolveTransportOptions({ from: 'Madrid', to: 'Barcelona' }, 'best');
       expect(result[0].mode).toBe('flight');
@@ -240,9 +268,7 @@ describe('TransportService', () => {
   describe('preference bias', () => {
     it('ranks the preferred mode first on a near-tie, keeping alternatives', async () => {
       // Flight slightly cheaper than train; with train preference the discount lifts train to first.
-      const sky = {
-        data: { itineraries: [{ price: { amount: 80, currency: 'EUR' }, legs: [{ durationInMinutes: 90, departure: '2026-08-01T06:00:00', arrival: '2026-08-01T07:30:00', segments: [{ flightNumber: 'FR1' }] }] }] },
-      };
+      const sky = flightsPayload({ priceRaw: 80, durationInMinutes: 90, departure: '2026-08-01T06:00:00', arrival: '2026-08-01T07:30:00' });
       const directions = routesPayload(6000, 'AVE');
       stubFetch({ sky, directions });
       (mapService.getTravelTime as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('no car'));
@@ -255,9 +281,7 @@ describe('TransportService', () => {
 
     it('still lets a clearly better option beat the preferred mode', async () => {
       // Flight much cheaper + faster than train; even with train preference, flight wins.
-      const sky = {
-        data: { itineraries: [{ price: { amount: 30, currency: 'EUR' }, legs: [{ durationInMinutes: 50, departure: '2026-08-01T06:00:00', arrival: '2026-08-01T06:50:00', segments: [{ flightNumber: 'FR1' }] }] }] },
-      };
+      const sky = flightsPayload({ priceRaw: 30, durationInMinutes: 50, departure: '2026-08-01T06:00:00', arrival: '2026-08-01T06:50:00' });
       const directions = routesPayload(18000, 'Regional');
       stubFetch({ sky, directions });
       (mapService.getTravelTime as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('no car'));
@@ -267,24 +291,48 @@ describe('TransportService', () => {
     });
   });
 
-  // ── Skyscanner payload contract ──────────────────────────────────────
-  describe('Skyscanner API call', () => {
-    it('sends POST with correct headers and body', async () => {
+  // ── sky-scrapper two-step API contract ───────────────────────────────
+  describe('sky-scrapper API call', () => {
+    it('resolves airports then queries searchFlights with skyId/entityId + headers', async () => {
       stubFetch({ sky: SKYSCANNER_OK, directions: new Error('no train') });
       (mapService.getTravelTime as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('no car'));
 
-      await service.resolveTransportOptions({ from: 'Lisbon', to: 'Madrid', departureDateIso: '2026-09-10' }, 'best');
+      await service.resolveTransportOptions({ from: 'Lisbon', to: 'Madrid', departureDateIso: '2099-09-10' }, 'best');
 
       const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+      const calls = fetchMock.mock.calls.map((c) => String(c[0]));
+
+      // Step 1: two searchAirport lookups (origin + destination), city-only query.
+      const airportCalls = calls.filter((u) => u.includes('searchAirport'));
+      expect(airportCalls.length).toBe(2);
+      expect(airportCalls[0]).toContain('/api/v1/flights/searchAirport');
+      expect(airportCalls[0]).toContain('query=Lisbon');
+
+      // Step 2: searchFlights with resolved ids.
       const flightCall = fetchMock.mock.calls.find((c) => String(c[0]).includes('searchFlights')) as [string, RequestInit];
-      const init = flightCall[1];
-      expect((init.headers as Record<string, string>)['X-RapidAPI-Key']).toBe('test-sky-key');
-      expect((init.headers as Record<string, string>)['X-RapidAPI-Host']).toBe('skyscanner50.p.rapidapi.com');
-      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
-      expect(body['origin']).toBe('Lisbon');
-      expect(body['destination']).toBe('Madrid');
-      expect(body['date']).toBe('2026-09-10');
-      expect(body['currency']).toBe('EUR');
+      const url = String(flightCall[0]);
+      expect(url).toContain('/api/v2/flights/searchFlights');
+      expect(url).toContain('originSkyId=MAD');
+      expect(url).toContain('originEntityId=95565077');
+      expect(url).toContain('currency=EUR');
+      const headers = (flightCall[1].headers as Record<string, string>);
+      expect(headers['X-RapidAPI-Key']).toBe('test-sky-key');
+      expect(headers['X-RapidAPI-Host']).toBe('sky-scrapper.p.rapidapi.com');
+    });
+
+    it('clamps a far-future flight date to within the booking horizon', async () => {
+      stubFetch({ sky: SKYSCANNER_OK, directions: new Error('no train') });
+      (mapService.getTravelTime as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('no car'));
+
+      await service.resolveTransportOptions({ from: 'Lisbon', to: 'Madrid', departureDateIso: '2099-09-10' }, 'best');
+
+      const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+      const url = String(fetchMock.mock.calls.find((c) => String(c[0]).includes('searchFlights'))![0]);
+      const date = new URL(url).searchParams.get('date')!;
+      // far-future 2099 date must be clamped to near-term (well under ~1 year out)
+      const days = (new Date(date).getTime() - Date.now()) / (24 * 60 * 60 * 1000);
+      expect(days).toBeLessThan(300);
+      expect(days).toBeGreaterThan(0);
     });
   });
 

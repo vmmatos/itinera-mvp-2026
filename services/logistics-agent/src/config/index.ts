@@ -35,8 +35,9 @@ const EnvSchema = z.object({
   GOOGLE_PLACES_BASE_URL: z.string().default('https://places.googleapis.com/v1'),
   OPENWEATHERMAP_BASE_URL: z.string().default('https://api.openweathermap.org'),
   SKYSCANNER_RAPIDAPI_KEY: z.string().default(''),
-  SKYSCANNER_RAPIDAPI_HOST: z.string().default('skyscanner50.p.rapidapi.com'),
-  SKYSCANNER_BASE_URL: z.string().default('https://skyscanner50.p.rapidapi.com/api/v1'),
+  SKYSCANNER_RAPIDAPI_HOST: z.string().default('sky-scrapper.p.rapidapi.com'),
+  // Host base only — endpoint version paths (/api/v1/, /api/v2/) are appended in code.
+  SKYSCANNER_BASE_URL: z.string().default('https://sky-scrapper.p.rapidapi.com'),
 });
 
 const parsed = EnvSchema.safeParse(process.env);

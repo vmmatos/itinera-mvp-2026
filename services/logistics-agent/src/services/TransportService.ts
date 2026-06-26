@@ -10,20 +10,42 @@ export interface CityPair {
   departureDateIso?: string;
 }
 
-interface SkyscannerLeg {
-  durationInMinutes: number;
-  departure: string;
-  arrival: string;
-  segments: Array<{ flightNumber?: string }>;
+// ── sky-scrapper (RapidAPI) response shapes ──────────────────────
+// Two-step API: searchAirport (city → skyId/entityId) then searchFlights.
+interface SkyAirportResponse {
+  data?: Array<{
+    navigation?: {
+      relevantFlightParams?: { skyId?: string; entityId?: string };
+    };
+  }>;
 }
 
-interface SkyscannerItinerary {
-  price: { amount: number; currency: string };
-  legs: SkyscannerLeg[];
+interface SkyCarrier {
+  name?: string;
+  alternateId?: string;
 }
 
-interface SkyscannerResponse {
-  data: { itineraries?: SkyscannerItinerary[] };
+interface SkyFlightSegment {
+  flightNumber?: string;
+  marketingCarrier?: SkyCarrier;
+}
+
+interface SkyFlightLeg {
+  durationInMinutes?: number;
+  departure?: string;
+  arrival?: string;
+  stopCount?: number;
+  carriers?: { marketing?: SkyCarrier[] };
+  segments?: SkyFlightSegment[];
+}
+
+interface SkyItinerary {
+  price?: { raw?: number };
+  legs?: SkyFlightLeg[];
+}
+
+interface SkyFlightsResponse {
+  data?: { itineraries?: SkyItinerary[] };
 }
 
 // ── Google Routes API (v2) — transit response shapes ─────────────
@@ -85,52 +107,96 @@ export class TransportService extends BaseService {
     return this.sortByScore(options, preference === 'best' ? undefined : preference);
   }
 
+  private get skyHeaders(): Record<string, string> {
+    return {
+      'X-RapidAPI-Key': config.SKYSCANNER_RAPIDAPI_KEY,
+      'X-RapidAPI-Host': config.SKYSCANNER_RAPIDAPI_HOST,
+    };
+  }
+
+  // Resolve a city/airport name to sky-scrapper's skyId + entityId, required by
+  // the searchFlights endpoint. Returns null when no airport matches.
+  private async resolveAirport(query: string): Promise<{ skyId: string; entityId: string } | null> {
+    const city = query.split(',')[0]!.trim();
+    const url = `${config.SKYSCANNER_BASE_URL}/api/v1/flights/searchAirport?query=${encodeURIComponent(city)}&locale=en-US`;
+    const res = await fetch(url, { headers: this.skyHeaders });
+    if (!res.ok) {
+      throw new Error(`Skyscanner searchAirport error ${res.status}: ${await res.text()}`);
+    }
+    const data = (await res.json()) as SkyAirportResponse;
+    const params = data.data?.[0]?.navigation?.relevantFlightParams;
+    if (!params?.skyId || !params?.entityId) return null;
+    return { skyId: params.skyId, entityId: params.entityId };
+  }
+
+  // Airlines publish schedules ~330 days out; clamp far-future trip dates so a
+  // flexible booking a year+ ahead still returns representative fares.
+  private static readonly FLIGHT_HORIZON_DAYS = 300;
+
+  private flightSearchDate(departureDateIso?: string): string {
+    const nearTerm = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+    if (!departureDateIso) return nearTerm.toISOString().slice(0, 10);
+    const d = new Date(`${departureDateIso.slice(0, 10)}T00:00:00Z`);
+    if (Number.isNaN(d.getTime()) || d.getTime() <= Date.now()) return nearTerm.toISOString().slice(0, 10);
+    const horizonMs = TransportService.FLIGHT_HORIZON_DAYS * 24 * 60 * 60 * 1000;
+    if (d.getTime() - Date.now() > horizonMs) return nearTerm.toISOString().slice(0, 10);
+    return d.toISOString().slice(0, 10);
+  }
+
   private async fetchFlights(pair: CityPair): Promise<TransportOption[]> {
     if (!config.SKYSCANNER_RAPIDAPI_KEY) {
       throw new Error('Skyscanner API key not configured');
     }
 
-    const body = {
-      origin: pair.from,
-      destination: pair.to,
-      date: pair.departureDateIso ?? new Date().toISOString().slice(0, 10),
-      currency: 'EUR',
-      adults: 1,
-    };
-
-    const res = await fetch(`${config.SKYSCANNER_BASE_URL}/searchFlights`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-RapidAPI-Key': config.SKYSCANNER_RAPIDAPI_KEY,
-        'X-RapidAPI-Host': config.SKYSCANNER_RAPIDAPI_HOST,
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`Skyscanner API error ${res.status}: ${text}`);
+    const [origin, dest] = await Promise.all([
+      this.resolveAirport(pair.from),
+      this.resolveAirport(pair.to),
+    ]);
+    if (!origin || !dest) {
+      throw new Error(`No airport found for "${pair.from}" or "${pair.to}"`);
     }
 
-    const data = (await res.json()) as SkyscannerResponse;
-    const itineraries = data.data?.itineraries;
+    const qs = new URLSearchParams({
+      originSkyId: origin.skyId,
+      destinationSkyId: dest.skyId,
+      originEntityId: origin.entityId,
+      destinationEntityId: dest.entityId,
+      date: this.flightSearchDate(pair.departureDateIso),
+      cabinClass: 'economy',
+      adults: '1',
+      currency: 'EUR',
+      market: 'en-US',
+      countryCode: 'US',
+    });
 
+    const res = await fetch(`${config.SKYSCANNER_BASE_URL}/api/v2/flights/searchFlights?${qs.toString()}`, {
+      headers: this.skyHeaders,
+    });
+    if (!res.ok) {
+      throw new Error(`Skyscanner searchFlights error ${res.status}: ${await res.text()}`);
+    }
+
+    const data = (await res.json()) as SkyFlightsResponse;
+    const itineraries = data.data?.itineraries;
     if (!itineraries || itineraries.length === 0) {
       throw new Error(`No flight found from "${pair.from}" to "${pair.to}"`);
     }
 
     const options = itineraries.slice(0, 5).map((itin): TransportOption => {
-      const leg = itin.legs[0];
+      const leg = itin.legs?.[0];
       const durationMinutes = leg?.durationInMinutes ?? 0;
-      const flightNumber = leg?.segments?.[0]?.flightNumber;
+      const seg = leg?.segments?.[0];
+      const carrier = seg?.marketingCarrier ?? leg?.carriers?.marketing?.[0];
+      const flightNumber = seg?.flightNumber
+        ? `${carrier?.alternateId ?? ''}${seg.flightNumber}`
+        : undefined;
       return {
         mode: 'flight',
-        provider: 'Skyscanner',
+        provider: carrier?.name ?? 'Skyscanner',
         durationMinutes,
         departureTime: leg?.departure ? leg.departure.slice(11, 16) : undefined,
         arrivalTime: leg?.arrival ? leg.arrival.slice(11, 16) : undefined,
-        priceEur: Math.round(itin.price.amount),
+        priceEur: itin.price?.raw !== undefined ? Math.round(itin.price.raw) : undefined,
         flightNumber,
         warnings: durationMinutes > 240 ? ['Travel exceeds 4h — consider reducing activities on travel day'] : [],
       };
