@@ -139,6 +139,16 @@ function agentLineVar(agent: string): string {
       </span>
     </div>
 
+    <!-- Departure / arrival airport (flights only) -->
+    <div
+      v-if="td.selectedOption.originAirport || td.selectedOption.destinationAirport"
+      class="ac-tr-airports"
+    >
+      <span v-if="td.selectedOption.originAirport">✈ {{ td.selectedOption.originAirport }}</span>
+      <span v-if="td.selectedOption.originAirport && td.selectedOption.destinationAirport"> → </span>
+      <span v-if="td.selectedOption.destinationAirport">{{ td.selectedOption.destinationAirport }}</span>
+    </div>
+
     <!-- Why this option won -->
     <div class="ac-tr-qualifier">{{ qualifier }}</div>
 
@@ -353,6 +363,15 @@ function agentLineVar(agent: string): string {
 
 .ac-tr-badge-time {
   color: var(--fg-1);
+}
+
+.ac-tr-airports {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--fg-2);
+  margin-top: 3px;
+  letter-spacing: 0.02em;
+  opacity: 0.8;
 }
 
 .ac-tr-qualifier {

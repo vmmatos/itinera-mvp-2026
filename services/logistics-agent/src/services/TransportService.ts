@@ -6,6 +6,7 @@ import type { RedisService } from '@/services/RedisService';
 import type { PlacesService } from '@/services/PlacesService';
 import { resolveMultiLegOptions } from '@/services/MultiLegRouter';
 import { byCity, nearestAirport } from '@/data/airports';
+import { getHubs } from '@/services/HubLookup';
 
 export interface CityPair {
   from: string;
@@ -136,10 +137,14 @@ export class TransportService extends BaseService {
     return options;
   }
 
-  // Resolve a destination (city, town or region) to an IATA airport code for
-  // SerpApi, which needs codes rather than names. Layered: exact dataset match
-  // first, then geocode + nearest airport. Cached 30 days. Null when unresolved.
-  private async resolveAirport(place: string): Promise<string | null> {
+  // Resolve a city/region to an IATA airport code for SerpApi.
+  // role='origin': only exact-dataset + geocode; NOT HubLookup — a rural origin
+  //   without its own airport must go via the multi-leg router (which adds the
+  //   access leg); showing a direct flight as if it departs from the hub is
+  //   misleading and undercuts the multi-leg composed option.
+  // role='destination': also tries HubLookup — landing at a nearby hub and
+  //   continuing by bus is a valid option when the dest lacks its own airport.
+  private async resolveAirport(place: string, role: 'origin' | 'destination' = 'destination'): Promise<string | null> {
     const cacheKey = `transport:airport:${this.normKey(place)}`;
     if (this.redis) {
       try {
@@ -149,12 +154,29 @@ export class TransportService extends BaseService {
     }
 
     let iata: string | null = byCity(place)?.iata ?? null;
+
+    // Tier 2: geocode → nearest airport (Places API; may be blocked in dev)
     if (!iata && this.places) {
       try {
         const coord = await this.places.geocodePlace(place);
         if (coord) iata = nearestAirport(coord.lat, coord.lng).iata;
       } catch (err) {
         this.logger.debug('Airport geocode failed', { place, error: String(err) });
+      }
+    }
+
+    // Tier 3 (destination role only): HubLookup — rural/remote destinations map
+    // to a nearby hub airport (e.g. fly into Faro near Mértola, Dublin near Galway).
+    // Not applied to origins: a flight departing from the hub without the access
+    // leg shown would be misleading; the multi-leg router handles that correctly.
+    if (!iata && role === 'destination') {
+      const hubs = getHubs(place);
+      const airportHub = hubs.find((h) => h.hubType === 'airport');
+      if (airportHub) {
+        iata = byCity(airportHub.hubCity)?.iata ?? null;
+        if (iata) {
+          this.logger.debug('Airport resolved via HubLookup', { place, hub: airportHub.hubCity, iata });
+        }
       }
     }
 
@@ -184,8 +206,8 @@ export class TransportService extends BaseService {
     }
 
     const [originIata, destIata] = await Promise.all([
-      this.resolveAirport(pair.from),
-      this.resolveAirport(pair.to),
+      this.resolveAirport(pair.from, 'origin'),
+      this.resolveAirport(pair.to, 'destination'),
     ]);
     if (!originIata || !destIata) {
       throw new Error(`No airport found for "${pair.from}" or "${pair.to}"`);
@@ -240,6 +262,12 @@ export class TransportService extends BaseService {
           arrivalTime: serpClock(last?.arrival_airport?.time),
           priceEur: typeof itin.price === 'number' ? Math.round(itin.price) : undefined,
           flightNumber: first?.flight_number?.replace(/\s+/g, ''),
+          originAirport: first?.departure_airport?.name
+            ? `${first.departure_airport.id ?? originIata} – ${first.departure_airport.name}`
+            : originIata ?? undefined,
+          destinationAirport: last?.arrival_airport?.name
+            ? `${last.arrival_airport.id ?? destIata} – ${last.arrival_airport.name}`
+            : destIata ?? undefined,
           warnings,
         };
       })
@@ -347,6 +375,11 @@ export class TransportService extends BaseService {
   }
 
   private async fetchBest(pair: CityPair): Promise<TransportOption[]> {
+    // Guard: same-city pair (LLM sometimes emits city→city self-transitions).
+    const normA = pair.from.toLowerCase().split(',')[0]!.trim();
+    const normB = pair.to.toLowerCase().split(',')[0]!.trim();
+    if (normA === normB) return [];
+
     const [directResults, multiLegResults] = await Promise.allSettled([
       Promise.allSettled([
         this.fetchFlights(pair),

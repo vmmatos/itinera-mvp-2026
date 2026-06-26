@@ -135,4 +135,8 @@ export interface TransportOption {
   segments?: TransportSegment[];
   /** Human-readable summary, e.g. "Bus + Train + Flight — 9h, ~€172/person" */
   displaySummary?: string;
+  /** For flights: departure airport code + name, e.g. "FAO – Faro Airport" */
+  originAirport?: string;
+  /** For flights: arrival airport code + name, e.g. "BCN – Barcelona–El Prat" */
+  destinationAirport?: string;
 }

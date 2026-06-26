@@ -489,6 +489,7 @@ export class NegotiationLoop extends BaseService {
         transitionDays.add(tDayNum);
         tDay['transport'] = [this.buildTransportLeg(fromCity, toCity, best, options!)];
         tDay['cityTransition'] = { to: toCity, travelTime: this.travelTimeLabel(best) };
+        this.snapTravelSlot(tDay, best.departureTime);
       }
 
       // Drop stray LLM cityTransitions on non-travel days (e.g. a buried
@@ -518,6 +519,7 @@ export class NegotiationLoop extends BaseService {
 
       day['transport'] = [this.buildTransportLeg(fromCity, to, best, options!)];
       day['cityTransition'] = { to, travelTime: this.travelTimeLabel(best) };
+      this.snapTravelSlot(day, best.departureTime);
     }
     return { ...proposal, itinerary };
   }
@@ -546,6 +548,24 @@ export class NegotiationLoop extends BaseService {
       displaySummary: best.displaySummary,
       alternatives: options.slice(1),
     };
+  }
+
+  // Snap a travel day's activity time slot to match the actual transport
+  // departure time so the timeline doesn't say "morning" for a 19h train.
+  private snapTravelSlot(day: Record<string, unknown>, departureTime?: string): void {
+    if (!departureTime) return;
+    const hour = parseInt(departureTime.slice(0, 2), 10);
+    if (Number.isNaN(hour)) return;
+    const slot = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
+    const activities = Array.isArray(day['activities'])
+      ? (day['activities'] as Array<Record<string, unknown>>)
+      : [];
+    const travelAct = activities.find((a) => {
+      const name = typeof a['activity'] === 'string' ? a['activity'].toLowerCase() : '';
+      return name.includes('travel') || name.includes('fly') || name.includes('drive') ||
+             name.includes('depart') || name.includes('journey') || name.includes('transfer');
+    });
+    if (travelAct) travelAct['time'] = slot;
   }
 
   private travelTimeLabel(best: TransportOption): string {
