@@ -6,7 +6,7 @@
  * relying on the LLM to invent direct connections that don't exist.
  *
  * HubEntry fields:
- *  - hubCity    : the hub city to connect to (must be in Google Directions / Skyscanner)
+ *  - hubCity    : the hub city to connect to (resolvable via Google Routes / SerpApi)
  *  - hubCountry : ISO-ish country name
  *  - hubType    : what the hub offers ('airport' | 'rail_major')
  *  - accessMode : how to reach the hub from the remote city

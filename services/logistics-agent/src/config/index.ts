@@ -25,8 +25,8 @@ const EnvSchema = z.object({
   CACHE_TTL_SECONDS: z.coerce.number().default(3600),
   WEATHER_CACHE_TTL_SECONDS: z.coerce.number().default(1800),
   ATTRACTIONS_CACHE_TTL_SECONDS: z.coerce.number().default(86400),
-  // Transport resolution is expensive (RapidAPI flight quota is tiny). Cache
-  // resolved legs (6h) and airport-id lookups (30d) to avoid burning quota on
+  // Transport resolution is expensive (SerpApi is 250 searches/month). Cache
+  // resolved legs (6h) and airport lookups (30d) to avoid burning quota on
   // the preflight + per-day + per-round re-resolution of the same city pairs.
   TRANSPORT_CACHE_TTL_SECONDS: z.coerce.number().default(21600),
   AIRPORT_CACHE_TTL_SECONDS: z.coerce.number().default(2592000),
@@ -39,10 +39,11 @@ const EnvSchema = z.object({
   GOOGLE_ROUTES_BASE_URL: z.string().default('https://routes.googleapis.com'),
   GOOGLE_PLACES_BASE_URL: z.string().default('https://places.googleapis.com/v1'),
   OPENWEATHERMAP_BASE_URL: z.string().default('https://api.openweathermap.org'),
-  SKYSCANNER_RAPIDAPI_KEY: z.string().default(''),
-  SKYSCANNER_RAPIDAPI_HOST: z.string().default('sky-scrapper.p.rapidapi.com'),
-  // Host base only — endpoint version paths (/api/v1/, /api/v2/) are appended in code.
-  SKYSCANNER_BASE_URL: z.string().default('https://sky-scrapper.p.rapidapi.com'),
+  // SerpApi Google Flights — flight search. engine=google_flights is passed as a
+  // query param in code, not baked into the URL. Empty key = flight search disabled
+  // (the feasibility guard then estimates flights for long legs).
+  SERPAPI_KEY: z.string().default(''),
+  SERPAPI_BASE_URL: z.string().default('https://serpapi.com/search'),
 });
 
 const parsed = EnvSchema.safeParse(process.env);

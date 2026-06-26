@@ -3,7 +3,9 @@ import type { TransportMode, TransportOption } from '@itinera/shared';
 import { config } from '@/config';
 import type { MapService } from '@/services/MapService';
 import type { RedisService } from '@/services/RedisService';
+import type { PlacesService } from '@/services/PlacesService';
 import { resolveMultiLegOptions } from '@/services/MultiLegRouter';
+import { byCity, nearestAirport } from '@/data/airports';
 
 export interface CityPair {
   from: string;
@@ -11,42 +13,26 @@ export interface CityPair {
   departureDateIso?: string;
 }
 
-// ── sky-scrapper (RapidAPI) response shapes ──────────────────────
-// Two-step API: searchAirport (city → skyId/entityId) then searchFlights.
-interface SkyAirportResponse {
-  data?: Array<{
-    navigation?: {
-      relevantFlightParams?: { skyId?: string; entityId?: string };
-    };
-  }>;
+// ── SerpApi Google Flights response shapes ───────────────────────
+interface SerpFlightLeg {
+  departure_airport?: { id?: string; name?: string; time?: string };
+  arrival_airport?: { id?: string; name?: string; time?: string };
+  duration?: number; // minutes
+  airline?: string;
+  flight_number?: string;
 }
 
-interface SkyCarrier {
-  name?: string;
-  alternateId?: string;
+interface SerpFlightOption {
+  flights?: SerpFlightLeg[];
+  layovers?: Array<{ id?: string; duration?: number }>;
+  total_duration?: number; // minutes
+  price?: number; // in requested currency, per the configured passenger count
 }
 
-interface SkyFlightSegment {
-  flightNumber?: string;
-  marketingCarrier?: SkyCarrier;
-}
-
-interface SkyFlightLeg {
-  durationInMinutes?: number;
-  departure?: string;
-  arrival?: string;
-  stopCount?: number;
-  carriers?: { marketing?: SkyCarrier[] };
-  segments?: SkyFlightSegment[];
-}
-
-interface SkyItinerary {
-  price?: { raw?: number };
-  legs?: SkyFlightLeg[];
-}
-
-interface SkyFlightsResponse {
-  data?: { itineraries?: SkyItinerary[] };
+interface SerpFlightsResponse {
+  best_flights?: SerpFlightOption[];
+  other_flights?: SerpFlightOption[];
+  error?: string;
 }
 
 // ── Google Routes API (v2) — transit response shapes ─────────────
@@ -93,11 +79,18 @@ function clockFromIso(iso?: string): string | undefined {
   return Number.isNaN(d.getTime()) ? undefined : d.toISOString().slice(11, 16);
 }
 
+/** "HH:MM" from a SerpApi local timestamp "YYYY-MM-DD HH:MM", or undefined. */
+function serpClock(t?: string): string | undefined {
+  if (!t || t.length < 16) return undefined;
+  return t.slice(11, 16);
+}
+
 export class TransportService extends BaseService {
-  // redis is optional so unit tests can construct without a cache.
+  // redis + places are optional so unit tests can construct without them.
   constructor(
     private readonly mapService: MapService,
     private readonly redis?: RedisService,
+    private readonly places?: PlacesService,
   ) {
     super('transport-service');
   }
@@ -143,38 +136,32 @@ export class TransportService extends BaseService {
     return options;
   }
 
-  private get skyHeaders(): Record<string, string> {
-    return {
-      'X-RapidAPI-Key': config.SKYSCANNER_RAPIDAPI_KEY,
-      'X-RapidAPI-Host': config.SKYSCANNER_RAPIDAPI_HOST,
-    };
-  }
-
-  // Resolve a city/airport name to sky-scrapper's skyId + entityId, required by
-  // the searchFlights endpoint. Returns null when no airport matches. Cached for
-  // 30 days — airport ids are stable and this is the most-repeated flight call.
-  private async resolveAirport(query: string): Promise<{ skyId: string; entityId: string } | null> {
-    const city = query.split(',')[0]!.trim();
-    const cacheKey = `transport:airport:${this.normKey(city)}`;
+  // Resolve a destination (city, town or region) to an IATA airport code for
+  // SerpApi, which needs codes rather than names. Layered: exact dataset match
+  // first, then geocode + nearest airport. Cached 30 days. Null when unresolved.
+  private async resolveAirport(place: string): Promise<string | null> {
+    const cacheKey = `transport:airport:${this.normKey(place)}`;
     if (this.redis) {
       try {
-        const hit = await this.redis.get<{ skyId: string; entityId: string }>(cacheKey);
-        if (hit?.skyId && hit?.entityId) return hit;
+        const hit = await this.redis.get<{ iata: string }>(cacheKey);
+        if (hit?.iata) return hit.iata;
       } catch { /* cache miss path */ }
     }
-    const url = `${config.SKYSCANNER_BASE_URL}/api/v1/flights/searchAirport?query=${encodeURIComponent(city)}&locale=en-US`;
-    const res = await fetch(url, { headers: this.skyHeaders });
-    if (!res.ok) {
-      throw new Error(`Skyscanner searchAirport error ${res.status}: ${await res.text()}`);
+
+    let iata: string | null = byCity(place)?.iata ?? null;
+    if (!iata && this.places) {
+      try {
+        const coord = await this.places.geocodePlace(place);
+        if (coord) iata = nearestAirport(coord.lat, coord.lng).iata;
+      } catch (err) {
+        this.logger.debug('Airport geocode failed', { place, error: String(err) });
+      }
     }
-    const data = (await res.json()) as SkyAirportResponse;
-    const params = data.data?.[0]?.navigation?.relevantFlightParams;
-    if (!params?.skyId || !params?.entityId) return null;
-    const result = { skyId: params.skyId, entityId: params.entityId };
-    if (this.redis) {
-      try { await this.redis.set(cacheKey, result, config.AIRPORT_CACHE_TTL_SECONDS); } catch { /* best-effort */ }
+
+    if (iata && this.redis) {
+      try { await this.redis.set(cacheKey, { iata }, config.AIRPORT_CACHE_TTL_SECONDS); } catch { /* best-effort */ }
     }
-    return result;
+    return iata;
   }
 
   // Airlines publish schedules ~330 days out; clamp far-future trip dates so a
@@ -192,72 +179,71 @@ export class TransportService extends BaseService {
   }
 
   private async fetchFlights(pair: CityPair): Promise<TransportOption[]> {
-    if (!config.SKYSCANNER_RAPIDAPI_KEY) {
-      throw new Error('Skyscanner API key not configured');
+    if (!config.SERPAPI_KEY) {
+      throw new Error('SerpApi key not configured');
     }
 
-    const [origin, dest] = await Promise.all([
+    const [originIata, destIata] = await Promise.all([
       this.resolveAirport(pair.from),
       this.resolveAirport(pair.to),
     ]);
-    if (!origin || !dest) {
+    if (!originIata || !destIata) {
       throw new Error(`No airport found for "${pair.from}" or "${pair.to}"`);
+    }
+    if (originIata === destIata) {
+      throw new Error(`Same airport for "${pair.from}" and "${pair.to}" — no flight`);
     }
 
     const qs = new URLSearchParams({
-      originSkyId: origin.skyId,
-      destinationSkyId: dest.skyId,
-      originEntityId: origin.entityId,
-      destinationEntityId: dest.entityId,
-      date: this.flightSearchDate(pair.departureDateIso),
-      cabinClass: 'economy',
-      adults: '1',
+      engine: 'google_flights',
+      departure_id: originIata,
+      arrival_id: destIata,
+      outbound_date: this.flightSearchDate(pair.departureDateIso),
+      type: '2', // one-way (no return_date needed)
       currency: 'EUR',
-      market: 'en-US',
-      countryCode: 'US',
+      hl: 'en',
+      api_key: config.SERPAPI_KEY,
     });
 
-    const res = await fetch(`${config.SKYSCANNER_BASE_URL}/api/v2/flights/searchFlights?${qs.toString()}`, {
-      headers: this.skyHeaders,
-    });
+    const res = await fetch(`${config.SERPAPI_BASE_URL}?${qs.toString()}`);
     if (!res.ok) {
-      throw new Error(`Skyscanner searchFlights error ${res.status}: ${await res.text()}`);
+      throw new Error(`SerpApi google_flights error ${res.status}: ${await res.text()}`);
     }
 
-    const data = (await res.json()) as SkyFlightsResponse;
-    const itineraries = data.data?.itineraries;
-    if (!itineraries || itineraries.length === 0) {
+    const data = (await res.json()) as SerpFlightsResponse;
+    if (data.error) {
+      throw new Error(`SerpApi google_flights returned: ${data.error}`);
+    }
+
+    const itineraries = [...(data.best_flights ?? []), ...(data.other_flights ?? [])];
+    if (itineraries.length === 0) {
       throw new Error(`No flight found from "${pair.from}" to "${pair.to}"`);
     }
 
-    const options = itineraries.slice(0, 5).map((itin): TransportOption => {
-      const leg = itin.legs?.[0];
-      const durationMinutes = leg?.durationInMinutes ?? 0;
-      const seg = leg?.segments?.[0];
-      const carrier = seg?.marketingCarrier ?? leg?.carriers?.marketing?.[0];
-      const flightNumber = seg?.flightNumber
-        ? `${carrier?.alternateId ?? ''}${seg.flightNumber}`
-        : undefined;
-      return {
-        mode: 'flight',
-        provider: carrier?.name ?? 'Skyscanner',
-        durationMinutes,
-        departureTime: leg?.departure ? leg.departure.slice(11, 16) : undefined,
-        arrivalTime: leg?.arrival ? leg.arrival.slice(11, 16) : undefined,
-        priceEur: itin.price?.raw !== undefined ? Math.round(itin.price.raw) : undefined,
-        flightNumber,
-        warnings: durationMinutes > 240 ? ['Travel exceeds 4h — consider reducing activities on travel day'] : [],
-      };
-    });
-
-    return options.sort((a, b) => {
-      const toMins = (t?: string): number => {
-        if (!t) return 9999;
-        const [h, m] = t.split(':').map(Number);
-        return (h ?? 0) * 60 + (m ?? 0);
-      };
-      return toMins(a.departureTime) - toMins(b.departureTime);
-    });
+    return itineraries
+      .slice(0, 5)
+      .map((itin): TransportOption => {
+        const legs = itin.flights ?? [];
+        const first = legs[0];
+        const last = legs[legs.length - 1];
+        const durationMinutes = itin.total_duration ?? legs.reduce((s, l) => s + (l.duration ?? 0), 0);
+        const stops = itin.layovers?.length ?? Math.max(0, legs.length - 1);
+        const warnings: string[] = [];
+        if (stops > 0) warnings.push(`${stops} stop${stops > 1 ? 's' : ''}`);
+        if (durationMinutes > 240) warnings.push('Travel exceeds 4h — consider reducing activities on travel day');
+        return {
+          mode: 'flight',
+          provider: first?.airline ?? 'Google Flights',
+          durationMinutes,
+          // SerpApi times are local "YYYY-MM-DD HH:MM" — slice HH:MM directly.
+          departureTime: serpClock(first?.departure_airport?.time),
+          arrivalTime: serpClock(last?.arrival_airport?.time),
+          priceEur: typeof itin.price === 'number' ? Math.round(itin.price) : undefined,
+          flightNumber: first?.flight_number?.replace(/\s+/g, ''),
+          warnings,
+        };
+      })
+      .sort((a, b) => (a.priceEur ?? 9e9) - (b.priceEur ?? 9e9));
   }
 
   private async fetchTrains(pair: CityPair): Promise<TransportOption[]> {

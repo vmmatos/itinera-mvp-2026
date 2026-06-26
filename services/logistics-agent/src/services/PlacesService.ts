@@ -60,6 +60,32 @@ export class PlacesService extends BaseService {
     return (data.places ?? []).map((p) => this.mapPlace(p, category ?? 'attraction'));
   }
 
+  /**
+   * Geocode a place name (city, town, region) to a coordinate via Places Text
+   * Search. Used to resolve a destination to its nearest airport for flight
+   * search. Returns null when no place matches.
+   */
+  async geocodePlace(query: string): Promise<{ lat: number; lng: number } | null> {
+    const res = await fetch(`${this.baseUrl}/places:searchText`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': this.apiKey,
+        'X-Goog-FieldMask': 'places.location',
+      },
+      body: JSON.stringify({ textQuery: query, maxResultCount: 1 }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`Google Places API error ${res.status}: ${await res.text()}`);
+    }
+
+    const data = (await res.json()) as GooglePlacesTextSearchResponse;
+    const loc = data.places?.[0]?.location;
+    if (loc?.latitude === undefined || loc?.longitude === undefined) return null;
+    return { lat: loc.latitude, lng: loc.longitude };
+  }
+
   private mapPlace(
     p: NonNullable<GooglePlacesTextSearchResponse['places']>[number],
     defaultCategory: string,
