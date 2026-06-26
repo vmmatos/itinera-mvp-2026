@@ -2,6 +2,7 @@ import { BaseService } from '@itinera/shared';
 import type { TransportMode, TransportOption } from '@itinera/shared';
 import { config } from '@/config';
 import type { MapService } from '@/services/MapService';
+import type { RedisService } from '@/services/RedisService';
 import { resolveMultiLegOptions } from '@/services/MultiLegRouter';
 
 export interface CityPair {
@@ -93,7 +94,11 @@ function clockFromIso(iso?: string): string | undefined {
 }
 
 export class TransportService extends BaseService {
-  constructor(private readonly mapService: MapService) {
+  // redis is optional so unit tests can construct without a cache.
+  constructor(
+    private readonly mapService: MapService,
+    private readonly redis?: RedisService,
+  ) {
     super('transport-service');
   }
 
@@ -103,8 +108,39 @@ export class TransportService extends BaseService {
   ): Promise<TransportOption[]> {
     // Always offer every mode as an alternative; the user's preferred mode is
     // favoured in the ranking (F4) but a clearly better option can still win.
-    const options = await this.fetchBest(pair);
+    // Resolution is cached per city-pair+date (preference-independent) so the
+    // preflight, per-day and per-round passes don't each burn API quota.
+    const options = await this.fetchBestCached(pair);
     return this.sortByScore(options, preference === 'best' ? undefined : preference);
+  }
+
+  private normKey(s: string): string {
+    return s.toLowerCase().split(',')[0]!.trim().replace(/\s+/g, '-');
+  }
+
+  // Cache wrapper around fetchBest, keyed by normalised city pair + date.
+  private async fetchBestCached(pair: CityPair): Promise<TransportOption[]> {
+    const key = `transport:legs:${this.normKey(pair.from)}|${this.normKey(pair.to)}|${pair.departureDateIso?.slice(0, 10) ?? 'na'}`;
+    if (this.redis) {
+      try {
+        const hit = await this.redis.get<TransportOption[]>(key);
+        if (hit && hit.length > 0) {
+          this.logger.debug('Transport cache hit', { key });
+          return hit;
+        }
+      } catch (err) {
+        this.logger.debug('Transport cache read failed', { error: String(err) });
+      }
+    }
+    const options = await this.fetchBest(pair);
+    if (this.redis) {
+      try {
+        await this.redis.set(key, options, config.TRANSPORT_CACHE_TTL_SECONDS);
+      } catch (err) {
+        this.logger.debug('Transport cache write failed', { error: String(err) });
+      }
+    }
+    return options;
   }
 
   private get skyHeaders(): Record<string, string> {
@@ -115,9 +151,17 @@ export class TransportService extends BaseService {
   }
 
   // Resolve a city/airport name to sky-scrapper's skyId + entityId, required by
-  // the searchFlights endpoint. Returns null when no airport matches.
+  // the searchFlights endpoint. Returns null when no airport matches. Cached for
+  // 30 days — airport ids are stable and this is the most-repeated flight call.
   private async resolveAirport(query: string): Promise<{ skyId: string; entityId: string } | null> {
     const city = query.split(',')[0]!.trim();
+    const cacheKey = `transport:airport:${this.normKey(city)}`;
+    if (this.redis) {
+      try {
+        const hit = await this.redis.get<{ skyId: string; entityId: string }>(cacheKey);
+        if (hit?.skyId && hit?.entityId) return hit;
+      } catch { /* cache miss path */ }
+    }
     const url = `${config.SKYSCANNER_BASE_URL}/api/v1/flights/searchAirport?query=${encodeURIComponent(city)}&locale=en-US`;
     const res = await fetch(url, { headers: this.skyHeaders });
     if (!res.ok) {
@@ -126,7 +170,11 @@ export class TransportService extends BaseService {
     const data = (await res.json()) as SkyAirportResponse;
     const params = data.data?.[0]?.navigation?.relevantFlightParams;
     if (!params?.skyId || !params?.entityId) return null;
-    return { skyId: params.skyId, entityId: params.entityId };
+    const result = { skyId: params.skyId, entityId: params.entityId };
+    if (this.redis) {
+      try { await this.redis.set(cacheKey, result, config.AIRPORT_CACHE_TTL_SECONDS); } catch { /* best-effort */ }
+    }
+    return result;
   }
 
   // Airlines publish schedules ~330 days out; clamp far-future trip dates so a

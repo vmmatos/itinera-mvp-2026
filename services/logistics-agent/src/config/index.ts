@@ -25,6 +25,11 @@ const EnvSchema = z.object({
   CACHE_TTL_SECONDS: z.coerce.number().default(3600),
   WEATHER_CACHE_TTL_SECONDS: z.coerce.number().default(1800),
   ATTRACTIONS_CACHE_TTL_SECONDS: z.coerce.number().default(86400),
+  // Transport resolution is expensive (RapidAPI flight quota is tiny). Cache
+  // resolved legs (6h) and airport-id lookups (30d) to avoid burning quota on
+  // the preflight + per-day + per-round re-resolution of the same city pairs.
+  TRANSPORT_CACHE_TTL_SECONDS: z.coerce.number().default(21600),
+  AIRPORT_CACHE_TTL_SECONDS: z.coerce.number().default(2592000),
   OPENWEATHERMAP_API_KEY: z.string().min(1),
   GOOGLE_PLACES_API_KEY: z.string().min(1),
   GOOGLE_MAPS_API_KEY: z.string().min(1),

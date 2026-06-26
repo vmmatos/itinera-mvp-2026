@@ -387,4 +387,43 @@ describe('TransportService', () => {
       expect(car!.warnings.some((w) => w.startsWith('Long drive'))).toBe(true);
     });
   });
+
+  // ── Redis caching (protects scarce RapidAPI quota) ───────────────────
+  describe('caching', () => {
+    function makeRedisMock(): { store: Map<string, unknown>; get: (k: string) => Promise<unknown>; set: (k: string, v: unknown) => Promise<void> } {
+      const store = new Map<string, unknown>();
+      return {
+        store,
+        get: async (k: string) => store.get(k) ?? null,
+        set: async (k: string, v: unknown) => { store.set(k, v); },
+      };
+    }
+
+    it('caches resolved legs so a repeat pair makes no new API calls', async () => {
+      const redis = makeRedisMock();
+      stubFetch({ sky: SKYSCANNER_OK, directions: ROUTES_OK });
+      service = new TransportService(mapService, redis as never);
+
+      await service.resolveTransportOptions({ from: 'Madrid', to: 'Barcelona', departureDateIso: '2099-08-01' }, 'best');
+      const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+      const callsAfterFirst = fetchMock.mock.calls.length;
+      expect(callsAfterFirst).toBeGreaterThan(0);
+
+      // Second resolution of the same pair (different preference) → cache hit.
+      const second = await service.resolveTransportOptions({ from: 'Madrid', to: 'Barcelona', departureDateIso: '2099-08-01' }, 'train');
+      expect(fetchMock.mock.calls.length).toBe(callsAfterFirst); // no new network calls
+      expect(second.length).toBeGreaterThan(0);
+    });
+
+    it('caches airport id lookups', async () => {
+      const redis = makeRedisMock();
+      stubFetch({ sky: SKYSCANNER_OK, directions: new Error('no train') });
+      (mapService.getTravelTime as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('no car'));
+      service = new TransportService(mapService, redis as never);
+
+      await service.resolveTransportOptions({ from: 'Madrid', to: 'Barcelona', departureDateIso: '2099-08-01' }, 'best');
+      expect(redis.store.has('transport:airport:madrid')).toBe(true);
+      expect(redis.store.has('transport:airport:barcelona')).toBe(true);
+    });
+  });
 });
