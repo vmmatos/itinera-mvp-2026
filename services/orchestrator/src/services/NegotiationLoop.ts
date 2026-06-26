@@ -105,7 +105,7 @@ export class NegotiationLoop extends BaseService {
           // prices the real legs into the budget (and can block if it overshoots).
           logistics = await this.validateLogistics(tripId, round, proposal, tripContext);
           proposal = this.enforceCanonicalDestinations(
-            this.mergeTransportIntoProposal(proposal, logistics.content, confirmedLegs),
+            this.mergeTransportIntoProposal(proposal, logistics.content, confirmedLegs, destinations),
             destinations,
           );
           finance = await this.reviewFinance(tripId, round, proposal, tripContext);
@@ -160,7 +160,7 @@ export class NegotiationLoop extends BaseService {
         // Fold the chosen transport legs into the proposal so the next Finance
         // round counts their cost (folded #72: transport in budget).
         proposal = this.enforceCanonicalDestinations(
-          this.mergeTransportIntoProposal(proposal, logistics.content, confirmedLegs),
+          this.mergeTransportIntoProposal(proposal, logistics.content, confirmedLegs, destinations),
           destinations,
         );
 
@@ -442,6 +442,7 @@ export class NegotiationLoop extends BaseService {
     proposal: Record<string, unknown>,
     logisticsContent: Record<string, unknown>,
     confirmedLegs: Record<string, TransportOption[]> = {},
+    destinations: Array<{ country: string; city?: string; nights: number }> = [],
   ): Record<string, unknown> {
     const logisticsOptions = logisticsContent['transportOptions'] as
       Record<string, TransportOption[]> | undefined;
@@ -450,6 +451,58 @@ export class NegotiationLoop extends BaseService {
       ? (proposal['itinerary'] as Array<Record<string, unknown>>)
       : [];
 
+    // Multi-destination trips: inject transport DETERMINISTICALLY from the
+    // canonical destination schedule, not from the LLM's cityTransition. The
+    // LLM names transitions with arbitrary towns ("Cogne, Valle d'Aosta") that
+    // never match the canonical confirmed-leg keys ("Vale De Aosta"), leaving
+    // every leg unmatched. Driving off destinations guarantees the pre-resolved
+    // legs (real flights/trains, or the feasibility-guard flight estimate) land
+    // on the correct travel day.
+    if (destinations.length >= 2) {
+      const byDay = new Map<number, Record<string, unknown>>();
+      for (const day of itinerary) {
+        const n = typeof day['day'] === 'number' ? day['day'] : null;
+        if (n !== null) byDay.set(n, day);
+      }
+      // First day-number of each destination (transition lands on dest[i]'s start).
+      const startDay: number[] = [];
+      let cursor = 1;
+      for (const d of destinations) {
+        startDay.push(cursor);
+        cursor += d.nights;
+      }
+      const transitionDays = new Set<number>();
+
+      for (let i = 1; i < destinations.length; i++) {
+        const fromCity = destinations[i - 1]!.city ?? destinations[i - 1]!.country;
+        const toCity = destinations[i]!.city ?? destinations[i]!.country;
+        const tDayNum = startDay[i]!;
+        const tDay = byDay.get(tDayNum);
+        if (!tDay) continue;
+
+        const options =
+          this.findInConfirmedLegs(fromCity, toCity, confirmedLegs) ??
+          logisticsOptions?.[String(tDayNum)];
+        const best = options?.[0];
+        if (!best || best.durationMinutes === 0) continue;
+
+        transitionDays.add(tDayNum);
+        tDay['transport'] = [this.buildTransportLeg(fromCity, toCity, best, options!)];
+        tDay['cityTransition'] = { to: toCity, travelTime: this.travelTimeLabel(best) };
+      }
+
+      // Drop stray LLM cityTransitions on non-travel days (e.g. a buried
+      // "Cogne" hop) so the timeline only shows real inter-destination moves.
+      for (const day of itinerary) {
+        const n = typeof day['day'] === 'number' ? day['day'] : null;
+        if (n !== null && !transitionDays.has(n) && day['cityTransition']) {
+          delete day['cityTransition'];
+        }
+      }
+      return { ...proposal, itinerary };
+    }
+
+    // Single-destination / no schedule: fall back to per-day cityTransition.
     for (const day of itinerary) {
       const dayNum = typeof day['day'] === 'number' ? day['day'] : null;
       if (dayNum === null) continue;
@@ -457,45 +510,50 @@ export class NegotiationLoop extends BaseService {
       if (!to) continue;
       const fromCity = typeof day['city'] === 'string' ? day['city'] : '';
 
-      // Priority: confirmed legs (from pre-flight /transport-legs) > logistics content.
       const options =
         this.findInConfirmedLegs(fromCity, to, confirmedLegs) ??
         logisticsOptions?.[String(dayNum)];
-
       const best = options?.[0];
-      // Skip days where resolution returned nothing or a bogus 0-duration placeholder.
       if (!best || best.durationMinutes === 0) continue;
 
-      day['transport'] = [
-        {
-          from: fromCity,
-          to,
-          mode: best.mode,
-          provider: best.provider,
-          flightNumber: best.flightNumber,
-          trainLine: best.trainLine,
-          departureTime: best.departureTime,
-          arrivalTime: best.arrivalTime,
-          durationMinutes: best.durationMinutes,
-          priceEur: best.priceEur,
-          cost: best.priceEur,
-          currency: 'EUR',
-          warnings: best.warnings,
-          segments: best.segments,
-          displaySummary: best.displaySummary,
-          alternatives: options.slice(1),
-        },
-      ];
-      // G3: override LLM-invented cityTransition with real API data.
-      const h = Math.floor(best.durationMinutes / 60);
-      const m = best.durationMinutes % 60;
-      const timeStr = m > 0 ? `${h}h${m}m` : `${h}h`;
-      day['cityTransition'] = {
-        to,
-        travelTime: `${timeStr} by ${best.mode}`,
-      };
+      day['transport'] = [this.buildTransportLeg(fromCity, to, best, options!)];
+      day['cityTransition'] = { to, travelTime: this.travelTimeLabel(best) };
     }
     return { ...proposal, itinerary };
+  }
+
+  private buildTransportLeg(
+    from: string,
+    to: string,
+    best: TransportOption,
+    options: TransportOption[],
+  ): Record<string, unknown> {
+    return {
+      from,
+      to,
+      mode: best.mode,
+      provider: best.provider,
+      flightNumber: best.flightNumber,
+      trainLine: best.trainLine,
+      departureTime: best.departureTime,
+      arrivalTime: best.arrivalTime,
+      durationMinutes: best.durationMinutes,
+      priceEur: best.priceEur,
+      cost: best.priceEur,
+      currency: 'EUR',
+      warnings: best.warnings,
+      segments: best.segments,
+      displaySummary: best.displaySummary,
+      alternatives: options.slice(1),
+    };
+  }
+
+  private travelTimeLabel(best: TransportOption): string {
+    if (best.displaySummary) return best.displaySummary;
+    const h = Math.floor(best.durationMinutes / 60);
+    const m = best.durationMinutes % 60;
+    const timeStr = m > 0 ? `${h}h${m}m` : `${h}h`;
+    return `${timeStr} by ${best.mode}`;
   }
 
   // Hardening: the LLM sometimes buries a city transition in a day's `city`

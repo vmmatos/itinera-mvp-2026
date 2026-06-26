@@ -365,11 +365,14 @@ describe('NegotiationLoop', () => {
     vi.mocked(agentCaller.callOrchestratorPropose).mockResolvedValue({
       ...PROPOSAL_RESULT,
       content: {
-        itinerary: [{
-          day: 1, city: 'Mertola',
-          cityTransition: { to: 'Barcelona', travelTime: 'invented direct train 12h' },
-          activities: [],
-        }],
+        // Realistic schedule: Mertola days 1-3, Barcelona days 4-7. The LLM
+        // buried the transition on the wrong day (day 1) with an invented town.
+        itinerary: [
+          { day: 1, city: 'Mertola', cityTransition: { to: 'Cidade Velha', travelTime: 'invented direct train 12h' }, activities: [] },
+          { day: 2, city: 'Mertola', activities: [] },
+          { day: 3, city: 'Mertola', activities: [] },
+          { day: 4, city: 'Barcelona', activities: [] },
+        ],
       },
     });
     vi.mocked(agentCaller.callLogisticsAgent).mockResolvedValue({
@@ -377,7 +380,7 @@ describe('NegotiationLoop', () => {
       content: {
         verdict: { approved: true, warnings: [], reasoning: 'feasible' },
         transportOptions: {
-          '1': [{ mode: 'car', provider: 'Google Maps', durationMinutes: 761, warnings: [] }],
+          '4': [{ mode: 'car', provider: 'Google Maps', durationMinutes: 761, warnings: [] }],
         },
       },
     });
@@ -387,14 +390,18 @@ describe('NegotiationLoop', () => {
     const financeCall = vi.mocked(agentCaller.callFinanceAgent).mock.calls[0]!;
     const proposal = financeCall[2] as Record<string, unknown>;
     const itinerary = proposal['itinerary'] as Array<Record<string, unknown>>;
-    const day1 = itinerary?.[0] as Record<string, unknown> | undefined;
-    const transport = day1?.['transport'] as Array<Record<string, unknown>> | undefined;
-    // confirmedLegs (flight via TAP) must win over logistics car option
+    // Transport injected deterministically on the canonical travel day (day 4 =
+    // first Barcelona day), NOT the LLM's buried day-1 "Cidade Velha" hop.
+    const day4 = itinerary.find((d) => d['day'] === 4)!;
+    const transport = day4['transport'] as Array<Record<string, unknown>> | undefined;
     expect(transport?.[0]?.['mode']).toBe('flight');
     expect(transport?.[0]?.['provider']).toBe('TAP Air Portugal');
-    const cityTransition = day1?.['cityTransition'] as Record<string, unknown> | undefined;
+    const cityTransition = day4['cityTransition'] as Record<string, unknown> | undefined;
+    expect(cityTransition?.['to']).toBe('Barcelona');
     expect(String(cityTransition?.['travelTime'] ?? '')).toContain('2h30m');
-    expect(String(cityTransition?.['travelTime'] ?? '')).not.toContain('invented');
+    // The buried invented transition on day 1 is stripped.
+    const day1 = itinerary.find((d) => d['day'] === 1)!;
+    expect(day1['cityTransition']).toBeUndefined();
   });
 
   it('G3: logistics transport options override LLM-invented cityTransition in merged proposal', async () => {
