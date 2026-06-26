@@ -78,6 +78,7 @@ export class NegotiationLoop extends BaseService {
       // Pre-resolve real transport legs before proposal so the LLM can't invent routes.
       const confirmedLegs = await this.preResolveTransportLegs(trip, tripContext);
       const agentContext = this.buildAgentContext(trip, confirmedLegs);
+      const destinations = trip?.destinations ?? [];
 
       // --- Phase A: setup (run once) ---
       const prefs = await this.runPreferencesRound(tripId, ROUND_PREFERENCES, agentContext);
@@ -103,7 +104,10 @@ export class NegotiationLoop extends BaseService {
           // First round: resolve transport first and fold it into the proposal so Finance
           // prices the real legs into the budget (and can block if it overshoots).
           logistics = await this.validateLogistics(tripId, round, proposal, tripContext);
-          proposal = this.mergeTransportIntoProposal(proposal, logistics.content, confirmedLegs);
+          proposal = this.enforceCanonicalDestinations(
+            this.mergeTransportIntoProposal(proposal, logistics.content, confirmedLegs),
+            destinations,
+          );
           finance = await this.reviewFinance(tripId, round, proposal, tripContext);
         } else {
           // Both agents evaluate the SAME proposal at the same time.
@@ -155,7 +159,10 @@ export class NegotiationLoop extends BaseService {
 
         // Fold the chosen transport legs into the proposal so the next Finance
         // round counts their cost (folded #72: transport in budget).
-        proposal = this.mergeTransportIntoProposal(proposal, logistics.content, confirmedLegs);
+        proposal = this.enforceCanonicalDestinations(
+          this.mergeTransportIntoProposal(proposal, logistics.content, confirmedLegs),
+          destinations,
+        );
 
         // Orchestrator refines, driven by the combined feedback.
         const feedback: NegotiationFeedback = {
@@ -489,6 +496,78 @@ export class NegotiationLoop extends BaseService {
       };
     }
     return { ...proposal, itinerary };
+  }
+
+  // Hardening: the LLM sometimes buries a city transition in a day's `city`
+  // field (e.g. "En route: Zagreb → Montpellier (overnight stop)") or invents
+  // intermediate stopover cities not in the trip's destinations. Snap every
+  // itinerary day's city/country back to the canonical destination that owns
+  // that day-number (from the nights schedule), and drop accommodation for any
+  // city outside the canonical set (e.g. a phantom Montpellier overnight stay).
+  private enforceCanonicalDestinations(
+    proposal: Record<string, unknown>,
+    destinations: Array<{ country: string; city?: string; nights: number }>,
+  ): Record<string, unknown> {
+    if (!destinations || destinations.length === 0) return proposal;
+
+    // day-number → canonical {city, country} from the nights schedule.
+    const dayMap = new Map<number, { city: string; country: string }>();
+    let day = 1;
+    for (const d of destinations) {
+      const city = d.city ?? d.country;
+      for (let i = 0; i < d.nights; i++) {
+        dayMap.set(day, { city, country: d.country });
+        day++;
+      }
+    }
+    const last = dayMap.get(day - 1);
+    const canonical = destinations.map((d) => this.normCity(d.city ?? d.country));
+    const inCanonical = (city: string): boolean => {
+      const n = this.normCity(city);
+      return canonical.some((c) => n.includes(c) || c.includes(n));
+    };
+
+    const itinerary = Array.isArray(proposal['itinerary'])
+      ? (proposal['itinerary'] as Array<Record<string, unknown>>)
+      : [];
+
+    let daysRepaired = 0;
+    for (const d of itinerary) {
+      const dayNum = typeof d['day'] === 'number' ? d['day'] : null;
+      if (dayNum === null) continue;
+      const canon = dayMap.get(dayNum) ?? last; // clamp extra days to last leg
+      if (!canon) continue;
+      const cur = typeof d['city'] === 'string' ? d['city'] : '';
+      if (this.normCity(cur) !== this.normCity(canon.city)) {
+        d['city'] = canon.city;
+        d['country'] = canon.country;
+        daysRepaired++;
+      } else if (typeof d['country'] !== 'string' || !d['country']) {
+        d['country'] = canon.country;
+      }
+    }
+
+    // Drop accommodation in non-canonical (invented stopover) cities.
+    let accommodationDropped = 0;
+    let next = proposal;
+    if (Array.isArray(proposal['accommodation'])) {
+      const kept = (proposal['accommodation'] as Array<Record<string, unknown>>).filter((a) => {
+        const city = typeof a['city'] === 'string' ? a['city'] : '';
+        const ok = city === '' || inCanonical(city);
+        if (!ok) accommodationDropped++;
+        return ok;
+      });
+      next = { ...proposal, accommodation: kept };
+    }
+
+    if (daysRepaired > 0 || accommodationDropped > 0) {
+      this.logger.info('Enforced canonical destinations on proposal', {
+        daysRepaired,
+        accommodationDropped,
+      });
+    }
+
+    return { ...next, itinerary };
   }
 
   // Normalise a city string for matching: strip accents, lowercase, drop country suffix.

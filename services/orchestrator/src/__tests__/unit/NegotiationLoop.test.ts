@@ -429,4 +429,73 @@ describe('NegotiationLoop', () => {
     expect(String(cityTransition?.['travelTime'] ?? '')).toContain('2h');
     expect(String(cityTransition?.['travelTime'] ?? '')).not.toContain('invented');
   });
+
+  // ── Hardening: canonical destination enforcement ──────────────────
+
+  it('snaps a buried city-transition in day.city back to the canonical destination', async () => {
+    vi.mocked(stateManager.getTrip).mockResolvedValue({
+      ...MOCK_TRIP,
+      destinations: [
+        { city: 'Oslo', country: 'Norway', nights: 3 },
+        { city: 'Zagreb', country: 'Croatia', nights: 3 },
+        { city: 'Barcelona', country: 'Spain', nights: 2 },
+      ],
+    } as never);
+    vi.mocked(agentCaller.callOrchestratorPropose).mockResolvedValue({
+      ...PROPOSAL_RESULT,
+      content: {
+        itinerary: [
+          { day: 6, city: 'Zagreb', activities: [] },
+          // LLM buried a transition + invented an intermediate city in day 7's header
+          { day: 7, city: 'En route: Zagreb → Montpellier (overnight stop)', country: 'France', activities: [] },
+          { day: 8, city: 'Barcelona', activities: [] },
+        ],
+      },
+    });
+
+    await loop.run(TRIP_ID);
+
+    const financeCall = vi.mocked(agentCaller.callFinanceAgent).mock.calls[0]!;
+    const proposal = financeCall[2] as Record<string, unknown>;
+    const itinerary = proposal['itinerary'] as Array<Record<string, unknown>>;
+    const day7 = itinerary.find((d) => d['day'] === 7)!;
+    // Day 7 belongs to Barcelona (Oslo 1-3, Zagreb 4-6, Barcelona 7-8)
+    expect(day7['city']).toBe('Barcelona');
+    expect(day7['country']).toBe('Spain');
+    // No "En route" / invented city text survives in any day header
+    expect(itinerary.every((d) => !String(d['city']).includes('En route'))).toBe(true);
+    expect(itinerary.every((d) => !String(d['city']).includes('Montpellier'))).toBe(true);
+  });
+
+  it('drops accommodation for invented stopover cities outside the destinations', async () => {
+    vi.mocked(stateManager.getTrip).mockResolvedValue({
+      ...MOCK_TRIP,
+      destinations: [
+        { city: 'Oslo', country: 'Norway', nights: 3 },
+        { city: 'Zagreb', country: 'Croatia', nights: 3 },
+        { city: 'Barcelona', country: 'Spain', nights: 2 },
+      ],
+    } as never);
+    vi.mocked(agentCaller.callOrchestratorPropose).mockResolvedValue({
+      ...PROPOSAL_RESULT,
+      content: {
+        accommodation: [
+          { city: 'Oslo', name: 'Amerikalinjen', nights: 3 },
+          { city: 'Zagreb', name: 'Esplanade', nights: 3 },
+          { city: 'Montpellier (en-route overnight)', name: 'Novotel', nights: 1 },
+          { city: 'Barcelona', name: 'Hotel Arts', nights: 2 },
+        ],
+        itinerary: [{ day: 1, city: 'Oslo', activities: [] }],
+      },
+    });
+
+    await loop.run(TRIP_ID);
+
+    const financeCall = vi.mocked(agentCaller.callFinanceAgent).mock.calls[0]!;
+    const proposal = financeCall[2] as Record<string, unknown>;
+    const accommodation = proposal['accommodation'] as Array<Record<string, unknown>>;
+    const cities = accommodation.map((a) => a['city']);
+    expect(cities).toEqual(['Oslo', 'Zagreb', 'Barcelona']);
+    expect(cities.some((c) => String(c).includes('Montpellier'))).toBe(false);
+  });
 });
