@@ -29,6 +29,9 @@ const EnvSchema = z.object({
   GOOGLE_PLACES_API_KEY: z.string().min(1),
   GOOGLE_MAPS_API_KEY: z.string().min(1),
   GOOGLE_MAPS_BASE_URL: z.string().default('https://maps.googleapis.com/maps/api'),
+  // Routes API (v2) — modern replacement for the legacy Directions API used for
+  // transit/rail routing. The legacy Directions API is being sunset by Google.
+  GOOGLE_ROUTES_BASE_URL: z.string().default('https://routes.googleapis.com'),
   GOOGLE_PLACES_BASE_URL: z.string().default('https://places.googleapis.com/v1'),
   OPENWEATHERMAP_BASE_URL: z.string().default('https://api.openweathermap.org'),
   SKYSCANNER_RAPIDAPI_KEY: z.string().default(''),

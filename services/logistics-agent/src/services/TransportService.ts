@@ -26,24 +26,48 @@ interface SkyscannerResponse {
   data: { itineraries?: SkyscannerItinerary[] };
 }
 
-interface GoogleDirectionsLeg {
-  duration: { value: number };
-  departure_time?: { text: string };
-  arrival_time?: { text: string };
-  steps: Array<{
-    travel_mode: string;
-    transit_details?: { line?: { name?: string } };
-  }>;
+// ── Google Routes API (v2) — transit response shapes ─────────────
+interface RoutesTransitStep {
+  transitDetails?: {
+    transitLine?: { name?: string; nameShort?: string };
+    stopDetails?: {
+      departureTime?: string; // RFC3339
+      arrivalTime?: string;
+    };
+  };
 }
 
-interface GoogleDirectionsResponse {
-  status: string;
-  routes?: Array<{ legs?: GoogleDirectionsLeg[] }>;
+interface RoutesLeg {
+  steps?: RoutesTransitStep[];
+}
+
+interface RoutesRoute {
+  duration?: string; // e.g. "8400s"
+  legs?: RoutesLeg[];
+}
+
+interface RoutesResponse {
+  routes?: RoutesRoute[];
+  error?: { code: number; message: string; status: string };
 }
 
 /** Rough European intercity rail fare estimate when no API fare is available. */
 function estimateRailFareEur(durationMinutes: number): number {
   return Math.round(8 + durationMinutes * 0.4);
+}
+
+/** Parse a Routes API duration string ("8400s") into whole minutes. */
+function parseRoutesDuration(d?: string): number {
+  if (!d) return 0;
+  const secs = Number(d.replace(/s$/, ''));
+  return Number.isFinite(secs) ? Math.ceil(secs / 60) : 0;
+}
+
+/** "HH:MM" from an RFC3339 timestamp, or undefined. */
+function clockFromIso(iso?: string): string | undefined {
+  if (!iso) return undefined;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? undefined : d.toISOString().slice(11, 16);
 }
 
 export class TransportService extends BaseService {
@@ -123,26 +147,39 @@ export class TransportService extends BaseService {
   }
 
   private async fetchTrains(pair: CityPair): Promise<TransportOption[]> {
-    const url =
-      `${config.GOOGLE_MAPS_BASE_URL}/directions/json` +
-      `?origin=${encodeURIComponent(pair.from)}` +
-      `&destination=${encodeURIComponent(pair.to)}` +
-      `&mode=transit&transit_mode=rail&alternatives=true` +
-      `&key=${config.GOOGLE_MAPS_API_KEY}`;
+    // Routes API TRANSIT requires a future departureTime. Use the trip's
+    // departure date at ~09:00, falling back to a week out if missing/past.
+    const departureTime = this.routesDepartureTime(pair.departureDateIso);
 
-    const res = await fetch(url);
+    const res = await fetch(
+      `${config.GOOGLE_ROUTES_BASE_URL}/directions/v2:computeRoutes`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Goog-Api-Key': config.GOOGLE_MAPS_API_KEY,
+          'X-Goog-FieldMask':
+            'routes.duration,routes.legs.steps.transitDetails.transitLine.name,routes.legs.steps.transitDetails.stopDetails',
+        },
+        body: JSON.stringify({
+          origin: { address: pair.from },
+          destination: { address: pair.to },
+          travelMode: 'TRANSIT',
+          transitPreferences: { allowedTravelModes: ['TRAIN'] },
+          computeAlternativeRoutes: true,
+          departureTime,
+        }),
+      },
+    );
+
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(`Google Directions API error ${res.status}: ${text}`);
+      throw new Error(`Google Routes API error ${res.status}: ${text}`);
     }
 
-    const data = (await res.json()) as GoogleDirectionsResponse;
-
-    if (data.status === 'ZERO_RESULTS') {
-      throw new Error(`No train route found from "${pair.from}" to "${pair.to}"`);
-    }
-    if (data.status !== 'OK') {
-      throw new Error(`Google Directions API returned status: ${data.status}`);
+    const data = (await res.json()) as RoutesResponse;
+    if (data.error) {
+      throw new Error(`Google Routes API returned ${data.error.status}: ${data.error.message}`);
     }
 
     const routes = data.routes ?? [];
@@ -150,24 +187,42 @@ export class TransportService extends BaseService {
       throw new Error(`No train route found from "${pair.from}" to "${pair.to}"`);
     }
 
-    return routes.map((route): TransportOption => {
-      const leg = route.legs?.[0];
-      const durationMinutes = Math.ceil((leg?.duration.value ?? 0) / 60);
-      const transitStep = leg?.steps.find((s) => s.travel_mode === 'TRANSIT');
-      const trainLine = transitStep?.transit_details?.line?.name;
-      return {
-        mode: 'train',
-        // Google Directions transit has no fare — estimate it so trains are
-        // priced into the budget and ranked fairly against flights.
-        provider: 'Google Maps (est. fare)',
-        durationMinutes,
-        departureTime: leg?.departure_time?.text,
-        arrivalTime: leg?.arrival_time?.text,
-        priceEur: estimateRailFareEur(durationMinutes),
-        trainLine,
-        warnings: durationMinutes > 240 ? ['Travel exceeds 4h — consider reducing activities on travel day'] : [],
-      };
-    });
+    return routes
+      .map((route): TransportOption => {
+        const durationMinutes = parseRoutesDuration(route.duration);
+        const steps = route.legs?.flatMap((l) => l.steps ?? []) ?? [];
+        const transit = steps.find((s) => s.transitDetails);
+        const trainLine =
+          transit?.transitDetails?.transitLine?.name ??
+          transit?.transitDetails?.transitLine?.nameShort;
+        const departureTimeIso = transit?.transitDetails?.stopDetails?.departureTime;
+        const arrivalTimeIso = steps
+          .reverse()
+          .find((s) => s.transitDetails?.stopDetails?.arrivalTime)
+          ?.transitDetails?.stopDetails?.arrivalTime;
+        return {
+          mode: 'train',
+          // Routes API transit has no fare — estimate it so trains are priced
+          // into the budget and ranked fairly against flights.
+          provider: 'Google Routes (est. fare)',
+          durationMinutes,
+          departureTime: clockFromIso(departureTimeIso),
+          arrivalTime: clockFromIso(arrivalTimeIso),
+          priceEur: estimateRailFareEur(durationMinutes),
+          trainLine,
+          warnings: durationMinutes > 240 ? ['Travel exceeds 4h — consider reducing activities on travel day'] : [],
+        };
+      })
+      .filter((o) => o.durationMinutes > 0);
+  }
+
+  /** RFC3339 future departure for Routes API transit requests. */
+  private routesDepartureTime(departureDateIso?: string): string {
+    const fallback = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    if (!departureDateIso) return fallback.toISOString();
+    const d = new Date(`${departureDateIso.slice(0, 10)}T09:00:00Z`);
+    if (Number.isNaN(d.getTime()) || d.getTime() <= Date.now()) return fallback.toISOString();
+    return d.toISOString();
   }
 
   private async fetchCar(pair: CityPair): Promise<TransportOption> {
@@ -211,7 +266,65 @@ export class TransportService extends BaseService {
       throw new Error(`No transport options found from "${pair.from}" to "${pair.to}"`);
     }
 
-    return allOptions;
+    return this.applyFeasibilityGuard(pair, allOptions);
+  }
+
+  // Long-distance feasibility + degraded-mode guard.
+  //
+  // When the flight/train APIs fail (rate-limited, not enabled, deprecated), the
+  // only mode that resolves is car. A multi-hour drive then gets presented as a
+  // real plan — e.g. a 23h Oslo→Zagreb drive. This guard:
+  //   1. synthesises an *estimated* flight when a long leg has no real flight, so
+  //      a humane option exists and the orchestrator/LLM stops inventing car-only
+  //      routes through made-up overnight cities;
+  //   2. tags the car option with a degraded-mode warning so the gap is visible
+  //      in the UI instead of silently masquerading as a recommendation.
+  private static readonly LONG_LEG_MINUTES = 300; // ~5h door-to-door by car
+  private static readonly AVG_ROAD_KMH = 80;
+
+  private applyFeasibilityGuard(pair: CityPair, options: TransportOption[]): TransportOption[] {
+    const car = options.find((o) => o.mode === 'car' && !o.segments);
+    if (!car || car.durationMinutes <= TransportService.LONG_LEG_MINUTES) {
+      return options;
+    }
+
+    const hasFlight = options.some(
+      (o) => o.mode === 'flight' || o.segments?.some((s) => s.mode === 'flight'),
+    );
+    const out = [...options];
+
+    if (!hasFlight) {
+      const estKm = Math.round((car.durationMinutes / 60) * TransportService.AVG_ROAD_KMH);
+      out.push(this.estimateFlightOption(estKm));
+      this.logger.info('Synthesised estimated flight for long car-only leg', {
+        from: pair.from,
+        to: pair.to,
+        carHours: Math.round(car.durationMinutes / 60),
+      });
+    }
+
+    const hours = Math.round(car.durationMinutes / 60);
+    const note = hasFlight
+      ? `Long drive (~${hours}h) — consider flying.`
+      : `Long drive (~${hours}h). Live flight/train search was unavailable, so the flight option shown is an estimate — verify before booking.`;
+    car.warnings = [note, ...car.warnings.filter((w) => !w.startsWith('Long drive'))];
+
+    return out;
+  }
+
+  // Straight-line flight estimate from a road-distance proxy. Marked clearly as
+  // an estimate so it is never mistaken for a live fare.
+  private estimateFlightOption(distanceKm: number): TransportOption {
+    const airborneMin = Math.round((distanceKm / 750) * 60);
+    const durationMinutes = airborneMin + 150; // + airport/transfer overhead
+    const priceEur = Math.max(45, Math.round(40 + distanceKm * 0.1));
+    return {
+      mode: 'flight',
+      provider: 'estimate',
+      durationMinutes,
+      priceEur,
+      warnings: ['Estimated flight — live pricing/schedule unavailable; verify before booking'],
+    };
   }
 
   // fetchBestDirect is used by MultiLegRouter to resolve hub→destination legs

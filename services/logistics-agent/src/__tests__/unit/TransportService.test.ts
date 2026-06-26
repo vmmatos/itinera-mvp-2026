@@ -4,6 +4,7 @@ vi.mock('@/config', () => ({
   config: {
     GOOGLE_MAPS_API_KEY: 'test-maps-key',
     GOOGLE_MAPS_BASE_URL: 'https://maps.googleapis.com/maps/api',
+    GOOGLE_ROUTES_BASE_URL: 'https://routes.googleapis.com',
     SKYSCANNER_RAPIDAPI_KEY: 'test-sky-key',
     SKYSCANNER_RAPIDAPI_HOST: 'skyscanner50.p.rapidapi.com',
     SKYSCANNER_BASE_URL: 'https://skyscanner50.p.rapidapi.com/api/v1',
@@ -40,17 +41,23 @@ const SKYSCANNER_OK = {
   },
 };
 
-const DIRECTIONS_OK = {
-  status: 'OK',
+// Google Routes API (v2) transit response — replaces the legacy Directions shape.
+const ROUTES_OK = {
   routes: [
     {
+      duration: '9900s',
       legs: [
         {
-          duration: { value: 9900 },
-          departure_time: { text: '09:30' },
-          arrival_time: { text: '12:15' },
           steps: [
-            { travel_mode: 'TRANSIT', transit_details: { line: { name: 'AVE Madrid-Barcelona' } } },
+            {
+              transitDetails: {
+                transitLine: { name: 'AVE Madrid-Barcelona' },
+                stopDetails: {
+                  departureTime: '2026-08-01T09:30:00Z',
+                  arrivalTime: '2026-08-01T12:15:00Z',
+                },
+              },
+            },
           ],
         },
       ],
@@ -58,8 +65,21 @@ const DIRECTIONS_OK = {
   ],
 };
 
+// Build a Routes API transit payload with a given duration (seconds) + line.
+function routesPayload(durationSeconds: number, line: string): unknown {
+  return {
+    routes: [
+      {
+        duration: `${durationSeconds}s`,
+        legs: [{ steps: [{ transitDetails: { transitLine: { name: line }, stopDetails: {} } }] }],
+      },
+    ],
+  };
+}
+
 // Branch the fetch mock on URL so each mode can be controlled independently.
 // `sky`/`directions` may be a payload (resolves ok) or an Error (rejects).
+// Flights hit `searchFlights`; trains hit the Routes API `computeRoutes`.
 function stubFetch(opts: { sky?: unknown; directions?: unknown }): void {
   vi.stubGlobal(
     'fetch',
@@ -123,27 +143,34 @@ describe('TransportService', () => {
 
   describe('train parsing', () => {
     beforeEach(() => {
-      stubFetch({ sky: new Error('no flight'), directions: DIRECTIONS_OK });
+      stubFetch({ sky: new Error('no flight'), directions: ROUTES_OK });
       (mapService.getTravelTime as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('no car'));
     });
 
-    it('parses a Google Directions transit option', async () => {
-      const result = await service.resolveTransportOptions({ from: 'Madrid', to: 'Barcelona' }, 'best');
+    it('parses a Routes API transit option', async () => {
+      const result = await service.resolveTransportOptions({ from: 'Madrid', to: 'Barcelona', departureDateIso: '2099-08-01' }, 'best');
       const train = result.find((o) => o.mode === 'train');
       expect(train).toBeDefined();
       expect(train!.durationMinutes).toBe(165); // ceil(9900 / 60)
       expect(train!.departureTime).toBe('09:30');
       expect(train!.arrivalTime).toBe('12:15');
       expect(train!.trainLine).toBe('AVE Madrid-Barcelona');
+      expect(train!.provider).toBe('Google Routes (est. fare)');
     });
 
-    it('requests transit mode with rail + alternatives', async () => {
-      await service.resolveTransportOptions({ from: 'Madrid', to: 'Barcelona' }, 'best');
+    it('calls the Routes API computeRoutes endpoint with a TRANSIT/TRAIN request', async () => {
+      await service.resolveTransportOptions({ from: 'Madrid', to: 'Barcelona', departureDateIso: '2099-08-01' }, 'best');
       const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
-      const directionsUrl = fetchMock.mock.calls.map((c) => String(c[0])).find((u) => !u.includes('searchFlights'));
-      expect(directionsUrl).toContain('mode=transit');
-      expect(directionsUrl).toContain('transit_mode=rail');
-      expect(directionsUrl).toContain('alternatives=true');
+      const routesCall = fetchMock.mock.calls.find((c) => String(c[0]).includes('computeRoutes')) as [string, RequestInit];
+      expect(routesCall).toBeDefined();
+      expect(routesCall[0]).toContain('directions/v2:computeRoutes');
+      const init = routesCall[1];
+      expect((init.headers as Record<string, string>)['X-Goog-Api-Key']).toBe('test-maps-key');
+      expect((init.headers as Record<string, string>)['X-Goog-FieldMask']).toContain('routes.duration');
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+      expect(body['travelMode']).toBe('TRANSIT');
+      expect(body['transitPreferences']).toEqual({ allowedTravelModes: ['TRAIN'] });
+      expect(typeof body['departureTime']).toBe('string');
     });
   });
 
@@ -170,7 +197,7 @@ describe('TransportService', () => {
   // ── Aggregation + resilience ─────────────────────────────────────────
   describe('all modes / resilience', () => {
     it('returns every available mode as an alternative', async () => {
-      stubFetch({ sky: SKYSCANNER_OK, directions: DIRECTIONS_OK });
+      stubFetch({ sky: SKYSCANNER_OK, directions: ROUTES_OK });
       const result = await service.resolveTransportOptions({ from: 'Madrid', to: 'Barcelona' }, 'best');
       const modes = result.map((o) => o.mode);
       expect(modes).toContain('flight');
@@ -179,7 +206,7 @@ describe('TransportService', () => {
     });
 
     it('skips a failed mode without throwing while others succeed', async () => {
-      stubFetch({ sky: new Error('429'), directions: DIRECTIONS_OK });
+      stubFetch({ sky: new Error('429'), directions: ROUTES_OK });
       const result = await service.resolveTransportOptions({ from: 'Madrid', to: 'Barcelona' }, 'best');
       expect(result.find((o) => o.mode === 'flight')).toBeUndefined();
       expect(result.length).toBeGreaterThan(0);
@@ -202,7 +229,7 @@ describe('TransportService', () => {
           }],
         },
       };
-      stubFetch({ sky: cheapSky, directions: DIRECTIONS_OK });
+      stubFetch({ sky: cheapSky, directions: ROUTES_OK });
       const result = await service.resolveTransportOptions({ from: 'Madrid', to: 'Barcelona' }, 'best');
       expect(result[0].mode).toBe('flight');
       expect(result[0].priceEur).toBe(45);
@@ -216,10 +243,7 @@ describe('TransportService', () => {
       const sky = {
         data: { itineraries: [{ price: { amount: 80, currency: 'EUR' }, legs: [{ durationInMinutes: 90, departure: '2026-08-01T06:00:00', arrival: '2026-08-01T07:30:00', segments: [{ flightNumber: 'FR1' }] }] }] },
       };
-      const directions = {
-        status: 'OK',
-        routes: [{ legs: [{ duration: { value: 6000 }, departure_time: { text: '08:00' }, arrival_time: { text: '09:40' }, steps: [{ travel_mode: 'TRANSIT', transit_details: { line: { name: 'AVE' } } }] }] }],
-      };
+      const directions = routesPayload(6000, 'AVE');
       stubFetch({ sky, directions });
       (mapService.getTravelTime as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('no car'));
 
@@ -234,10 +258,7 @@ describe('TransportService', () => {
       const sky = {
         data: { itineraries: [{ price: { amount: 30, currency: 'EUR' }, legs: [{ durationInMinutes: 50, departure: '2026-08-01T06:00:00', arrival: '2026-08-01T06:50:00', segments: [{ flightNumber: 'FR1' }] }] }] },
       };
-      const directions = {
-        status: 'OK',
-        routes: [{ legs: [{ duration: { value: 18000 }, departure_time: { text: '08:00' }, arrival_time: { text: '13:00' }, steps: [{ travel_mode: 'TRANSIT', transit_details: { line: { name: 'Regional' } } }] }] }],
-      };
+      const directions = routesPayload(18000, 'Regional');
       stubFetch({ sky, directions });
       (mapService.getTravelTime as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('no car'));
 
@@ -264,6 +285,58 @@ describe('TransportService', () => {
       expect(body['destination']).toBe('Madrid');
       expect(body['date']).toBe('2026-09-10');
       expect(body['currency']).toBe('EUR');
+    });
+  });
+
+  // ── Feasibility / degraded-mode guard ────────────────────────────────
+  describe('feasibility guard (flight/train APIs down → car-only)', () => {
+    it('synthesises an estimated flight when a long leg resolves to car only', async () => {
+      stubFetch({ sky: new Error('429'), directions: new Error('REQUEST_DENIED') });
+      mapService = makeMapServiceMock({ durationMinutes: 1380 }); // 23h drive
+      service = new TransportService(mapService);
+
+      const result = await service.resolveTransportOptions({ from: 'Oslo', to: 'Zagreb' }, 'train');
+
+      const estFlight = result.find((o) => o.provider === 'estimate');
+      expect(estFlight).toBeDefined();
+      expect(estFlight!.mode).toBe('flight');
+      expect(estFlight!.priceEur).toBeGreaterThan(0);
+      expect(estFlight!.warnings.some((w) => w.toLowerCase().includes('estimate'))).toBe(true);
+      // estimated flight is far better than a 23h drive → ranks ahead of car
+      expect(result[0].mode).toBe('flight');
+    });
+
+    it('tags the car option with a degraded-mode warning on a long car-only leg', async () => {
+      stubFetch({ sky: new Error('429'), directions: new Error('REQUEST_DENIED') });
+      mapService = makeMapServiceMock({ durationMinutes: 1380 });
+      service = new TransportService(mapService);
+
+      const result = await service.resolveTransportOptions({ from: 'Oslo', to: 'Zagreb' }, 'best');
+      const car = result.find((o) => o.mode === 'car');
+      expect(car!.warnings.some((w) => w.startsWith('Long drive'))).toBe(true);
+      expect(car!.warnings.some((w) => w.toLowerCase().includes('unavailable'))).toBe(true);
+    });
+
+    it('does NOT synthesise a flight for a short car-only leg', async () => {
+      stubFetch({ sky: new Error('x'), directions: new Error('y') });
+      mapService = makeMapServiceMock({ durationMinutes: 120 }); // 2h drive
+      service = new TransportService(mapService);
+
+      const result = await service.resolveTransportOptions({ from: 'Lisbon', to: 'Porto' }, 'best');
+      expect(result.find((o) => o.provider === 'estimate')).toBeUndefined();
+      expect(result.every((o) => o.mode === 'car')).toBe(true);
+    });
+
+    it('does NOT synthesise a flight when a real flight already exists on a long leg', async () => {
+      stubFetch({ sky: SKYSCANNER_OK, directions: new Error('no train') });
+      mapService = makeMapServiceMock({ durationMinutes: 1380 });
+      service = new TransportService(mapService);
+
+      const result = await service.resolveTransportOptions({ from: 'Oslo', to: 'Zagreb' }, 'best');
+      expect(result.find((o) => o.provider === 'estimate')).toBeUndefined();
+      // car still flagged so the long drive is visible
+      const car = result.find((o) => o.mode === 'car');
+      expect(car!.warnings.some((w) => w.startsWith('Long drive'))).toBe(true);
     });
   });
 });
