@@ -24,6 +24,15 @@ const ROUTING_KEY_ITINERARY_READY = 'notification.email.itinerary-ready';
 const PREFERENCE_AGENTS: AgentName[] = PREFERENCE_AGENT_NAMES;
 
 // Setup rounds run once before the iterative negotiation begins.
+//
+// Issue #79's round language ("Orchestrator proposes v1 (round 2)", "converges
+// in <=3 rounds") was written before this 3-step preamble existed — it assumed
+// propose was round 2 and negotiation started at round 3. ROUND_ANALYZE was
+// added afterwards (conflict analysis needed its own persisted Proposal before
+// propose), pushing FIRST_NEGOTIATION_ROUND to 4. So: absolute round in this
+// file = negotiation-relative round (as used by issue #79) + 3. A trip that
+// converges on the very first negotiation evaluation is round 4 here, which is
+// the "<=3 rounds" case in the issue's counting, not a violation of it.
 const ROUND_PREFERENCES = 1;
 const ROUND_ANALYZE = 2;
 const ROUND_PROPOSE = 3;
@@ -399,6 +408,13 @@ export class NegotiationLoop extends BaseService {
   // Helpers
   // -------------------------------------------------------------------------
 
+  // Issue #79 names the loop-continuation fields `withinBudget`/`feasible`;
+  // this codebase computes a single composite `approved` boolean per agent
+  // instead (FinanceVerdict.approved is false whenever issues is non-empty;
+  // LogisticsVerdict.approved also folds in a `highRisk` check that isn't
+  // reducible to `warnings.length > 0` alone). `!approved` is the actual
+  // loop-continuation condition — a superset of the issue's four OR'd
+  // conditions, not a different behavior.
   private extractFinanceVerdict(content: Record<string, unknown>): FinanceVerdict {
     const v = content['verdict'] as Partial<FinanceVerdict> | undefined;
     if (v && typeof v.approved === 'boolean' && typeof v.budgetFeasible === 'boolean') {
