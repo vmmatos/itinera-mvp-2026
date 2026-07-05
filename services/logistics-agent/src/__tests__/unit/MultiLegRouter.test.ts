@@ -57,6 +57,23 @@ describe('MultiLegRouter', () => {
     expect(hubs).not.toContain('Beja');
   });
 
+  it('skips airport-type hubs when skipAirportHubs is set (short-leg distance guard)', async () => {
+    // Mértola's hubs include airport-type entries (Faro/FAO). On a short leg the
+    // distance guard disables flying, so only ground hubs may be composed.
+    const fetchBest = vi.fn().mockResolvedValue([makeFlight(95, 110)]);
+    const result = await resolveMultiLegOptions(
+      { from: 'Mértola', to: 'Comporta' },
+      fetchBest,
+      { skipAirportHubs: true },
+    );
+    const hubCities = new Set(result.map((r) => r.segments?.[0]?.to));
+    expect(hubCities.has('Faro')).toBe(false);
+    // fetchBest must never have been asked to resolve from an airport hub
+    for (const call of fetchBest.mock.calls) {
+      expect((call[0] as { from: string }).from).not.toBe('Faro');
+    }
+  });
+
   it('marks journey as >4h travel warning when total exceeds 240 min', async () => {
     // Comporta → Grândola (first hub, 40min bus) + 210min flight = 250min > 240min
     const fetchBest = vi.fn().mockResolvedValue([makeFlight(90, 210)]);

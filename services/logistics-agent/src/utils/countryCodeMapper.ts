@@ -31,7 +31,7 @@ const COUNTRY_NAME_MAP: Record<string, string> = {
 
   // ── Portuguese ───────────────────────────────────────────────────────────
   'franca': 'FR', 'frança': 'FR', 'alemanha': 'DE', 'espanha': 'ES',
-  'italia': 'IT', 'itália': 'IT', 'austria': 'AT', 'áustria': 'AT',
+  'italia': 'IT', 'itália': 'IT', 'áustria': 'AT',
   'suica': 'CH', 'suíça': 'CH', 'belgica': 'BE', 'bélgica': 'BE',
   'holanda': 'NL', 'paises baixos': 'NL', 'países baixos': 'NL',
   'reino unido': 'GB', 'grecia': 'GR', 'grécia': 'GR', 'polonia': 'PL',
@@ -41,17 +41,17 @@ const COUNTRY_NAME_MAP: Record<string, string> = {
   'croácia': 'HR', 'romenia': 'RO', 'roménia': 'RO', 'hungria': 'HU',
   'eslovaquia': 'SK', 'eslováquia': 'SK', 'eslovenia': 'SI', 'eslovénia': 'SI',
   'luxemburgo': 'LU', 'islandia': 'IS', 'islândia': 'IS',
-  'estados unidos': 'US', 'japao': 'JP', 'japão': 'JP', 'china': 'CN',
-  'india': 'IN', 'índia': 'IN', 'marrocos': 'MA', 'egipto': 'EG',
-  'turquia': 'TR', 'russia': 'RU', 'rússia': 'RU', 'brasil': 'BR',
-  'mexico': 'MX', 'méxico': 'MX', 'canada': 'CA', 'canadá': 'CA',
-  'australia': 'AU', 'austrália': 'AU',
+  'estados unidos': 'US', 'japao': 'JP', 'japão': 'JP',
+  'índia': 'IN', 'marrocos': 'MA', 'egipto': 'EG',
+  'turquia': 'TR', 'rússia': 'RU', 'brasil': 'BR',
+  'méxico': 'MX', 'canadá': 'CA',
+  'austrália': 'AU',
 
   // ── French ───────────────────────────────────────────────────────────────
   'allemagne': 'DE', 'espagne': 'ES', 'italie': 'IT', 'autriche': 'AT',
   'suisse': 'CH', 'belgique': 'BE', 'pays-bas': 'NL', 'royaume-uni': 'GB',
   'grece': 'GR', 'grèce': 'GR', 'pologne': 'PL', 'republique tcheque': 'CZ',
-  'republique tchèque': 'CZ', 'danemark': 'DK', 'danemark': 'DK',
+  'republique tchèque': 'CZ', 'danemark': 'DK',
   'norvege': 'NO', 'norvège': 'NO', 'suede': 'SE', 'suède': 'SE',
   'finlande': 'FI', 'irlande': 'IE', 'croatie': 'HR', 'roumanie': 'RO',
   'hongrie': 'HU', 'etats-unis': 'US', 'états-unis': 'US', 'japon': 'JP',
@@ -59,21 +59,18 @@ const COUNTRY_NAME_MAP: Record<string, string> = {
   'brésil': 'BR', 'mexique': 'MX', 'australie': 'AU',
 
   // ── Spanish ──────────────────────────────────────────────────────────────
-  'francia': 'FR', 'alemania': 'DE', 'italia': 'IT', 'paises bajos': 'NL',
-  'países bajos': 'NL', 'reino unido': 'GB', 'grecia': 'GR', 'polonia': 'PL',
-  'republica checa': 'CZ', 'república checa': 'CZ', 'dinamarca': 'DK',
-  'noruega': 'NO', 'suecia': 'SE', 'finlandia': 'FI', 'irlanda': 'IE',
-  'croacia': 'HR', 'rumania': 'RO', 'hungria': 'HU', 'eslovaquia': 'SK',
-  'eslovenia': 'SI', 'estados unidos': 'US', 'turquia': 'TR',
-  'rusia': 'RU', 'brasil': 'BR', 'mejico': 'MX', 'marruecos': 'MA',
+  'francia': 'FR', 'alemania': 'DE', 'paises bajos': 'NL',
+  'países bajos': 'NL',
+  'rumania': 'RO',
+  'rusia': 'RU', 'mejico': 'MX', 'marruecos': 'MA',
 
   // ── German ───────────────────────────────────────────────────────────────
   'frankreich': 'FR', 'deutschland': 'DE', 'spanien': 'ES', 'italien': 'IT',
   'osterreich': 'AT', 'österreich': 'AT', 'schweiz': 'CH', 'belgien': 'BE',
   'niederlande': 'NL', 'vereinigtes konigreich': 'GB', 'griechenland': 'GR',
-  'danemark': 'DK', 'dänemark': 'DK', 'norwegen': 'NO', 'schweden': 'SE',
+  'dänemark': 'DK', 'norwegen': 'NO', 'schweden': 'SE',
   'finnland': 'FI', 'irland': 'IE', 'kroatien': 'HR', 'rumanien': 'RO',
-  'rumänien': 'RO', 'ungarn': 'HU', 'vereinigte staaten': 'US', 'japan': 'JP',
+  'rumänien': 'RO', 'ungarn': 'HU', 'vereinigte staaten': 'US',
   'russland': 'RU', 'marokko': 'MA', 'turkei': 'TR', 'türkei': 'TR',
   'brasilien': 'BR',
 };

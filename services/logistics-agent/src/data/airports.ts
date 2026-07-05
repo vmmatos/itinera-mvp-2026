@@ -134,7 +134,10 @@ export const AIRPORTS: Airport[] = [
   { iata: 'RAK', city: 'Marrakesh', country: 'Morocco', lat: 31.6069, lng: -8.0363 },
   { iata: 'CAI', city: 'Cairo', country: 'Egypt', lat: 30.1219, lng: 31.4056 },
   { iata: 'JNB', city: 'Johannesburg', country: 'South Africa', lat: -26.1392, lng: 28.246 },
+  { iata: 'SID', city: 'Sal', country: 'Cape Verde', lat: 16.7414, lng: -22.9494 },
+  { iata: 'RAI', city: 'Praia', country: 'Cape Verde', lat: 14.9245, lng: -23.4935 },
   { iata: 'SIN', city: 'Singapore', country: 'Singapore', lat: 1.3644, lng: 103.9915 },
+  { iata: 'DPS', city: 'Denpasar', country: 'Indonesia', lat: -8.7482, lng: 115.1672 },
   { iata: 'HND', city: 'Tokyo', country: 'Japan', lat: 35.5494, lng: 139.7798 },
   { iata: 'BKK', city: 'Bangkok', country: 'Thailand', lat: 13.69, lng: 100.7501 },
   { iata: 'SYD', city: 'Sydney', country: 'Australia', lat: -33.9399, lng: 151.1753 },
@@ -170,6 +173,7 @@ const CITY_ALIASES: Record<string, string> = {
   vienna: 'vienna', munich: 'munich', cologne: 'cologne', seville: 'sevilla',
   athens: 'athens', warsaw: 'warsaw', prague: 'prague', copenhagen: 'copenhagen',
   brussels: 'brussels', 'the hague': 'amsterdam', gothenburg: 'gothenburg',
+  bali: 'denpasar', 'cabo verde': 'sal', 'cape verde': 'sal',
 };
 
 /** Exact/normalised city-name match (with common exonyms). Returns the airport or undefined. */
@@ -178,22 +182,27 @@ export function byCity(name: string): Airport | undefined {
   return BY_CITY.get(key) ?? BY_CITY.get(CITY_ALIASES[key] ?? '');
 }
 
+/** Great-circle distance between two coordinates in km (haversine). */
+export function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const toRad = (d: number): number => (d * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 6371 * 2 * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
 /** Closest airport to a coordinate by great-circle distance. */
 export function nearestAirport(lat: number, lng: number): Airport {
-  const toRad = (d: number): number => (d * Math.PI) / 180;
-  let best = AIRPORTS[0]!;
-  let bestKm = Infinity;
-  for (const a of AIRPORTS) {
-    const dLat = toRad(a.lat - lat);
-    const dLng = toRad(a.lng - lng);
-    const h =
-      Math.sin(dLat / 2) ** 2 +
-      Math.cos(toRad(lat)) * Math.cos(toRad(a.lat)) * Math.sin(dLng / 2) ** 2;
-    const km = 6371 * 2 * Math.asin(Math.min(1, Math.sqrt(h)));
-    if (km < bestKm) {
-      bestKm = km;
-      best = a;
-    }
-  }
-  return best;
+  return nearestAirports(lat, lng, 1)[0]!;
+}
+
+/** The `n` closest airports to a coordinate, nearest first. */
+export function nearestAirports(lat: number, lng: number, n: number): Airport[] {
+  return AIRPORTS
+    .map((a) => ({ a, km: haversineKm(lat, lng, a.lat, a.lng) }))
+    .sort((x, y) => x.km - y.km)
+    .slice(0, Math.max(1, n))
+    .map((x) => x.a);
 }

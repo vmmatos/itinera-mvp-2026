@@ -9,6 +9,13 @@ vi.mock('@/config', () => ({
     SERPAPI_BASE_URL: 'https://serpapi.com/search',
     AIRPORT_CACHE_TTL_SECONDS: 2592000,
     TRANSPORT_CACHE_TTL_SECONDS: 21600,
+    MIN_FLIGHT_DISTANCE_KM: 300,
+    MAX_AIRPORT_SNAP_KM: 300,
+    CAR_COST_EUR_PER_KM: 0.22,
+    TRANSPORT_WEIGHT_COST: 0.6,
+    TRANSPORT_WEIGHT_DURATION: 40,
+    TRANSPORT_WEIGHT_PREFERENCE: 0.18,
+    TRANSPORT_WEIGHT_TRANSFERS: 15,
     NODE_ENV: 'test',
   },
 }));
@@ -22,6 +29,7 @@ vi.mock('@itinera/shared', async (importOriginal) => {
 });
 
 import { TransportService } from '@/services/TransportService';
+import { byCity } from '@/data/airports';
 import type { MapService } from '@/services/MapService';
 import type { PlacesService } from '@/services/PlacesService';
 
@@ -189,7 +197,7 @@ describe('TransportService', () => {
       expect(train!.departureTime).toBe('09:30');
       expect(train!.arrivalTime).toBe('12:15');
       expect(train!.trainLine).toBe('AVE Madrid-Barcelona');
-      expect(train!.provider).toBe('Google Routes (est. fare)');
+      expect(train!.provider).toBe('AVE Madrid-Barcelona'); // trainLine doubles as display provider
     });
 
     it('calls the Routes API computeRoutes endpoint with a TRANSIT/TRAIN request', async () => {
@@ -215,7 +223,9 @@ describe('TransportService', () => {
       const car = result.find((o) => o.mode === 'car');
       expect(car).toBeDefined();
       expect(car!.durationMinutes).toBe(120);
-      expect(car!.priceEur).toBeUndefined();
+      // fuel+tolls heuristic: 600 km × €0.22 — car must carry a price so the
+      // weighted ranking compares it fairly against priced modes
+      expect(car!.priceEur).toBe(132);
     });
 
     it('adds a >4h warning when driving exceeds 240 minutes', async () => {
@@ -396,6 +406,204 @@ describe('TransportService', () => {
     });
   });
 
+  // ── Destination hub access time (rural city via HubLookup) ─────────
+  describe('destination hub access time', () => {
+    beforeEach(() => {
+      // Only flight mode; train + car disabled so assertion is unambiguous.
+      stubFetch({ sky: SERP_OK, directions: new Error('no train') });
+      (mapService.getTravelTime as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('no car'));
+    });
+
+    it('adds access time + cost when destination resolves via HubLookup (Mértola→Faro/FAO)', async () => {
+      // Mértola has no own airport — HubLookup resolves it to Faro (FAO, 90 min, €15 by bus).
+      // fetchFlights must add these to durationMinutes + priceEur so scoring is door-to-door.
+      const result = await service.resolveTransportOptions(
+        { from: 'Lisbon', to: 'Mértola', departureDateIso: '2026-08-01' },
+        'best',
+      );
+      const flight = result.find((o) => o.mode === 'flight');
+      expect(flight).toBeDefined();
+      // SERP_OK: 125 min airborne + 90 min FAO→Mértola ground leg
+      expect(flight!.durationMinutes).toBe(215);
+      // SERP_OK: €90 fare + €9 bus access (Mértola→Faro accessCostEur=9)
+      expect(flight!.priceEur).toBe(99);
+      expect(flight!.warnings.some((w) => w.includes('transfer') && w.includes('Mértola'))).toBe(true);
+    });
+
+    it('does NOT add extra time when destination has its own direct airport (Barcelona→BCN)', async () => {
+      // Barcelona resolves to BCN via byCity() directly — no HubLookup, no access leg.
+      const result = await service.resolveTransportOptions(
+        { from: 'Lisbon', to: 'Barcelona', departureDateIso: '2026-08-01' },
+        'best',
+      );
+      const flight = result.find((o) => o.mode === 'flight');
+      expect(flight).toBeDefined();
+      expect(flight!.durationMinutes).toBe(125); // unchanged from SerpApi total_duration
+      expect(flight!.priceEur).toBe(90); // unchanged
+      expect(flight!.warnings.every((w) => !w.includes('transfer'))).toBe(true);
+    });
+  });
+
+  // ── Origin airport resolution: no geocode allowed for origins ────────
+  describe('origin airport resolution', () => {
+    it('does not geocode origin cities — only byCity dataset allowed for flight origins', async () => {
+      // Beja has no entry in the byCity airport dataset.
+      // Places geocoding is disabled for origin role, so Beja must not resolve
+      // to FAO (50km away) — otherwise MultiLegRouter would silently skip the
+      // 50km Beja→FAO leg and claim a Beja departure.
+      const places = makePlacesMock({ lat: 37.0, lng: -7.9 });
+      service = new TransportService(mapService, undefined, places);
+      stubFetch({ sky: SERP_OK, directions: new Error('no train') });
+      (mapService.getTravelTime as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('no car'));
+
+      await expect(
+        service.resolveTransportOptions({ from: 'Beja', to: 'Comporta' }, 'best'),
+      ).rejects.toThrow();
+      // Geocoding for the distance guard is fine; what must never happen is a
+      // flight search departing from an airport snapped to a rural origin.
+      const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+      expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('google_flights'))).toBe(false);
+    });
+  });
+
+  // ── Preference override warning ───────────────────────────────────────
+  describe('preference override warning', () => {
+    it('adds a warning to the selected option when it overrides a significantly slower preferred mode', async () => {
+      // Flight: 2h €80. Car (preferred): 8h. Ratio 4× > 1.5 threshold → warning on flight.
+      const sky = flightsPayload({ price: 80, duration: 120, depTime: '10:00', arrTime: '12:00' });
+      stubFetch({ sky, directions: new Error('no train') });
+      mapService = makeMapServiceMock({ durationMinutes: 480 });
+      service = new TransportService(mapService);
+
+      const result = await service.resolveTransportOptions({ from: 'Lisbon', to: 'Barcelona' }, 'car');
+      expect(result[0].mode).toBe('flight');
+      expect(result[0].warnings.some((w) => w.includes('car preference overridden'))).toBe(true);
+      expect(result[0].warnings.some((w) => w.includes('8h'))).toBe(true);
+    });
+
+    it('does NOT add override warning when preferred mode loses by less than 1.5×', async () => {
+      // Flight: 2h. Train (preferred): 2.5h. Ratio 1.25 < 1.5 threshold → no warning.
+      const sky = flightsPayload({ price: 80, duration: 120, depTime: '06:00', arrTime: '08:00' });
+      stubFetch({ sky, directions: routesPayload(9000, 'IC') }); // 9000s = 150min
+      (mapService.getTravelTime as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('no car'));
+
+      const result = await service.resolveTransportOptions({ from: 'Madrid', to: 'Barcelona' }, 'train');
+      expect(result[0].warnings.every((w) => !w.includes('preference overridden'))).toBe(true);
+    });
+  });
+
+  // ── Distance guard: no flights on short land legs ───────────────────
+  describe('minimum flight distance guard', () => {
+    // Per-place geocode mock so the guard can measure real geodesic distance.
+    function makeGeoMock(coords: Record<string, { lat: number; lng: number }>): PlacesService {
+      return {
+        geocodePlace: vi.fn((place: string) => Promise.resolve(coords[place] ?? null)),
+      } as unknown as PlacesService;
+    }
+
+    const RURAL_PT = {
+      'Mértola': { lat: 37.64, lng: -7.66 },
+      'Comporta': { lat: 38.38, lng: -8.79 },
+    };
+
+    it('never searches flights for a short rural pair (Mértola→Comporta) and ranks the drive first', async () => {
+      stubFetch({ sky: SERP_OK, directions: new Error('no train') });
+      mapService = makeMapServiceMock({ durationMinutes: 150, distanceKm: 150 });
+      service = new TransportService(mapService, undefined, makeGeoMock(RURAL_PT));
+
+      const result = await service.resolveTransportOptions({ from: 'Mértola', to: 'Comporta' }, 'car');
+
+      const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+      expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('google_flights'))).toBe(false);
+      expect(result.some((o) => o.mode === 'flight' || o.segments?.some((s) => s.mode === 'flight'))).toBe(false);
+      expect(result[0].mode).toBe('car');
+      expect(result[0].priceEur).toBe(33); // 150 km × €0.22
+    });
+
+    it('does NOT synthesise an estimated flight for a long drive on a short geodesic leg', async () => {
+      // 320-min mountain drive but <300 km as the crow flies → no plausible air route.
+      stubFetch({ sky: new Error('x'), directions: new Error('y') });
+      mapService = makeMapServiceMock({ durationMinutes: 320, distanceKm: 280 });
+      service = new TransportService(mapService, undefined, makeGeoMock(RURAL_PT));
+
+      const result = await service.resolveTransportOptions({ from: 'Mértola', to: 'Comporta' }, 'best');
+      expect(result.find((o) => o.provider === 'estimate')).toBeUndefined();
+      const car = result.find((o) => o.mode === 'car');
+      expect(car!.warnings.some((w) => w.startsWith('Long drive'))).toBe(true);
+      expect(car!.warnings.some((w) => w.includes('estimate'))).toBe(false);
+    });
+
+    it('keeps flights enabled between two true airport cities regardless of distance (Lisboa→Porto)', async () => {
+      // ~274 km — below the guard threshold, but both endpoints have their own
+      // airports so the route is real, not fabricated.
+      stubFetch({ sky: SERP_OK, directions: new Error('no train') });
+      const result = await service.resolveTransportOptions({ from: 'Lisbon', to: 'Porto' }, 'best');
+      expect(result.some((o) => o.mode === 'flight')).toBe(true);
+    });
+
+    it('keeps flights enabled when geocoding is unavailable (never block for lack of data)', async () => {
+      stubFetch({ sky: SERP_OK, directions: new Error('no train') });
+      // No PlacesService → distance unknown → guard is a no-op.
+      const result = await service.resolveTransportOptions({ from: 'Lisbon', to: 'Mértola' }, 'best');
+      expect(result.some((o) => o.mode === 'flight')).toBe(true);
+    });
+  });
+
+  // ── Hybrid drive-to-hub composition (organic car+flight option) ──────
+  describe('drive-to-hub hybrid', () => {
+    it('composes car-to-airport + flight for a long leg from a city without its own airport', async () => {
+      // Mértola→Barcelona (~990 km): no Mértola airport, so alongside the static
+      // hub routes the service must offer "drive to a nearby airport, then fly".
+      stubFetch({ sky: SERP_OK, directions: new Error('no train') });
+      mapService = makeMapServiceMock({ durationMinutes: 110, distanceKm: 120 });
+      const places = {
+        geocodePlace: vi.fn((place: string) =>
+          Promise.resolve(place === 'Mértola' ? { lat: 37.64, lng: -7.66 } : null)),
+      } as unknown as PlacesService;
+      service = new TransportService(mapService, undefined, places);
+
+      const result = await service.resolveTransportOptions({ from: 'Mértola', to: 'Barcelona' }, 'car');
+
+      const hybrid = result.find(
+        (o) => o.segments?.length === 2 && o.segments[0].mode === 'car' && o.segments[1].mode === 'flight',
+      );
+      expect(hybrid).toBeDefined();
+      expect(hybrid!.segments![0].from).toBe('Mértola');
+      expect(hybrid!.segments![0].priceEur).toBe(26); // 120 km × €0.22
+      expect(hybrid!.durationMinutes).toBe(110 + 125); // drive + SERP_OK flight
+      expect(hybrid!.priceEur).toBe(26 + 90);
+      expect(hybrid!.displaySummary).toContain('Car + Flight');
+    });
+
+    it('does not compose drive-to-hub when the origin has its own airport', async () => {
+      stubFetch({ sky: SERP_OK, directions: new Error('no train') });
+      const result = await service.resolveTransportOptions({ from: 'Madrid', to: 'Barcelona' }, 'car');
+      expect(
+        result.find((o) => o.segments?.length === 2 && o.segments[0].mode === 'car' && o.segments[1].mode === 'flight'),
+      ).toBeUndefined();
+    });
+  });
+
+  // ── Detour cap ────────────────────────────────────────────────────────
+  describe('detour cap', () => {
+    it('drops composed routes that take much longer than simply driving', async () => {
+      // Direct drive 110 min; any composed option above 2.5× (275 min) is an
+      // absurd detour and must not survive.
+      stubFetch({ sky: SERP_OK, directions: new Error('no train') });
+      mapService = makeMapServiceMock({ durationMinutes: 110, distanceKm: 120 });
+      const places = {
+        geocodePlace: vi.fn((place: string) =>
+          Promise.resolve(place === 'Mértola' ? { lat: 37.64, lng: -7.66 } : null)),
+      } as unknown as PlacesService;
+      service = new TransportService(mapService, undefined, places);
+
+      const result = await service.resolveTransportOptions({ from: 'Mértola', to: 'Barcelona' }, 'best');
+      for (const o of result.filter((x) => x.segments)) {
+        expect(o.durationMinutes).toBeLessThanOrEqual(110 * 2.5);
+      }
+    });
+  });
+
   // ── Redis caching (protects scarce SerpApi quota) ───────────────────
   describe('caching', () => {
     function makeRedisMock(): { store: Map<string, unknown>; get: (k: string) => Promise<unknown>; set: (k: string, v: unknown) => Promise<void> } {
@@ -430,8 +638,68 @@ describe('TransportService', () => {
       service = new TransportService(mapService, redis as never);
 
       await service.resolveTransportOptions({ from: 'Madrid', to: 'Barcelona', departureDateIso: '2099-08-01' }, 'best');
-      expect(redis.store.has('transport:airport:madrid')).toBe(true);
-      expect(redis.store.has('transport:airport:barcelona')).toBe(true);
+      // Keys are role-prefixed: origins resolve dataset-only, destinations may
+      // also geocode/hub-resolve, so the two roles cannot share cache entries.
+      expect(redis.store.has('transport:airport:origin:madrid')).toBe(true);
+      expect(redis.store.has('transport:airport:destination:barcelona')).toBe(true);
+    });
+  });
+
+  // ── Intercontinental coverage: dataset aliases ─────────────────────────
+  describe('airport dataset aliases', () => {
+    it('resolves Bali and Cabo Verde to their real airports', () => {
+      expect(byCity('Bali')?.iata).toBe('DPS');
+      expect(byCity('Denpasar')?.iata).toBe('DPS');
+      expect(byCity('Cabo Verde')?.iata).toBe('SID');
+      expect(byCity('Cape Verde')?.iata).toBe('SID');
+      expect(byCity('Praia')?.iata).toBe('RAI');
+    });
+  });
+
+  // ── Airport snap distance cap ──────────────────────────────────────────
+  describe('airport snap distance cap', () => {
+    it('rejects a geocode snap to an airport beyond MAX_AIRPORT_SNAP_KM', async () => {
+      // Destination geocodes to the mid-Atlantic — nearest dataset airport is
+      // ~2000km away. Without the cap it would snap there and search a flight
+      // landing in the wrong country; with the cap resolution must fail.
+      const places = makePlacesMock({ lat: 10, lng: -40 });
+      service = new TransportService(mapService, undefined, places);
+      stubFetch({ sky: SERP_OK, directions: new Error('no train') });
+      (mapService.getTravelTime as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('no car'));
+
+      await expect(
+        service.resolveTransportOptions({ from: 'Lisbon', to: 'Remote Atoll' }, 'best'),
+      ).rejects.toThrow();
+      const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
+      expect(fetchMock.mock.calls.some((c) => String(c[0]).includes('google_flights'))).toBe(false);
+    });
+  });
+
+  // ── Distance-aware last-resort estimate ────────────────────────────────
+  describe('estimateLeg', () => {
+    it('returns a flight estimate for a long leg (Lisbon→Denpasar)', async () => {
+      const est = await service.estimateLeg({ from: 'Lisbon', to: 'Denpasar' });
+      expect(est.mode).toBe('flight');
+      expect(est.provider).toBe('estimate');
+      expect(est.durationMinutes).toBeGreaterThan(600); // ~12800km, never "2h"
+      expect(est.warnings.some((w) => w.includes('estimated flight'))).toBe(true);
+    });
+
+    it('returns a distance-based car estimate for a short leg (Sevilla→Malaga)', async () => {
+      const est = await service.estimateLeg({ from: 'Sevilla', to: 'Malaga' });
+      expect(est.mode).toBe('car');
+      expect(est.durationMinutes).toBeGreaterThan(60); // ~150km at 80km/h
+      expect(est.durationMinutes).toBeLessThan(180);
+      expect(est.priceEur).toBeGreaterThan(0);
+      expect(est.warnings.some((w) => w.includes('estimate only'))).toBe(true);
+    });
+
+    it('falls back to the generic 2h car placeholder when distance is unknown', async () => {
+      // No PlacesService and neither city is in the dataset → geodesicKm undefined.
+      const est = await service.estimateLeg({ from: 'Nowhere', to: 'Elsewhere' });
+      expect(est.mode).toBe('car');
+      expect(est.durationMinutes).toBe(120);
+      expect(est.warnings.some((w) => w.includes('estimate only'))).toBe(true);
     });
   });
 });

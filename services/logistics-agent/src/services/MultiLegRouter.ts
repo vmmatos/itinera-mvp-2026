@@ -11,7 +11,7 @@ function accessModeToSegmentMode(m: AccessMode): TransportSegment['mode'] {
   return 'car';
 }
 
-function buildDisplaySummary(segments: TransportSegment[], totalMinutes: number, totalCostEur: number): string {
+export function buildDisplaySummary(segments: TransportSegment[], totalMinutes: number, totalCostEur: number): string {
   const modes = segments.map((s) => {
     if (s.mode === 'flight') return 'Flight';
     if (s.mode === 'train') return 'Train';
@@ -34,11 +34,17 @@ function buildDisplaySummary(segments: TransportSegment[], totalMinutes: number,
  * Returns an array of composite TransportOptions (one per viable hub + hub→dest combo),
  * or empty if no hubs are found for this origin.
  */
+export interface MultiLegOptions {
+  /** Skip airport-type hubs — set for short legs where flying makes no sense. */
+  skipAirportHubs?: boolean;
+}
+
 export async function resolveMultiLegOptions(
   pair: CityPair,
   fetchBest: FetchFn,
+  opts: MultiLegOptions = {},
 ): Promise<TransportOption[]> {
-  const hubs = getHubs(pair.from);
+  const hubs = getHubs(pair.from).filter((h) => !opts.skipAirportHubs || h.hubType !== 'airport');
   if (hubs.length === 0) return [];
 
   const results: TransportOption[] = [];
@@ -62,8 +68,11 @@ export async function resolveMultiLegOptions(
           from: pair.from,
           to: hub.hubCity,
           mode: accessModeToSegmentMode(hub.accessMode),
+          provider: hub.accessProvider,
           durationMinutes: hub.accessMinutes,
           priceEur: accessCostEur,
+          fromStop: hub.accessFromStop,
+          toStop: hub.accessToStop,
         };
 
         const hubSegment: TransportSegment = {
@@ -76,6 +85,9 @@ export async function resolveMultiLegOptions(
           departureTime: onwards.departureTime,
           flightNumber: onwards.flightNumber,
           trainLine: onwards.trainLine,
+          // Airport/station names from live API (SerpApi or Google Routes)
+          fromStop: onwards.originAirport ?? onwards.fromStop,
+          toStop: onwards.destinationAirport ?? onwards.toStop,
         };
 
         const segments = [accessSegment, hubSegment];
