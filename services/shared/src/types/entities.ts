@@ -119,6 +119,10 @@ export interface TransportSegment {
   departureTime?: string;
   flightNumber?: string;
   trainLine?: string;
+  /** Departure stop/station/airport name (e.g. "Grândola train station", "Faro Airport") */
+  fromStop?: string;
+  /** Arrival stop/station/airport name */
+  toStop?: string;
 }
 
 export interface TransportOption {
@@ -139,4 +143,8 @@ export interface TransportOption {
   originAirport?: string;
   /** For flights: arrival airport code + name, e.g. "BCN – Barcelona–El Prat" */
   destinationAirport?: string;
+  /** Departure stop / station name (populated for train segments from Google Routes) */
+  fromStop?: string;
+  /** Arrival stop / station name */
+  toStop?: string;
 }

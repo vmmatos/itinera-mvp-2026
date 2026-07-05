@@ -93,6 +93,10 @@ export interface TransportSegment {
   departureTime?:  string
   flightNumber?:   string
   trainLine?:      string
+  /** Departure stop / station name (e.g. "Grândola train station") */
+  fromStop?:       string
+  /** Arrival stop / station name (e.g. "Faro Airport") */
+  toStop?:         string
 }
 
 export interface TransportOption {
@@ -113,6 +117,10 @@ export interface TransportOption {
   originAirport?:      string
   /** For flights: arrival airport code + name, e.g. "BCN – Barcelona–El Prat" */
   destinationAirport?: string
+  /** Departure stop / station name (direct routes) */
+  fromStop?:       string
+  /** Arrival stop / station name (direct routes) */
+  toStop?:         string
 }
 
 export interface TransportActivityData {
@@ -223,6 +231,7 @@ export interface Trip {
   ownerId?:       string
   ownerName?:     string
   ownerEmail?:    string
+  workflowState?: string | null
   createdAt:      string
   updatedAt:      string
 }

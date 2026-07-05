@@ -16,6 +16,13 @@ export interface ItineraryTransport {
   from: string
   to: string
   mode: string
+  provider?: string
+  durationMinutes?: number
+  priceEur?: number
+  departureTime?: string
+  arrivalTime?: string
+  displaySummary?: string
+  segments?: Array<Record<string, unknown>>
 }
 
 export interface ItineraryDay {

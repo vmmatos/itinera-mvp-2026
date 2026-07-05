@@ -1,3 +1,4 @@
+import { withProposalContract } from './proposal-contract';
 export const TRIP_ID = '550e8400-e29b-41d4-a716-446655440006';
 
 export const TRIP_CONTEXT =
@@ -213,7 +214,7 @@ export const CONVERGENCE_ANALYSIS_RESPONSE = JSON.stringify({
 // Final compromise — mealsValidated: true, alice ≥ 0.80, diana ≥ 0.75
 // Per-person costs: day1 = 15+22+0+28 = 65, day2 = 5+25+15+30 = 75 → total = 140
 // 2 people × 140 = 280 ≤ 400 ✓
-export const DIETARY_COMPROMISE_RESPONSE = JSON.stringify({
+export const DIETARY_COMPROMISE_RESPONSE = JSON.stringify(withProposalContract({
   itinerary: [
     {
       day: 1,
@@ -294,6 +295,6 @@ export const DIETARY_COMPROMISE_RESPONSE = JSON.stringify({
   mealsValidated: true,
   compromiseRationale:
     "Alice's vegan constraint (flexibility=none) fully respected — all four meal slots at logistics-confirmed vegan-friendly venues. Diana's fine dining quality preserved: shared venues serve both upscale non-vegan dishes (seafood, quality Portuguese) and fully vegan alternatives. Budget: 2 × €140 = €280 ≤ €400. Day 1 in Sintra: Pena Palace (cultural), shared vegan-friendly lunch, artisan market (gastronomy+culture), quality shared dinner. Day 2 in Cascais: coastal museum heritage, shared seafood/vegan lunch, harbour+wine tasting, shared fine dining dinner.",
-});
+}));
 
 export const NON_JSON_RESPONSE = 'I cannot process this request in JSON format';

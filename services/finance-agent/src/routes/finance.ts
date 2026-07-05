@@ -2,6 +2,7 @@ import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { ValidationError, NotFoundError } from '@itinera/shared';
+import type { BudgetPlan, BudgetBlock } from '@itinera/shared';
 import type { CostCalculator, ItineraryDay, CostItem, TransportItem, AccommodationItem } from '@/agents/CostCalculator';
 import type { BudgetValidator } from '@/agents/BudgetValidator';
 import type { AlternativeFinder } from '@/agents/AlternativeFinder';
@@ -12,9 +13,9 @@ const ReviewSchema = z.object({
   tripId:         z.string().uuid(),
   round:          z.number().int().min(1),
   proposal:       z.record(z.unknown()),
-  budgetTotal:    z.number().positive(),
+  budgetTotal:    z.coerce.number().positive(),
   budgetCurrency: z.string().min(1),
-  groupSize:      z.number().int().min(1).optional().default(1),
+  groupSize:      z.coerce.number().int().min(1).optional().default(1),
   context:        z.string().optional().default(''),
   dateInput: z.object({
     mode:           z.string(),
@@ -36,6 +37,76 @@ export function createFinanceRouter(
   storage: ProposalStorageService,
 ): Router {
   const router = Router();
+
+  // Early budget envelope check: validates transport + accommodation costs against budget
+  // before tourist agents run. Pure code — no LLM. Uses existing CostCalculator + BudgetValidator.
+  const EstimateSchema = z.object({
+    tripId:         z.string().uuid(),
+    routeGraph:     z.object({
+      orderedLegs:  z.array(z.object({ totalCostEurPerPerson: z.number() })),
+      cityStays:    z.array(z.object({
+        city:                   z.string(),
+        nights:                 z.number().int().min(1),
+        budgetPerPersonPerNight: z.number(),
+      })),
+      totalTransportCostEurPerPerson: z.number(),
+      totalDurationDays: z.number(),
+    }),
+    budgetTotal:    z.coerce.number().positive(),
+    budgetCurrency: z.string().min(1).default('EUR'),
+    groupSize:      z.coerce.number().int().min(1).default(1),
+  });
+
+  // Accommodation ~35% of experience budget; experiences get the rest
+  const ACCOMMODATION_RATIO = 0.35;
+
+  router.post('/estimate', (req: Request, res: Response, next: NextFunction): void => {
+    const parsed = EstimateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      next(new ValidationError(parsed.error.flatten().fieldErrors.toString()));
+      return;
+    }
+
+    const { routeGraph, budgetTotal, budgetCurrency, groupSize } = parsed.data;
+    const budgetPerPerson = budgetTotal / groupSize;
+
+    const transportTotal = routeGraph.totalTransportCostEurPerPerson;
+    const accommodationTotal = routeGraph.cityStays.reduce(
+      (sum, stay) => sum + stay.budgetPerPersonPerNight * stay.nights, 0,
+    );
+    const experiencesTotal = Math.max(0, budgetPerPerson - transportTotal - accommodationTotal);
+
+    const perBlock: BudgetBlock[] = routeGraph.cityStays.map((stay) => {
+      const stayTransport = routeGraph.orderedLegs
+        .filter((_, i) => i < routeGraph.cityStays.indexOf(stay))
+        .reduce((sum, leg) => sum + leg.totalCostEurPerPerson, 0);
+      const stayAccommodation = stay.budgetPerPersonPerNight * stay.nights;
+      const nightRatio = routeGraph.totalDurationDays > 0 ? stay.nights / routeGraph.totalDurationDays : 1;
+      const stayExperiences = Math.round(experiencesTotal * nightRatio);
+      return {
+        city: stay.city,
+        transportCostEurPerPerson: Math.round(stayTransport),
+        accommodationBudgetEurPerPerson: Math.round(stayAccommodation),
+        experiencesBudgetEurPerPerson: stayExperiences,
+        totalEurPerPerson: Math.round(stayTransport + stayAccommodation + stayExperiences),
+      } satisfies BudgetBlock;
+    });
+
+    const totalEurPerPerson = Math.round(transportTotal + accommodationTotal + experiencesTotal);
+    const feasible = experiencesTotal >= 0 && transportTotal + accommodationTotal <= budgetPerPerson;
+    const bufferPct = Math.round(((budgetPerPerson - transportTotal - accommodationTotal) / budgetPerPerson) * 100);
+
+    const budgetPlan: BudgetPlan = {
+      perBlock,
+      totalEurPerPerson,
+      grandTotal: Math.round(totalEurPerPerson * groupSize),
+      feasible,
+      bufferPct,
+      currency: budgetCurrency,
+    };
+
+    res.json({ budgetPlan });
+  });
 
   router.post('/review', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const parsed = ReviewSchema.safeParse(req.body);

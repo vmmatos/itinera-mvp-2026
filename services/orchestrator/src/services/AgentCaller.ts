@@ -1,5 +1,5 @@
 import { BaseService } from '@itinera/shared';
-import type { DateInput, TransportMode, TransportOption } from '@itinera/shared';
+import type { DateInput, TransportMode, TransportOption, RouteGraph, BudgetPlan, TouristSlotInput } from '@itinera/shared';
 import jwt from 'jsonwebtoken';
 import { config } from '@/config';
 
@@ -187,6 +187,73 @@ export class AgentCaller extends BaseService {
   ): Promise<AgentCallResult> {
     return this.post<AgentCallResult>('validator', '/', { tripId, round, proposal });
   }
+
+  // ── WorkflowEngine v2 methods ──────────────────────────────────────────────
+
+  async callLogisticsPlan(
+    tripId: string,
+    destinations: Array<{ city: string; country: string; nights: number }>,
+    dateInput: DateInput | null,
+    transportPreference: TransportMode,
+    budgetTotal: number,
+    budgetCurrency: string,
+    groupSize: number,
+  ): Promise<RouteGraph> {
+    const resp = await this.post<{ routeGraph: RouteGraph }>(
+      'logistics',
+      '/plan',
+      { tripId, destinations, dateInput, transportPreference, budgetTotal, budgetCurrency, groupSize },
+    );
+    return resp.routeGraph;
+  }
+
+  async callFinanceEstimate(
+    tripId: string,
+    routeGraph: RouteGraph,
+    budgetTotal: number,
+    budgetCurrency: string,
+    groupSize: number,
+  ): Promise<BudgetPlan> {
+    const resp = await this.post<{ budgetPlan: BudgetPlan }>(
+      'finance',
+      '/estimate',
+      { tripId, routeGraph, budgetTotal, budgetCurrency, groupSize },
+    );
+    return resp.budgetPlan;
+  }
+
+  async callPreferenceAgentSlots(
+    tripId: string,
+    round: number,
+    slots: TouristSlotInput[],
+  ): Promise<AgentCallResult[]> {
+    const start = Date.now();
+    const resp = await this.post<{ proposals: AgentEventLike[] }>(
+      'preference-agent',
+      '/propose-slots',
+      { tripId, round, slots },
+    );
+    return (resp.proposals ?? []).map((p) => toAgentCallResult(p, Date.now() - start));
+  }
+
+  async callOrchestratorMerge(
+    tripId: string,
+    round: number,
+    routeGraph: RouteGraph,
+    touristOutputs: Record<string, unknown>,
+    budgetPlan: BudgetPlan,
+    context = '',
+  ): Promise<AgentCallResult> {
+    const start = Date.now();
+    const resp = await this.post<{ merged: AgentEventLike }>(
+      'orchestrator-agent',
+      '/merge',
+      { tripId, round, routeGraph, touristOutputs, budgetPlan, context },
+    );
+    return toAgentCallResult(resp.merged, Date.now() - start);
+  }
+
+  // ── End WorkflowEngine v2 methods ──────────────────────────────────────────
 
   async callTransportLegs(
     destinations: { city: string; country: string }[],

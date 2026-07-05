@@ -5,6 +5,7 @@ import { ValidationError } from '@itinera/shared';
 import type { ConflictAnalyzer } from '@/agents/ConflictAnalyzer';
 import type { CompromiseGenerator } from '@/agents/CompromiseGenerator';
 import type { ProposalRefiner } from '@/agents/ProposalRefiner';
+import type { ItineraryMerger } from '@/agents/ItineraryMerger';
 
 const AnalyzeSchema = z.object({
   tripId: z.string().uuid(),
@@ -27,10 +28,20 @@ const RefineSchema = z.object({
   context: z.string().optional().default(''),
 });
 
+const MergeSchema = z.object({
+  tripId:        z.string().uuid(),
+  round:         z.number().int().min(1),
+  routeGraph:    z.record(z.unknown()),
+  touristOutputs: z.record(z.unknown()),
+  budgetPlan:    z.record(z.unknown()),
+  context:       z.string().optional().default(''),
+});
+
 export function createOrchestratorRouter(
   analyzer: ConflictAnalyzer,
   generator: CompromiseGenerator,
   refiner: ProposalRefiner,
+  merger?: ItineraryMerger,
 ): Router {
   const router = Router();
 
@@ -68,6 +79,30 @@ export function createOrchestratorRouter(
     const { tripId, round, proposal, feedback, context } = parsed.data;
     const refined = await refiner.refine(tripId, round, proposal, feedback, context);
     res.json({ refined });
+  });
+
+  // Merge endpoint for WorkflowEngine v2: takes route_graph + 4 tourist outputs → unified itinerary.
+  router.post('/merge', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    if (!merger) {
+      next(new ValidationError('Merge endpoint not available in this configuration'));
+      return;
+    }
+    const parsed = MergeSchema.safeParse(req.body);
+    if (!parsed.success) {
+      next(new ValidationError(parsed.error.flatten().fieldErrors.toString()));
+      return;
+    }
+
+    const { tripId, round, routeGraph, touristOutputs, budgetPlan, context } = parsed.data;
+    const merged = await merger.merge(
+      tripId,
+      round,
+      routeGraph as unknown as Parameters<ItineraryMerger['merge']>[2],
+      touristOutputs,
+      budgetPlan as unknown as Parameters<ItineraryMerger['merge']>[4],
+      context,
+    );
+    res.json({ merged });
   });
 
   return router;

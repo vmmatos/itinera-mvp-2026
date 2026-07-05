@@ -56,7 +56,8 @@ function getTimeSlot(time?: string): TimeSlot {
     const h = parseInt(hourMatch[1]!, 10)
     if (h >= 6  && h < 12) return 'morning'
     if (h >= 12 && h < 18) return 'afternoon'
-    if (h >= 18 || h < 6)  return 'evening'
+    if (h >= 18)            return 'evening'
+    return 'morning' // 00:00–05:59 early departures belong in morning
   }
   return 'unscheduled'
 }

@@ -11,6 +11,7 @@ import { ProposalStorageService } from '@/services/ProposalStorageService';
 import { ConflictAnalyzer } from '@/agents/ConflictAnalyzer';
 import { CompromiseGenerator } from '@/agents/CompromiseGenerator';
 import { ProposalRefiner } from '@/agents/ProposalRefiner';
+import { ItineraryMerger } from '@/agents/ItineraryMerger';
 import { createHealthRouter } from '@/routes/health';
 import { createOrchestratorRouter } from '@/routes/orchestrator';
 
@@ -35,11 +36,12 @@ async function start(): Promise<void> {
   const analyzer = new ConflictAnalyzer(anthropic, publisher, redis, storage);
   const generator = new CompromiseGenerator(anthropic, publisher, redis, storage);
   const refiner = new ProposalRefiner(anthropic, publisher, redis, storage);
+  const merger = new ItineraryMerger(anthropic, publisher, redis, storage);
 
   app.locals['logger'] = logger;
   app.use(createHealthRouter(publisher, redis));
   app.use(authMiddleware);
-  app.use(createOrchestratorRouter(analyzer, generator, refiner));
+  app.use(createOrchestratorRouter(analyzer, generator, refiner, merger));
   app.use(errorHandler);
 
   const server = app.listen(config.PORT, () => {

@@ -1,0 +1,11 @@
+{
+  "name": "@itinera/smoke-tests",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "devDependencies": {
+    "vitest": "^1.6.0"
+  }
+}

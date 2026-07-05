@@ -44,6 +44,23 @@ const EnvSchema = z.object({
   // (the feasibility guard then estimates flights for long legs).
   SERPAPI_KEY: z.string().default(''),
   SERPAPI_BASE_URL: z.string().default('https://serpapi.com/search'),
+  // Below this geodesic distance flights are never fetched, synthesised or
+  // composed via airport hubs — short land legs must resolve to ground modes
+  // (prevents fabricated flights like Mértola→Comporta and saves SerpApi quota).
+  MIN_FLIGHT_DISTANCE_KM: z.coerce.number().default(300),
+  // Max distance a geocoded place may be "snapped" to its nearest dataset
+  // airport. Beyond this the match is bogus (a region outside dataset coverage
+  // snapping to another country's hub, e.g. Cabo Verde→Las Palmas ~1600km) and
+  // resolution must fail instead so the caller falls back to an estimate.
+  MAX_AIRPORT_SNAP_KM: z.coerce.number().default(300),
+  // Per-person driving cost heuristic (fuel + tolls) so car options carry a
+  // price and compete fairly in the weighted ranking.
+  CAR_COST_EUR_PER_KM: z.coerce.number().default(0.22),
+  // Weighted transport ranking (see TransportScorer). Lower score = better.
+  TRANSPORT_WEIGHT_COST: z.coerce.number().default(0.6),
+  TRANSPORT_WEIGHT_DURATION: z.coerce.number().default(40),
+  TRANSPORT_WEIGHT_PREFERENCE: z.coerce.number().default(0.18),
+  TRANSPORT_WEIGHT_TRANSFERS: z.coerce.number().default(15),
 });
 
 const parsed = EnvSchema.safeParse(process.env);

@@ -81,8 +81,8 @@ describe('TripService.listTrips', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    const stateManager = new StateManager({} as never, {} as never);
-    const loop = new NegotiationLoop({} as never, {} as never);
+    const stateManager = new StateManager();
+    const loop = new NegotiationLoop({} as never, {} as never, {} as never);
     service = new TripService(stateManager, loop);
 
     mockFind = vi.fn();

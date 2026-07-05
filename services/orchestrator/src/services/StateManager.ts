@@ -1,5 +1,5 @@
 import { BaseService, NotFoundError } from '@itinera/shared';
-import type { TripStatus } from '@itinera/shared';
+import type { TripStatus, WorkflowContext } from '@itinera/shared';
 import { AppDataSource } from '@/data-source';
 import { Trip } from '@/entities/Trip';
 import { Traveller } from '@/entities/Traveller';
@@ -146,6 +146,22 @@ export class StateManager extends BaseService {
       metadata: params.metadata ?? {},
     });
     await repo.save(metric);
+  }
+
+  async saveWorkflowContext(tripId: string, context: WorkflowContext): Promise<void> {
+    await AppDataSource.query(
+      `UPDATE trips SET workflow_state = $1, workflow_context = $2 WHERE id = $3`,
+      [context.currentState, JSON.stringify(context), tripId],
+    );
+    this.logger.debug('Workflow context saved', { tripId, state: context.currentState });
+  }
+
+  async loadWorkflowContext(tripId: string): Promise<WorkflowContext | null> {
+    const rows = await AppDataSource.query(
+      `SELECT workflow_context FROM trips WHERE id = $1`,
+      [tripId],
+    ) as Array<{ workflow_context: WorkflowContext | null }>;
+    return rows[0]?.workflow_context ?? null;
   }
 
   // Mark a trip rejected (budget impossible) with the reason shown to the user.

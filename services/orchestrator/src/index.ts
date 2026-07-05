@@ -8,6 +8,8 @@ import { EventPublisher } from '@/services/EventPublisher';
 import { StateManager } from '@/services/StateManager';
 import { AgentCaller } from '@/services/AgentCaller';
 import { NegotiationLoop } from '@/services/NegotiationLoop';
+import { WorkflowEngine } from '@/services/WorkflowEngine';
+import { WorkflowStateMachine } from '@/services/WorkflowStateMachine';
 import { TripService } from '@/services/TripService';
 import { DestinationParser } from '@/services/DestinationParser';
 import { registerRoutes } from '@/routes';
@@ -28,13 +30,19 @@ async function start(): Promise<void> {
 
   const stateManager = new StateManager();
   const agentCaller = new AgentCaller();
-  const negotiationLoop = new NegotiationLoop(stateManager, agentCaller, eventPublisher);
+
+  const engine = config.WORKFLOW_ENGINE === 'v2'
+    ? new WorkflowEngine(new WorkflowStateMachine(), stateManager, agentCaller, eventPublisher)
+    : new NegotiationLoop(stateManager, agentCaller, eventPublisher);
+
   const aiProvider = config.ANTHROPIC_API_KEY
     ? new AnthropicService(config.ANTHROPIC_API_KEY, config.ANTHROPIC_MODEL)
     : undefined;
   const destinationParser = new DestinationParser(aiProvider);
-  const tripService = new TripService(stateManager, negotiationLoop, destinationParser);
-  negotiationLoop.setTripService(tripService);
+  const tripService = new TripService(stateManager, engine, destinationParser);
+  engine.setTripService(tripService);
+
+  logger.info('Orchestration engine selected', { engine: config.WORKFLOW_ENGINE });
 
   registerRoutes(app, eventPublisher, tripService);
   app.use(errorHandler);

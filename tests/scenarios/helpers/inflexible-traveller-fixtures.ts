@@ -1,3 +1,4 @@
+import { withProposalContract } from './proposal-contract';
 export const TRIP_ID = '550e8400-e29b-41d4-a716-446655440005';
 
 export const TRIP_CONTEXT =
@@ -238,7 +239,7 @@ export const CONVERGENCE_ANALYSIS_RESPONSE = JSON.stringify({
 
 // Final compromise — Elena ≥0.90, others ≥0.65
 // Per-person cost: day1=56, day2=83 → total=139 → 4 people=556 (≤600)
-export const HARD_CONSTRAINT_COMPROMISE_RESPONSE = JSON.stringify({
+export const HARD_CONSTRAINT_COMPROMISE_RESPONSE = JSON.stringify(withProposalContract({
   itinerary: [
     {
       day: 1,
@@ -330,11 +331,11 @@ export const HARD_CONSTRAINT_COMPROMISE_RESPONSE = JSON.stringify({
   unresolvedConflicts: [],
   compromiseRationale:
     "Elena's hard constraint (flexibility=low, beach-only) preserved throughout. Beach activities anchor each day. Cultural elements (Moorish Castle view, Cascais Museum) added for Alice at coastal locations. Outdoor elements (coastal cliff walk, Guincho cycling) satisfy Carlos within coastal bounds. Bob's relaxed coastal pace respected. All other participants adapted to Elena's non-negotiable constraint.",
-});
+}));
 
 // ProposalRefiner response — returned after incorporating hard-constraint feedback
 // Per-person cost: day1=48, day2=75 → total=123 → 4 people=492 (≤600)
-export const REFINED_HARD_CONSTRAINT_RESPONSE = JSON.stringify({
+export const REFINED_HARD_CONSTRAINT_RESPONSE = JSON.stringify(withProposalContract({
   changesApplied: [
     "Elena's beach morning anchor preserved on both days",
     'Alice cultural elements moved to coastal locations only',
@@ -418,6 +419,6 @@ export const REFINED_HARD_CONSTRAINT_RESPONSE = JSON.stringify({
   unresolvedConflicts: [],
   compromiseRationale:
     "Refined per feedback: Elena's beach hard constraint is non-negotiable. All activities grounded in coastal context. Refinement preserves Elena's ≥90% satisfaction while maintaining group adaptation.",
-});
+}));
 
 export const NON_JSON_RESPONSE = 'I cannot process this request in JSON format';

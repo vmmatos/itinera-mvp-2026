@@ -1,7 +1,12 @@
 import { z } from 'zod';
 
 const ActivitySchema = z.object({
-  time: z.enum(['morning', 'afternoon', 'evening']),
+  // Prompts ask for slot names, but the LLM occasionally emits clock times —
+  // both are usable downstream, so neither should trigger a validation retry.
+  time: z.union([
+    z.enum(['morning', 'afternoon', 'evening']),
+    z.string().regex(/^\d{1,2}:\d{2}$/),
+  ]),
   activity: z.string().min(3),
   venue: z.string().min(3),
   estimatedCostPerPerson: z.number().min(0),

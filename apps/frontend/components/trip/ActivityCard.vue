@@ -139,14 +139,50 @@ function agentLineVar(agent: string): string {
       </span>
     </div>
 
-    <!-- Departure / arrival airport (flights only) -->
+    <!-- Departure / arrival airport (direct flights only, no segments) -->
     <div
-      v-if="td.selectedOption.originAirport || td.selectedOption.destinationAirport"
+      v-if="!td.selectedOption.segments?.length && (td.selectedOption.originAirport || td.selectedOption.destinationAirport)"
       class="ac-tr-airports"
     >
       <span v-if="td.selectedOption.originAirport">✈ {{ td.selectedOption.originAirport }}</span>
       <span v-if="td.selectedOption.originAirport && td.selectedOption.destinationAirport"> → </span>
       <span v-if="td.selectedOption.destinationAirport">{{ td.selectedOption.destinationAirport }}</span>
+    </div>
+
+    <!-- Segment details: stop names + provider per leg (multi-leg routes) -->
+    <div
+      v-if="td.selectedOption.segments?.length"
+      class="ac-tr-segments"
+    >
+      <div
+        v-for="(seg, si) in td.selectedOption.segments"
+        :key="si"
+        class="ac-tr-seg"
+      >
+        <span class="ac-tr-seg-icon">{{ seg.mode === 'flight' ? '✈' : seg.mode === 'train' ? '🚆' : seg.mode === 'bus' ? '🚌' : '🚗' }}</span>
+        <span class="ac-tr-seg-body">
+          <span class="ac-tr-seg-route">{{ seg.from }} → {{ seg.to }}</span>
+          <span v-if="seg.provider" class="ac-tr-seg-provider"> · {{ seg.provider }}</span>
+          <span v-if="seg.trainLine && seg.trainLine !== seg.provider" class="ac-tr-seg-line"> ({{ seg.trainLine }})</span>
+          <span v-if="seg.flightNumber" class="ac-tr-seg-line"> · {{ seg.flightNumber }}</span>
+          <span v-if="seg.fromStop || seg.toStop" class="ac-tr-seg-stops">
+            <template v-if="seg.fromStop">🚏 Board at: {{ seg.fromStop }}</template>
+            <template v-if="seg.fromStop && seg.toStop"> · </template>
+            <template v-if="seg.toStop">Alight at: {{ seg.toStop }}</template>
+          </span>
+        </span>
+        <span v-if="seg.departureTime" class="ac-tr-seg-time">{{ seg.departureTime }}</span>
+      </div>
+    </div>
+
+    <!-- Direct train/bus stops (no segments) -->
+    <div
+      v-if="!td.selectedOption.segments?.length && (td.selectedOption.fromStop || td.selectedOption.toStop)"
+      class="ac-tr-airports"
+    >
+      <template v-if="td.selectedOption.fromStop">🚏 {{ td.selectedOption.fromStop }}</template>
+      <template v-if="td.selectedOption.fromStop && td.selectedOption.toStop"> → </template>
+      <template v-if="td.selectedOption.toStop">{{ td.selectedOption.toStop }}</template>
     </div>
 
     <!-- Why this option won -->
@@ -372,6 +408,64 @@ function agentLineVar(agent: string): string {
   margin-top: 3px;
   letter-spacing: 0.02em;
   opacity: 0.8;
+}
+
+.ac-tr-segments {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ac-tr-seg {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--fg-2);
+  padding: 4px 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border-left: 2px solid rgba(0, 170, 255, 0.25);
+  border-radius: 0 var(--r-1) var(--r-1) 0;
+}
+
+.ac-tr-seg-icon {
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+
+.ac-tr-seg-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ac-tr-seg-route {
+  color: var(--fg-1);
+  font-weight: 500;
+}
+
+.ac-tr-seg-provider {
+  color: var(--fg-3);
+}
+
+.ac-tr-seg-line {
+  color: var(--fg-3);
+}
+
+.ac-tr-seg-stops {
+  color: var(--fg-3);
+  font-size: 9px;
+  opacity: 0.85;
+  margin-top: 1px;
+}
+
+.ac-tr-seg-time {
+  flex-shrink: 0;
+  color: var(--fg-2);
+  align-self: flex-start;
 }
 
 .ac-tr-qualifier {

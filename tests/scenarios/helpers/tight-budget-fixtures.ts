@@ -1,4 +1,5 @@
 import type { ItineraryDay } from '../../../services/finance-agent/src/agents/CostCalculator';
+import { withProposalContract } from './proposal-contract';
 
 export const TRIP_ID = '550e8400-e29b-41d4-a716-446655440003';
 
@@ -260,7 +261,7 @@ export const BUDGET_CONVERGENCE_ANALYSIS_RESPONSE = JSON.stringify({
 // Per-person: day1 (8+0+12+15) + day2 (0+14+0+20) = 35 + 34 = €69
 // 4 × €69 = €276 ≤ €300 ✓
 // satisfactionEstimates all ≥ 0.60 ✓
-export const BUDGET_CONSTRAINED_COMPROMISE_RESPONSE = JSON.stringify({
+export const BUDGET_CONSTRAINED_COMPROMISE_RESPONSE = JSON.stringify(withProposalContract({
   itinerary: [
     {
       day: 1,
@@ -343,7 +344,7 @@ export const BUDGET_CONSTRAINED_COMPROMISE_RESPONSE = JSON.stringify({
     'Tight budget enforced by replacing premium dining with high-quality local taverns and market meals. Free outdoor activities (Sintra trails, Guincho beach walk) satisfy Carlos while keeping costs zero. Colares wine picnic and cataplana dinner maintain culinary experience for Diana and Bob within budget. Alice satisfied by Moorish Castle and heritage walks. All four preferences present across both days at €69/person total.',
   satisfactionEstimates: { alice: 0.66, bob: 0.63, carlos: 0.68, diana: 0.62 },
   unresolvedConflicts: [],
-});
+}));
 
 // Claude response for AlternativeFinder when proposals exceed €300
 export const BUDGET_ALTERNATIVES_RESPONSE = JSON.stringify({

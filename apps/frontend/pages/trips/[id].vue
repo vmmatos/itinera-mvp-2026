@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import type { Trip } from '~/types/index'
+import type { Trip, TransportOption, TransportActivityData } from '~/types/index'
 import type { TimelineDay, TimelineActivity } from '~/components/trip/Timeline.vue'
+import { formatTransportLabel } from '~/utils/itinerary'
 
 definePageMeta({
   layout: 'default',
@@ -67,6 +68,41 @@ function extractItinerary(proposals: RawProposal[]): TimelineDay[] {
     }))
 
     const rawTransition = d['cityTransition'] as Record<string, unknown> | undefined
+
+    // Inject transport card from day.transport (stamped by injectRouteGraphTransport in WorkflowEngine)
+    const rawTransportArr = Array.isArray(d['transport']) ? d['transport'] as Array<Record<string, unknown>> : []
+    const rt = rawTransportArr[0]
+    if (rt && typeof rt['mode'] === 'string' && typeof rt['durationMinutes'] === 'number' && (rt['durationMinutes'] as number) > 0 && rawTransition?.['to']) {
+      const best: TransportOption = {
+        mode:            rt['mode'] as TransportOption['mode'],
+        provider:        typeof rt['provider'] === 'string' ? rt['provider'] : undefined,
+        durationMinutes: rt['durationMinutes'] as number,
+        departureTime:   typeof rt['departureTime'] === 'string' ? rt['departureTime'] : undefined,
+        arrivalTime:     typeof rt['arrivalTime'] === 'string' ? rt['arrivalTime'] : undefined,
+        priceEur:        typeof rt['priceEur'] === 'number' ? rt['priceEur'] : undefined,
+        flightNumber:    typeof rt['flightNumber'] === 'string' ? rt['flightNumber'] : undefined,
+        trainLine:       typeof rt['trainLine'] === 'string' ? rt['trainLine'] : undefined,
+        warnings:        Array.isArray(rt['warnings']) ? rt['warnings'] as string[] : [],
+        segments:        Array.isArray(rt['segments']) ? rt['segments'] as TransportOption['segments'] : undefined,
+        displaySummary:  typeof rt['displaySummary'] === 'string' ? rt['displaySummary'] : undefined,
+        originAirport:   typeof rt['originAirport'] === 'string' ? rt['originAirport'] : undefined,
+        destinationAirport: typeof rt['destinationAirport'] === 'string' ? rt['destinationAirport'] : undefined,
+        fromStop:        typeof rt['fromStop'] === 'string' ? rt['fromStop'] : undefined,
+        toStop:          typeof rt['toStop'] === 'string' ? rt['toStop'] : undefined,
+      }
+      const alts = Array.isArray(rt['alternatives']) ? rt['alternatives'] as TransportOption[] : []
+      const to = String(rawTransition['to'])
+      const transportData: TransportActivityData = { to, selectedOption: best, alternatives: alts }
+      // The journey card anchors where the travel begins on this day: the
+      // first transit placeholder — "In transit" (arrival day) or "Check out
+      // and depart" (late-departure day owned by the origin city).
+      const firstTransit = activities.find((a) => /in transit|check out and depart/i.test(a.name))
+      activities.push({
+        name:          formatTransportLabel(best, to),
+        time:          firstTransit?.time ?? best.departureTime ?? 'morning',
+        transportData,
+      })
+    }
 
     return {
       day:  typeof d['day'] === 'number' ? d['day'] : i + 1,

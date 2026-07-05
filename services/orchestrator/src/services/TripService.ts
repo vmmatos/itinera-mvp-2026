@@ -7,7 +7,7 @@ import { Proposal } from '@/entities/Proposal';
 import { AgentLog } from '@/entities/AgentLog';
 import { TripMetric } from '@/entities/TripMetric';
 import { StateManager } from '@/services/StateManager';
-import { NegotiationLoop } from '@/services/NegotiationLoop';
+import type { IOrchestrationEngine } from '@/services/WorkflowEngine';
 import { DestinationParser } from '@/services/DestinationParser';
 import type { CreateTripInput } from '@/validation/trip.schemas';
 
@@ -26,6 +26,7 @@ export interface TripSummary {
   budgetCurrency: string;
   dateInput: DateInput | null;
   rejectionReason: string | null;
+  workflowState: string | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -71,7 +72,7 @@ export class TripService extends BaseService {
 
   constructor(
     private readonly stateManager: StateManager,
-    private readonly negotiationLoop: NegotiationLoop,
+    private readonly negotiationLoop: IOrchestrationEngine,
     destinationParser?: DestinationParser,
   ) {
     super('trip-service');
@@ -221,6 +222,7 @@ export class TripService extends BaseService {
       budgetCurrency: trip.budgetCurrency,
       dateInput: trip.dateInput ?? null,
       rejectionReason: trip.rejectionReason ?? null,
+      workflowState: trip.workflowState ?? null,
       createdAt: trip.createdAt,
       updatedAt: trip.updatedAt,
     };

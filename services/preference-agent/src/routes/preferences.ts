@@ -2,7 +2,7 @@ import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { ValidationError, PREFERENCE_AGENT_CONFIGS, PREFERENCE_AGENT_NAMES } from '@itinera/shared';
-import type { AgentEvent } from '@itinera/shared';
+import type { AgentEvent, TouristSlotInput } from '@itinera/shared';
 import type { BaseAgent } from '@/agents/BaseAgent';
 
 const AGENT_NAMES = PREFERENCE_AGENT_NAMES as [string, ...string[]];
@@ -86,6 +86,48 @@ export function createPreferencesRouter(agents: Record<AgentKey, BaseAgent>): Ro
     }
 
     res.json({ reactions });
+  });
+
+  // Slot-based proposal endpoint for WorkflowEngine v2.
+  // Each agent proposes experiences within pre-defined time slots — no city/transport/accommodation choice.
+  const ProposeSlotSchema = z.object({
+    tripId:  z.string().uuid(),
+    round:   z.number().int().min(1),
+    slots:   z.array(z.unknown()).min(1),
+    agents:  z.array(z.enum(AGENT_NAMES)).min(1).default([...PREFERENCE_AGENT_NAMES]),
+  });
+
+  router.post('/propose-slots', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const parsed = ProposeSlotSchema.safeParse(req.body);
+    if (!parsed.success) {
+      next(new ValidationError(parsed.error.flatten().fieldErrors.toString()));
+      return;
+    }
+
+    const { tripId, round, slots, agents: requestedAgents } = parsed.data;
+
+    const results = await Promise.allSettled(
+      requestedAgents.map((name) =>
+        agents[name as AgentKey].proposeForSlot(tripId, round, slots as TouristSlotInput[]),
+      ),
+    );
+
+    const proposals: AgentEvent[] = [];
+    const errors: string[] = [];
+
+    for (const result of results) {
+      if (result.status === 'fulfilled') {
+        proposals.push(result.value);
+      } else {
+        errors.push(String(result.reason));
+      }
+    }
+
+    if (errors.length > 0) {
+      req.app.locals['logger']?.warn('Some agents failed during propose-slots', { errors, tripId, round });
+    }
+
+    res.json({ proposals });
   });
 
   router.get('/profiles', (_req: Request, res: Response): void => {
