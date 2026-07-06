@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { DataSource } from 'typeorm';
 import { config } from '@/config';
 import { Proposal } from '@/entities/Proposal';
+import { Attraction } from '@/entities/Attraction';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',
@@ -10,7 +11,7 @@ export const AppDataSource = new DataSource({
   database: config.POSTGRES_DB,
   username: config.POSTGRES_USER,
   password: config.POSTGRES_PASSWORD,
-  entities: [Proposal],
+  entities: [Proposal, Attraction],
   synchronize: false,
   logging: config.NODE_ENV === 'development' ? ['error'] : false,
 });

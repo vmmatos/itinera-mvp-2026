@@ -20,6 +20,12 @@ export class Attraction {
   @Column({ type: 'varchar', length: 100 })
   category!: string;
 
+  @Column({ name: 'entry_price', type: 'numeric', precision: 6, scale: 2, nullable: true })
+  entryPrice!: number | null;
+
+  @Column({ name: 'entry_price_currency', type: 'varchar', length: 3, default: 'EUR' })
+  entryPriceCurrency!: string;
+
   @Column({ type: 'jsonb', default: {} })
   metadata!: Record<string, unknown>;
 

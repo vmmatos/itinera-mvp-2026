@@ -162,6 +162,43 @@ export interface CreateTripInput {
   transportPreference?: TransportMode
 }
 
+// ── Budget breakdown (issue #73) ───────────────────────────────
+export type BudgetCategory = 'accommodation' | 'restaurants' | 'activities' | 'transport' | 'buffer'
+
+export interface BudgetCategoryDetail {
+  amountPerPerson: number
+  amountTotal:     number
+  isEstimate:      boolean
+  source:          string
+}
+
+export interface BudgetOverrun {
+  category:           BudgetCategory
+  overAmountPerPerson: number
+  overAmountTotal:     number
+}
+
+export interface SuggestedCut {
+  category:        Exclude<BudgetCategory, 'buffer'>
+  description:     string
+  savingPerPerson: number
+  savingTotal:     number
+}
+
+export interface BudgetBreakdown {
+  currency:         string
+  currencyMismatch: boolean
+  groupSize:        number
+  categories:       Record<BudgetCategory, BudgetCategoryDetail>
+  perPersonTotal:   number
+  grandTotal:       number
+  budgetTotal:      number
+  status:           'within_budget' | 'over_budget'
+  percentageUsed:   number
+  overruns:         BudgetOverrun[]
+  suggestedCuts:    SuggestedCut[]
+}
+
 // ── Trip result ───────────────────────────────────────────────
 export interface CityTransition {
   to:               string

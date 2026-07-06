@@ -4,6 +4,10 @@ export interface CostItem {
   cost?: number;
   estimatedCostPerPerson?: number;
   currency?: string;
+  /** true when this item's price is a heuristic guess, not a real quote (issue #73). */
+  isEstimate?: boolean;
+  /** e.g. 'google_places_price_level' | 'attraction_db' | 'heuristic_estimate' */
+  source?: string;
 }
 
 export interface TransportItem {
@@ -12,11 +16,16 @@ export interface TransportItem {
   cost?: number;
   priceEur?: number;
   currency?: string;
+  isEstimate?: boolean;
+  source?: string;
 }
 
 export interface AccommodationItem {
+  city?: string;
   pricePerNightPerPerson?: number;
   nights?: number;
+  isEstimate?: boolean;
+  source?: string;
 }
 
 export interface ItineraryDay {

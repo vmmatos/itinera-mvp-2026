@@ -505,4 +505,66 @@ describe('NegotiationLoop', () => {
     expect(cities).toEqual(['Oslo', 'Zagreb', 'Barcelona']);
     expect(cities.some((c) => String(c).includes('Montpellier'))).toBe(false);
   });
+
+  // ── Real pricing merge (issue #73) ────────────────────────────────
+
+  it('overwrites accommodation/activity/meal prices from logistics pricing before the first finance review', async () => {
+    vi.mocked(agentCaller.callOrchestratorPropose).mockResolvedValue({
+      ...PROPOSAL_RESULT,
+      content: {
+        accommodation: [{ city: 'Paris', name: 'Hotel LLM Guess', pricePerNightPerPerson: 999, nights: 2 }],
+        itinerary: [{
+          day: 1,
+          city: 'Paris',
+          activities: [{ name: 'Louvre Museum', estimatedCostPerPerson: 999 }],
+          meals: [{ name: 'Dinner', estimatedCostPerPerson: 999 }],
+          transport: [],
+        }],
+      },
+    });
+    vi.mocked(agentCaller.callLogisticsAgent).mockResolvedValue({
+      ...LOGISTICS_APPROVED,
+      content: {
+        ...LOGISTICS_APPROVED.content,
+        pricing: {
+          accommodationByCity: { Paris: { amount: 60, isEstimate: false, source: 'serpapi_google_hotels' } },
+          restaurantPricePerMeal: { amount: 25, isEstimate: false, source: 'google_places_price_level' },
+          activityPriceByName: { 'louvre museum': { amount: 17, isEstimate: false, source: 'attraction_db' } },
+        },
+      },
+    });
+
+    await loop.run(TRIP_ID);
+
+    const financeCall = vi.mocked(agentCaller.callFinanceAgent).mock.calls[0]!;
+    const proposal = financeCall[2] as Record<string, unknown>;
+
+    const accommodation = proposal['accommodation'] as Array<Record<string, unknown>>;
+    expect(accommodation[0]).toMatchObject({ pricePerNightPerPerson: 60, isEstimate: false, source: 'serpapi_google_hotels' });
+
+    const itinerary = proposal['itinerary'] as Array<Record<string, unknown>>;
+    const day1 = itinerary[0]!;
+    const activities = day1['activities'] as Array<Record<string, unknown>>;
+    expect(activities[0]).toMatchObject({ estimatedCostPerPerson: 17, isEstimate: false, source: 'attraction_db' });
+    const meals = day1['meals'] as Array<Record<string, unknown>>;
+    expect(meals[0]).toMatchObject({ estimatedCostPerPerson: 25, isEstimate: false, source: 'google_places_price_level' });
+  });
+
+  it('leaves the proposal untouched when logistics returns no pricing field (older/degraded response)', async () => {
+    vi.mocked(agentCaller.callOrchestratorPropose).mockResolvedValue({
+      ...PROPOSAL_RESULT,
+      content: {
+        accommodation: [{ city: 'Paris', name: 'Hotel LLM Guess', pricePerNightPerPerson: 120, nights: 2 }],
+        itinerary: [{ day: 1, city: 'Paris', activities: [], meals: [], transport: [] }],
+      },
+    });
+    // LOGISTICS_APPROVED has no `pricing` key.
+
+    await loop.run(TRIP_ID);
+
+    const financeCall = vi.mocked(agentCaller.callFinanceAgent).mock.calls[0]!;
+    const proposal = financeCall[2] as Record<string, unknown>;
+    const accommodation = proposal['accommodation'] as Array<Record<string, unknown>>;
+    expect(accommodation[0]?.['pricePerNightPerPerson']).toBe(120);
+  });
 });

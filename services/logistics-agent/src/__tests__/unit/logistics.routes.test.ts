@@ -39,6 +39,7 @@ import type { HolidayService } from '@/services/HolidayService';
 import type { RestrictionsValidator } from '@/validators/RestrictionsValidator';
 import type { Place } from '@/services/PlacesService';
 import type { TransportService } from '@/services/TransportService';
+import type { PricingEnricher } from '@/services/PricingEnricher';
 
 const VALID_UUID = '550e8400-e29b-41d4-a716-446655440000';
 
@@ -74,6 +75,7 @@ const MOCK_PLACES: Place[] = [
     location: { lat: 48.8584, lng: 2.2945 },
     category: 'tourist_attraction',
     rating: 4.7,
+    priceLevel: null,
     openingHours: { Monday: '9:00-23:45' },
     metadata: {},
   },
@@ -110,13 +112,20 @@ const mockTransportService = {
     warnings: ['No transport options found — estimate only'],
   }),
 } as unknown as TransportService;
+const mockPricingEnricher = {
+  enrich: vi.fn().mockResolvedValue({
+    accommodationByCity: {},
+    restaurantPricePerMeal: { amount: 25, isEstimate: true, source: 'heuristic_estimate' },
+    activityPriceByName: {},
+  }),
+} as unknown as PricingEnricher;
 
 function buildApp(): express.Express {
   const app = express();
   app.use(express.json());
   app.use(createLogisticsRouter(
     mockWeather, mockAttractions, mockTiming, mockAnalyzer, mockRedis,
-    mockHolidayService, mockRestrictionsValidator, mockTransportService,
+    mockHolidayService, mockRestrictionsValidator, mockTransportService, mockPricingEnricher,
   ));
   app.use((err: Error & { statusCode?: number }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     res.status(err.statusCode ?? 400).json({ success: false, error: { message: err.message } });
@@ -356,6 +365,29 @@ describe('POST /validate', () => {
     expect(mockAnalyzer.analyze).toHaveBeenCalledWith(
       VALID_UUID, 1, expect.any(Array), [], expect.any(Object), dateInput, expect.any(Array), undefined,
     );
+  });
+
+  it('attaches pricing enrichment to the validation content', async () => {
+    vi.mocked(mockPricingEnricher.enrich).mockResolvedValue({
+      accommodationByCity: { Paris: { amount: 90, isEstimate: false, source: 'serpapi_google_hotels' } },
+      restaurantPricePerMeal: { amount: 25, isEstimate: false, source: 'google_places_price_level' },
+      activityPriceByName: {},
+    });
+
+    const app = buildApp();
+    const res = await request(app).post('/validate').send({
+      tripId: VALID_UUID,
+      round: 1,
+      proposal: { itinerary: [VALID_ITINERARY_DAY] },
+      region: 'Paris',
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.validation.content.pricing).toEqual({
+      accommodationByCity: { Paris: { amount: 90, isEstimate: false, source: 'serpapi_google_hotels' } },
+      restaurantPricePerMeal: { amount: 25, isEstimate: false, source: 'google_places_price_level' },
+      activityPriceByName: {},
+    });
   });
 
   it('fixed mode: uses standard multi cache key and standard day count', async () => {

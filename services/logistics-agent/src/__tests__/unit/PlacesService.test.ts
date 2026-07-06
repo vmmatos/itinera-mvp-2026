@@ -123,4 +123,62 @@ describe('PlacesService', () => {
       await expect(service.searchAttractions('Paris')).rejects.toThrow('403');
     });
   });
+
+  describe('searchRestaurants', () => {
+    it('maps priceLevel enum strings to numbers', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({
+          places: [
+            { id: 'r-1', displayName: { text: 'Zé da Mouraria' }, priceLevel: 'PRICE_LEVEL_INEXPENSIVE' },
+            { id: 'r-2', displayName: { text: 'Belcanto' }, priceLevel: 'PRICE_LEVEL_VERY_EXPENSIVE' },
+          ],
+        }),
+        text: () => Promise.resolve(''),
+      }));
+
+      const results = await service.searchRestaurants('Lisbon');
+
+      expect(results).toHaveLength(2);
+      expect(results[0]?.priceLevel).toBe(1);
+      expect(results[1]?.priceLevel).toBe(4);
+      expect(results[0]?.category).toBe('restaurant');
+    });
+
+    it('returns priceLevel null when field is absent', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ places: [{ id: 'r-3', displayName: { text: 'Unknown Place' } }] }),
+        text: () => Promise.resolve(''),
+      }));
+
+      const [place] = await service.searchRestaurants('Lisbon');
+      expect(place?.priceLevel).toBeNull();
+    });
+
+    it('includes region in the search query', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ places: [] }),
+        text: () => Promise.resolve(''),
+      });
+      vi.stubGlobal('fetch', mockFetch);
+
+      await service.searchRestaurants('Lisbon');
+
+      const body = JSON.parse((mockFetch.mock.calls[0] as [string, { body: string }])[1].body as string) as { textQuery: string };
+      expect(body.textQuery).toContain('restaurants');
+      expect(body.textQuery).toContain('Lisbon');
+    });
+
+    it('throws when API returns non-ok status', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: false,
+        status: 500,
+        text: () => Promise.resolve('Server error'),
+      }));
+
+      await expect(service.searchRestaurants('Lisbon')).rejects.toThrow('500');
+    });
+  });
 });

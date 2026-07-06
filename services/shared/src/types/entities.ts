@@ -102,6 +102,8 @@ export interface Attraction {
   name: string;
   location: string;
   category: string;
+  entryPrice: number | null;
+  entryPriceCurrency: string;
   metadata: Record<string, unknown>;
   createdAt: Date;
   updatedAt: Date;

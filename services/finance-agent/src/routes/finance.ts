@@ -8,6 +8,7 @@ import type { BudgetValidator } from '@/agents/BudgetValidator';
 import type { AlternativeFinder } from '@/agents/AlternativeFinder';
 import type { ProposalStorageService } from '@/services/ProposalStorageService';
 import { buildFinanceVerdict } from '@/services/FinanceVerdict';
+import { buildBudgetBreakdown, mapAlternativesToSuggestedCuts } from '@/agents/BudgetBreakdownBuilder';
 
 const ReviewSchema = z.object({
   tripId:         z.string().uuid(),
@@ -137,8 +138,18 @@ export function createFinanceRouter(
     // the trip has converged (or is impossible and must be rejected).
     const reviewContent = (review.content ?? {}) as Record<string, unknown>;
     const alternatives = reviewContent['alternatives'] as
-      { revisedBudgetEstimate?: number; totalPotentialSaving?: number } | undefined;
+      { revisedBudgetEstimate?: number; totalPotentialSaving?: number; suggestions?: unknown } | undefined;
     reviewContent['verdict'] = buildFinanceVerdict(breakdown, validation, alternatives ?? null);
+
+    // Itemised per-category, per-person breakdown with overrun flags and
+    // suggested cuts (issue #73).
+    const budgetBreakdown = buildBudgetBreakdown(breakdown, itinerary, accommodation, validation);
+    budgetBreakdown.suggestedCuts = mapAlternativesToSuggestedCuts(
+      alternatives as { suggestions?: Array<{ category?: string; suggestion?: { name?: string; venue?: string; saving?: number }; rationale?: string }> } | undefined,
+      breakdown.groupSize,
+    );
+    reviewContent['budgetBreakdown'] = budgetBreakdown;
+
     review.content = reviewContent;
 
     res.json({ review });

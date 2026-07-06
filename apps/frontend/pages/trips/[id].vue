@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import type { Trip, TransportOption, TransportActivityData } from '~/types/index'
+import type { Trip, TransportOption, TransportActivityData, BudgetBreakdown } from '~/types/index'
 import type { TimelineDay, TimelineActivity } from '~/components/trip/Timeline.vue'
 import { formatTransportLabel } from '~/utils/itinerary'
 
@@ -135,6 +135,14 @@ const suggestedDates = computed(() => {
 const currencySymbol = computed(() =>
   trip.value?.budgetCurrency === 'USD' ? '$' : '€',
 )
+
+// Itemised per-category, per-person budget breakdown (issue #73).
+const budgetBreakdown = computed<BudgetBreakdown | null>(() => {
+  const fp = rawProposals.value.find((p) => p.agent === 'finance')
+  const c = fp?.content as Record<string, unknown> | null
+  const bd = c?.['budgetBreakdown'] as BudgetBreakdown | undefined
+  return bd ?? null
+})
 
 interface RestrictionWarning {
   day: number
@@ -275,6 +283,11 @@ onMounted(async () => {
         </div>
         <div v-else class="card" style="padding:var(--s-6);text-align:center">
           <p class="helper">Itinerary data is not available for this trip.</p>
+        </div>
+
+        <div v-if="budgetBreakdown" class="mt-8">
+          <div class="sec-eyebrow mb-4">Budget breakdown</div>
+          <TripBudgetBreakdown :breakdown="budgetBreakdown" />
         </div>
       </div>
 

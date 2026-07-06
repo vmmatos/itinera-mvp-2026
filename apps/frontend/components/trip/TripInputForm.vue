@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onUnmounted, onMounted } from 'vue'
 import { PERSONA_LABELS, PERSONA_AGENT, AGENT_COLOURS } from '~/types/index'
-import type { Persona, Flexibility, Currency, DateWindow, DateInput, CreateTripInput, TravellerInput, SatisfactionScore, AgentStreamEvent, TransportMode, TransportOption, TransportActivityData } from '~/types/index'
+import type { Persona, Flexibility, Currency, DateWindow, DateInput, CreateTripInput, TravellerInput, SatisfactionScore, AgentStreamEvent, TransportMode, TransportOption, TransportActivityData, BudgetBreakdown } from '~/types/index'
 import { formatTransportLabel } from '~/utils/itinerary'
 
 const props = withDefaults(defineProps<{ viewTripId?: string }>(), { viewTripId: undefined })
@@ -756,6 +756,15 @@ const financeSummary = computed(() => {
   const bd = c['costBreakdown'] as Record<string, unknown> | undefined
   const bv = c['budgetValidation'] as Record<string, unknown> | undefined
   return { grandTotal: bd?.['grandTotal'], currency: bd?.['currency'], status: bv?.['status'] }
+})
+
+// Itemised per-category, per-person budget breakdown (issue #73). Older
+// proposals won't have this field — the fallback cost-breakdown card below
+// still covers those.
+const budgetBreakdown = computed<BudgetBreakdown | null>(() => {
+  const p = latestByAgent.value['finance']
+  const bd = p?.content?.['budgetBreakdown'] as BudgetBreakdown | undefined
+  return bd ?? null
 })
 
 // ── Step 4: Scores, cost breakdown, weather ───────────────────
@@ -2051,8 +2060,11 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
           </div>
         </div>
 
-        <!-- CostBreakdown -->
-        <div v-if="costCategories.length > 0" class="summary-card" style="margin-bottom:var(--s-4)">
+        <!-- BudgetBreakdown (issue #73) -->
+        <TripBudgetBreakdown v-if="budgetBreakdown" :breakdown="budgetBreakdown" />
+
+        <!-- CostBreakdown (fallback for proposals without budgetBreakdown) -->
+        <div v-else-if="costCategories.length > 0" class="summary-card" style="margin-bottom:var(--s-4)">
           <div class="sub">Cost breakdown</div>
           <div class="kv" style="padding-top:var(--s-3)">
             <template v-for="cat in costCategories" :key="cat.label">

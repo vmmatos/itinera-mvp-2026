@@ -182,6 +182,30 @@ describe('POST /review', () => {
     expect(res.body.review.agent).toBe('finance');
   });
 
+  it('200 attaches an itemised budgetBreakdown (issue #73)', async () => {
+    const app = buildApp();
+    const res = await request(app).post('/review').send({
+      tripId: VALID_UUID,
+      round: 1,
+      proposal: { itinerary: VALID_ITINERARY },
+      budgetTotal: 500,
+      budgetCurrency: 'EUR',
+      groupSize: 2,
+    });
+
+    expect(res.status).toBe(200);
+    const bd = res.body.review.content.budgetBreakdown;
+    expect(bd).toBeDefined();
+    expect(bd.groupSize).toBe(1); // groupSize comes from the (mocked) calculator's breakdown, not the request
+    expect(bd.categories).toHaveProperty('accommodation');
+    expect(bd.categories).toHaveProperty('restaurants');
+    expect(bd.categories).toHaveProperty('activities');
+    expect(bd.categories).toHaveProperty('transport');
+    expect(bd.categories).toHaveProperty('buffer');
+    expect(bd.categories.buffer.amountTotal).toBe(Math.round((0 + 100 + 50 + 30) * 0.1));
+    expect(bd.suggestedCuts).toEqual([]);
+  });
+
   it('passes tripId, round, proposal, breakdown, and validation to finder', async () => {
     const app = buildApp();
     await request(app).post('/review').send({
