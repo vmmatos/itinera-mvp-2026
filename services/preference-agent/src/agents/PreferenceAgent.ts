@@ -23,5 +23,9 @@ export class PreferenceAgent extends BaseAgent {
       path.join(__dirname, '../config/prompts', `${name}.txt`),
       'utf-8',
     );
+    const slotPromptPath = path.join(__dirname, '../config/prompts', `${name}-slots.txt`);
+    if (fs.existsSync(slotPromptPath)) {
+      this.slotSystemPrompt = fs.readFileSync(slotPromptPath, 'utf-8');
+    }
   }
 }

@@ -1,5 +1,6 @@
 import type { WeatherForecast } from '../../../services/logistics-agent/src/services/WeatherService';
 import type { TimingValidationResult } from '../../../services/logistics-agent/src/validators/TimingValidator';
+import { withProposalContract } from './proposal-contract';
 
 export const TRIP_ID = '550e8400-e29b-41d4-a716-446655440004';
 
@@ -390,7 +391,7 @@ export const WEATHER_CONVERGENCE_ANALYSIS_RESPONSE = JSON.stringify({
 // 4 × €144 = €576 ≤ €600 ✓
 // satisfactionEstimates all ≥ 0.60 ✓
 // No outdoor keywords: trail, hike, surf, cycling, kayak, beach, cliff, outdoor ✓
-export const INDOOR_COMPROMISE_RESPONSE = JSON.stringify({
+export const INDOOR_COMPROMISE_RESPONSE = JSON.stringify(withProposalContract({
   itinerary: [
     {
       day: 1,
@@ -481,6 +482,6 @@ export const INDOOR_COMPROMISE_RESPONSE = JSON.stringify({
     'Heavy rain eliminates all outdoor activities on both days. Palace and museum interiors fully replace the outdoor cultural programme for Alice. Bob\'s wine and leisure preferences shift to indoor wine tastings and relaxed tavern dinners. Carlos is given physically engaging indoor alternatives — palace exploration and a cooking class that requires active participation. Diana\'s gastronomy focus is preserved through a covered artisan market, hands-on cooking class, and quality local dinner. All four preferences represented across both days within the €600 group budget.',
   satisfactionEstimates: { alice: 0.71, bob: 0.65, carlos: 0.61, diana: 0.74 },
   unresolvedConflicts: [],
-});
+}));
 
 export const NON_JSON_RESPONSE = 'Sorry, I cannot process this request at the moment.';

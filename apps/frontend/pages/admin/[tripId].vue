@@ -129,6 +129,42 @@ onUnmounted(() => { stopPolling() })
         />
       </div>
 
+      <!-- Workflow Engine v2 panel — only shown when workflowState is present -->
+      <div
+        v-if="debugData?.workflowState"
+        style="padding:var(--s-4) var(--s-6);border-top:var(--hair);background:var(--bg-1)"
+      >
+        <div class="helper" style="margin-bottom:var(--s-3);font-family:var(--mono)">workflow engine v2</div>
+        <div style="display:flex;flex-wrap:wrap;gap:var(--s-4) var(--s-8);font-size:var(--t-13)">
+          <div>
+            <span class="helper">state</span>
+            <span style="margin-left:var(--s-2);font-family:var(--mono);color:var(--green)">{{ debugData.workflowState }}</span>
+          </div>
+          <div v-if="debugData.workflowState === 'FINISH'">
+            <span style="color:var(--green);font-family:var(--mono)">✓ finished</span>
+          </div>
+          <div v-if="debugData.workflowState === 'ASK_REFINEMENT'">
+            <span style="color:var(--amber);font-family:var(--mono)">⚠ needs refinement</span>
+          </div>
+          <div>
+            <span class="helper">proposals</span>
+            <span style="margin-left:var(--s-2);font-family:var(--mono)">{{ proposals.length }}</span>
+          </div>
+          <div v-if="proposals.some(p => p.agent === 'logistics')">
+            <span style="color:var(--blue);font-family:var(--mono);font-size:10px">✓ route graph</span>
+          </div>
+          <div v-if="proposals.some(p => p.agent === 'finance' && typeof p.content === 'object' && p.content !== null && 'perBlock' in p.content)">
+            <span style="color:var(--amber);font-family:var(--mono);font-size:10px">✓ budget plan</span>
+          </div>
+          <div v-if="proposals.some(p => p.agent === 'alice' || p.agent === 'bob' || p.agent === 'carlos' || p.agent === 'diana')">
+            <span style="color:var(--green);font-family:var(--mono);font-size:10px">✓ tourist proposals</span>
+          </div>
+          <div v-if="proposals.some(p => p.agent === 'orchestrator' && typeof p.content === 'object' && p.content !== null && 'itinerary' in p.content)">
+            <span style="color:var(--fg-0);font-family:var(--mono);font-size:10px">✓ merged itinerary</span>
+          </div>
+        </div>
+      </div>
+
       <AdminAgentActivityLog
         :agent-logs="agentLogs"
         :live-events="visibleEvents"

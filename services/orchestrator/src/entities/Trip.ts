@@ -13,7 +13,7 @@ import type { Traveller } from '@/entities/Traveller';
 import type { Proposal } from '@/entities/Proposal';
 import type { TripMetric } from '@/entities/TripMetric';
 import type { SatisfactionScore } from '@/entities/SatisfactionScore';
-import type { DateInput } from '@itinera/shared';
+import type { DateInput, WorkflowContext } from '@itinera/shared';
 
 @Entity('trips')
 export class Trip {
@@ -52,6 +52,15 @@ export class Trip {
 
   @Column({ name: 'transport_preference', type: 'varchar', length: 10, default: 'best' })
   transportPreference!: string;
+
+  @Column({ name: 'rejection_reason', type: 'text', nullable: true })
+  rejectionReason!: string | null;
+
+  @Column({ name: 'workflow_state', type: 'varchar', length: 50, nullable: true })
+  workflowState!: string | null;
+
+  @Column({ name: 'workflow_context', type: 'jsonb', nullable: true })
+  workflowContext!: WorkflowContext | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })
   createdAt!: Date;

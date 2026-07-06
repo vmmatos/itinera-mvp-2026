@@ -25,15 +25,42 @@ const EnvSchema = z.object({
   CACHE_TTL_SECONDS: z.coerce.number().default(3600),
   WEATHER_CACHE_TTL_SECONDS: z.coerce.number().default(1800),
   ATTRACTIONS_CACHE_TTL_SECONDS: z.coerce.number().default(86400),
+  // Transport resolution is expensive (SerpApi is 250 searches/month). Cache
+  // resolved legs (6h) and airport lookups (30d) to avoid burning quota on
+  // the preflight + per-day + per-round re-resolution of the same city pairs.
+  TRANSPORT_CACHE_TTL_SECONDS: z.coerce.number().default(21600),
+  AIRPORT_CACHE_TTL_SECONDS: z.coerce.number().default(2592000),
   OPENWEATHERMAP_API_KEY: z.string().min(1),
   GOOGLE_PLACES_API_KEY: z.string().min(1),
   GOOGLE_MAPS_API_KEY: z.string().min(1),
   GOOGLE_MAPS_BASE_URL: z.string().default('https://maps.googleapis.com/maps/api'),
+  // Routes API (v2) — modern replacement for the legacy Directions API used for
+  // transit/rail routing. The legacy Directions API is being sunset by Google.
+  GOOGLE_ROUTES_BASE_URL: z.string().default('https://routes.googleapis.com'),
   GOOGLE_PLACES_BASE_URL: z.string().default('https://places.googleapis.com/v1'),
   OPENWEATHERMAP_BASE_URL: z.string().default('https://api.openweathermap.org'),
-  SKYSCANNER_RAPIDAPI_KEY: z.string().default(''),
-  SKYSCANNER_RAPIDAPI_HOST: z.string().default('skyscanner50.p.rapidapi.com'),
-  SKYSCANNER_BASE_URL: z.string().default('https://skyscanner50.p.rapidapi.com/api/v1'),
+  // SerpApi Google Flights — flight search. engine=google_flights is passed as a
+  // query param in code, not baked into the URL. Empty key = flight search disabled
+  // (the feasibility guard then estimates flights for long legs).
+  SERPAPI_KEY: z.string().default(''),
+  SERPAPI_BASE_URL: z.string().default('https://serpapi.com/search'),
+  // Below this geodesic distance flights are never fetched, synthesised or
+  // composed via airport hubs — short land legs must resolve to ground modes
+  // (prevents fabricated flights like Mértola→Comporta and saves SerpApi quota).
+  MIN_FLIGHT_DISTANCE_KM: z.coerce.number().default(300),
+  // Max distance a geocoded place may be "snapped" to its nearest dataset
+  // airport. Beyond this the match is bogus (a region outside dataset coverage
+  // snapping to another country's hub, e.g. Cabo Verde→Las Palmas ~1600km) and
+  // resolution must fail instead so the caller falls back to an estimate.
+  MAX_AIRPORT_SNAP_KM: z.coerce.number().default(300),
+  // Per-person driving cost heuristic (fuel + tolls) so car options carry a
+  // price and compete fairly in the weighted ranking.
+  CAR_COST_EUR_PER_KM: z.coerce.number().default(0.22),
+  // Weighted transport ranking (see TransportScorer). Lower score = better.
+  TRANSPORT_WEIGHT_COST: z.coerce.number().default(0.6),
+  TRANSPORT_WEIGHT_DURATION: z.coerce.number().default(40),
+  TRANSPORT_WEIGHT_PREFERENCE: z.coerce.number().default(0.18),
+  TRANSPORT_WEIGHT_TRANSFERS: z.coerce.number().default(15),
 });
 
 const parsed = EnvSchema.safeParse(process.env);

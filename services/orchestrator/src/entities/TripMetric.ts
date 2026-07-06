@@ -25,6 +25,24 @@ export class TripMetric {
   @Column({ name: 'conflict_count', type: 'integer', default: 0 })
   conflictCount!: number;
 
+  @Column({ name: 'convergence_rounds', type: 'integer', nullable: true })
+  convergenceRounds!: number | null;
+
+  @Column({ name: 'forced_convergence', type: 'boolean', nullable: true })
+  forcedConvergence!: boolean | null;
+
+  @Column({ name: 'finance_block_count', type: 'integer', nullable: true })
+  financeBlockCount!: number | null;
+
+  @Column({ name: 'logistics_block_count', type: 'integer', nullable: true })
+  logisticsBlockCount!: number | null;
+
+  @Column({ name: 'total_tokens_used', type: 'integer', nullable: true })
+  totalTokensUsed!: number | null;
+
+  @Column({ name: 'total_time_ms', type: 'integer', nullable: true })
+  totalTimeMs!: number | null;
+
   @Column({ type: 'jsonb', default: {} })
   metadata!: Record<string, unknown>;
 

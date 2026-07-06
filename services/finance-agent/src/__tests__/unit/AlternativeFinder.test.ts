@@ -36,8 +36,10 @@ import type { BudgetValidation } from '@/agents/BudgetValidator';
 const VALID_TRIP_ID = '550e8400-e29b-41d4-a716-446655440000';
 
 const MOCK_BREAKDOWN: CostBreakdown = {
-  byCategory: { activities: 500, meals: 300, transport: 200 },
+  byCategory: { accommodation: 0, activities: 500, meals: 300, transport: 200 },
+  perPersonTotal: 1000,
   grandTotal: 1000,
+  groupSize: 1,
   currency: 'EUR',
   items: [],
 };

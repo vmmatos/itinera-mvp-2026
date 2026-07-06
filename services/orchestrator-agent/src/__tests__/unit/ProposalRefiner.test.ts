@@ -34,6 +34,13 @@ import { ProposalStorageService } from '@/services/ProposalStorageService';
 const VALID_TRIP_ID = '550e8400-e29b-41d4-a716-446655440000';
 const MOCK_PROPOSAL = { itinerary: [{ day: 1, activities: ['museum'] }] };
 const MOCK_FEEDBACK = 'Carlos needs more outdoor activities on day 1';
+const VALID_PROPOSAL_JSON = JSON.stringify({
+  accommodation: [{ city: 'Paris', name: 'Hotel Lumiere Paris', type: 'hotel', pricePerNightPerPerson: 80, nights: 3 }],
+  itinerary: [{ day: 1, activities: [{ time: 'morning', activity: 'Visit Eiffel Tower', venue: 'Eiffel Tower, Champ de Mars 5', estimatedCostPerPerson: 25 }] }],
+  satisfactionEstimates: { alice: 0.8 },
+  changesApplied: [],
+  refinementSummary: 'done',
+});
 
 describe('ProposalRefiner', () => {
   let anthropic: AnthropicService;
@@ -51,7 +58,7 @@ describe('ProposalRefiner', () => {
     refiner = new ProposalRefiner(anthropic, publisher, redis, storage);
 
     vi.mocked(anthropic.complete).mockResolvedValue({
-      content: '{"itinerary":[],"changesApplied":[],"refinementSummary":"done"}',
+      content: VALID_PROPOSAL_JSON,
       latencyMs: 500,
       tokensUsed: 250,
     });

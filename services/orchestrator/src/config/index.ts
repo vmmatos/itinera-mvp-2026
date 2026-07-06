@@ -22,6 +22,13 @@ const EnvSchema = z.object({
   FINANCE_AGENT_URL: z.string().default('http://finance-agent:3004'),
   LOGISTICS_AGENT_URL: z.string().default('http://logistics-agent:3005'),
   VALIDATOR_URL: z.string().default('http://validator:3006'),
+  // Max negotiation rounds before forced convergence (card #79).
+  MAX_ROUNDS: z.coerce.number().int().min(1).default(6),
+  // Orchestration engine: v1 = NegotiationLoop (rounds), v2 = WorkflowEngine (logistics-first).
+  WORKFLOW_ENGINE: z.enum(['v1', 'v2']).default('v2'),
+  // Anthropic API — used by DestinationParser LLM fallback.
+  ANTHROPIC_API_KEY: z.string().optional(),
+  ANTHROPIC_MODEL: z.string().default('claude-sonnet-4-20250514'),
 });
 
 const parsed = EnvSchema.safeParse(process.env);

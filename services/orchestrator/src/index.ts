@@ -1,14 +1,17 @@
 import 'reflect-metadata';
 import express from 'express';
 import helmet from 'helmet';
-import { requestLogger, errorHandler, createLogger } from '@itinera/shared';
+import { requestLogger, errorHandler, createLogger, AnthropicService } from '@itinera/shared';
 import { AppDataSource } from '@/data-source';
 import { config } from '@/config';
 import { EventPublisher } from '@/services/EventPublisher';
 import { StateManager } from '@/services/StateManager';
 import { AgentCaller } from '@/services/AgentCaller';
 import { NegotiationLoop } from '@/services/NegotiationLoop';
+import { WorkflowEngine } from '@/services/WorkflowEngine';
+import { WorkflowStateMachine } from '@/services/WorkflowStateMachine';
 import { TripService } from '@/services/TripService';
+import { DestinationParser } from '@/services/DestinationParser';
 import { registerRoutes } from '@/routes';
 
 const logger = createLogger('orchestrator');
@@ -27,9 +30,19 @@ async function start(): Promise<void> {
 
   const stateManager = new StateManager();
   const agentCaller = new AgentCaller();
-  const negotiationLoop = new NegotiationLoop(stateManager, agentCaller, eventPublisher);
-  const tripService = new TripService(stateManager, negotiationLoop);
-  negotiationLoop.setTripService(tripService);
+
+  const engine = config.WORKFLOW_ENGINE === 'v2'
+    ? new WorkflowEngine(new WorkflowStateMachine(), stateManager, agentCaller, eventPublisher)
+    : new NegotiationLoop(stateManager, agentCaller, eventPublisher);
+
+  const aiProvider = config.ANTHROPIC_API_KEY
+    ? new AnthropicService(config.ANTHROPIC_API_KEY, config.ANTHROPIC_MODEL)
+    : undefined;
+  const destinationParser = new DestinationParser(aiProvider);
+  const tripService = new TripService(stateManager, engine, destinationParser);
+  engine.setTripService(tripService);
+
+  logger.info('Orchestration engine selected', { engine: config.WORKFLOW_ENGINE });
 
   registerRoutes(app, eventPublisher, tripService);
   app.use(errorHandler);

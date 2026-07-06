@@ -39,7 +39,11 @@ export function makeMockTrip(tripId: string) {
 }
 
 export const AGENT_RESULT = {
-  content: { proposal: { activities: [] } },
+  content: {
+    proposal: { activities: [] },
+    // Approving verdict so the negotiation loop converges on the first round.
+    verdict: { approved: true, budgetFeasible: true, issues: [], warnings: [], reasoning: 'ok' },
+  },
   reasoning: 'mock reasoning',
   tokensUsed: 100,
 };

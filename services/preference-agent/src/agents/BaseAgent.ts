@@ -1,5 +1,5 @@
 import { BaseService, buildRoutingKey } from '@itinera/shared';
-import type { AgentEvent, AgentName, AgentAction, AIMessage, IAIProvider } from '@itinera/shared';
+import type { AgentEvent, AgentName, AgentAction, AIMessage, IAIProvider, TouristSlotInput } from '@itinera/shared';
 import { RabbitMQPublisher } from '@/services/RabbitMQPublisher';
 import { RedisService } from '@/services/RedisService';
 import { ProposalStorageService } from '@/services/ProposalStorageService';
@@ -9,6 +9,8 @@ const CACHE_TTL_SECONDS = 3600;
 export abstract class BaseAgent extends BaseService {
   abstract readonly agentName: AgentName;
   abstract readonly systemPrompt: string;
+  // Slot-aware prompt used in the v2 workflow. Subclasses set this when loaded.
+  slotSystemPrompt?: string;
 
   constructor(
     protected readonly aiProvider: IAIProvider,
@@ -69,14 +71,39 @@ export abstract class BaseAgent extends BaseService {
     });
   }
 
+  async proposeForSlot(tripId: string, round: number, slots: TouristSlotInput[]): Promise<AgentEvent> {
+    return this.handleAsync(async () => {
+      const cacheKey = `${this.getCacheKey(tripId, round, 'propose')}:slots`;
+      const cached = await this.redis.get<AgentEvent>(cacheKey);
+      if (cached) {
+        this.logger.info('Cache hit', { agent: this.agentName, tripId, round, action: 'propose-slot' });
+        return cached;
+      }
+
+      const systemPrompt = this.slotSystemPrompt ?? this.systemPrompt;
+      const slotsJson = JSON.stringify(slots, null, 2);
+      const messages: AIMessage[] = [
+        {
+          role: 'user',
+          content: `You have been given pre-defined time slots across one or more cities. Your task is to propose experiences that fill these slots from your persona's perspective.\n\nSlots:\n${slotsJson}\n\nRound: ${round}\n\nRespond with valid JSON only.`,
+        },
+      ];
+
+      const event = await this.callAIAndBuild(tripId, round, 'propose', messages, systemPrompt);
+      await this.redis.set(cacheKey, event, CACHE_TTL_SECONDS);
+      return event;
+    });
+  }
+
   private async callAIAndBuild(
     tripId: string,
     round: number,
     action: AgentAction,
     messages: AIMessage[],
+    systemPromptOverride?: string,
   ): Promise<AgentEvent> {
     const { content, latencyMs, tokensUsed } = await this.aiProvider.complete(
-      this.systemPrompt,
+      systemPromptOverride ?? this.systemPrompt,
       messages,
     );
 

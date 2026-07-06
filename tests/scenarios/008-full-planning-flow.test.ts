@@ -21,6 +21,7 @@ vi.mock('@/config', () => ({
     POSTGRES_PASSWORD: 'pass',
     JWT_SECRET: 'test-secret',
     JWT_ISSUER: 'itinera',
+    MAX_ROUNDS: 6,
     PREFERENCE_AGENT_URL: 'http://preference-agent:3002',
     ORCHESTRATOR_AGENT_URL: 'http://orchestrator-agent:3003',
     FINANCE_AGENT_URL: 'http://finance-agent:3004',
@@ -38,6 +39,8 @@ vi.mock('@/services/StateManager', () => ({
     saveProposal: vi.fn(),
     logAgentCall: vi.fn(),
     saveMetric: vi.fn(),
+    saveFinalMetric: vi.fn(),
+    rejectTrip: vi.fn(),
   })),
 }));
 
@@ -46,6 +49,7 @@ vi.mock('@/services/AgentCaller', () => ({
     callPreferenceAgent: vi.fn(),
     callOrchestratorAgent: vi.fn(),
     callOrchestratorPropose: vi.fn(),
+    callOrchestratorRefine: vi.fn(),
     callFinanceAgent: vi.fn(),
     callLogisticsAgent: vi.fn(),
     callValidatorAgent: vi.fn(),
@@ -194,10 +198,15 @@ describe('Scenario 008 — End-to-end full trip planning flow', () => {
       expect(stateManager.logAgentCall).toHaveBeenCalledTimes(9);
     });
 
-    it('saves a trip metric after each of the 6 rounds', async () => {
+    it('saves a per-round metric for each negotiation round plus a final aggregate metric', async () => {
       await loop.run(TRIP_ID);
 
-      expect(stateManager.saveMetric).toHaveBeenCalledTimes(6);
+      // Converges on the first negotiation round → one per-round metric.
+      expect(stateManager.saveMetric).toHaveBeenCalledTimes(1);
+      expect(stateManager.saveFinalMetric).toHaveBeenCalledTimes(1);
+      const final = vi.mocked(stateManager.saveFinalMetric).mock.calls[0][0];
+      expect(final.convergenceRounds).toBeGreaterThan(0);
+      expect(final.forcedConvergence).toBe(false);
     });
 
     it('every saved proposal carries the correct tripId', async () => {
@@ -231,14 +240,12 @@ describe('Scenario 008 — End-to-end full trip planning flow', () => {
       expect(savedAgents).toContain('validator');
     });
 
-    it('each metric includes roundName in metadata', async () => {
+    it('each per-round metric includes roundName in metadata', async () => {
       await loop.run(TRIP_ID);
 
       const metricCalls = vi.mocked(stateManager.saveMetric).mock.calls;
       const roundNames = metricCalls.map(([p]) => (p.metadata as Record<string, unknown>)?.['roundName']);
-      expect(roundNames).toEqual(
-        expect.arrayContaining(['preferences', 'analyze', 'propose', 'finance', 'logistics', 'refine']),
-      );
+      expect(roundNames).toEqual(expect.arrayContaining(['negotiation']));
     });
   });
 
@@ -354,11 +361,11 @@ describe('Scenario 008 — End-to-end full trip planning flow', () => {
       }
     });
 
-    it('proposals span all 6 rounds (round numbers 1–6)', async () => {
+    it('proposals span the setup rounds (1–3) and the converged negotiation round (4)', async () => {
       await loop.run(TRIP_ID);
 
       const rounds = vi.mocked(stateManager.saveProposal).mock.calls.map(([p]) => p.round);
-      for (let r = 1; r <= 6; r++) {
+      for (let r = 1; r <= 4; r++) {
         expect(rounds).toContain(r);
       }
     });

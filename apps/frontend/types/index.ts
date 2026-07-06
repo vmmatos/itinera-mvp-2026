@@ -83,8 +83,24 @@ export type DateInput = FixedDateInput | FlexibleDateInput
 // ── Transport ─────────────────────────────────────────────────
 export type TransportMode = 'flight' | 'train' | 'car' | 'best'
 
+export interface TransportSegment {
+  from:            string
+  to:              string
+  mode:            'flight' | 'train' | 'bus' | 'car'
+  provider?:       string
+  durationMinutes: number
+  priceEur?:       number
+  departureTime?:  string
+  flightNumber?:   string
+  trainLine?:      string
+  /** Departure stop / station name (e.g. "Grândola train station") */
+  fromStop?:       string
+  /** Arrival stop / station name (e.g. "Faro Airport") */
+  toStop?:         string
+}
+
 export interface TransportOption {
-  mode:            'flight' | 'train' | 'car'
+  mode:            'flight' | 'train' | 'car' | 'bus'
   provider?:       string
   durationMinutes: number
   departureTime?:  string
@@ -93,6 +109,18 @@ export interface TransportOption {
   flightNumber?:   string
   trainLine?:      string
   warnings:        string[]
+  /** Present for multi-leg routes composed via hub routing. */
+  segments?:       TransportSegment[]
+  /** Human-readable summary, e.g. "Bus + Train + Flight — 9h, ~€172/person" */
+  displaySummary?: string
+  /** For flights: departure airport code + name, e.g. "FAO – Faro Airport" */
+  originAirport?:      string
+  /** For flights: arrival airport code + name, e.g. "BCN – Barcelona–El Prat" */
+  destinationAirport?: string
+  /** Departure stop / station name (direct routes) */
+  fromStop?:       string
+  /** Arrival stop / station name (direct routes) */
+  toStop?:         string
 }
 
 export interface TransportActivityData {
@@ -203,6 +231,7 @@ export interface Trip {
   ownerId?:       string
   ownerName?:     string
   ownerEmail?:    string
+  workflowState?: string | null
   createdAt:      string
   updatedAt:      string
 }

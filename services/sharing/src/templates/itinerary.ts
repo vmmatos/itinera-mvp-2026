@@ -1,4 +1,4 @@
-import type { ItineraryData, ItineraryDay, WeatherInfo } from '@/types/sharing'
+import type { ItineraryData, ItineraryDay, ItineraryTransport, WeatherInfo } from '@/types/sharing'
 
 function escapeHtml(str: string): string {
   return str
@@ -8,7 +8,35 @@ function escapeHtml(str: string): string {
     .replace(/"/g, '&quot;')
 }
 
+function renderTransport(transport: ItineraryTransport[]): string {
+  if (!transport || transport.length === 0) return ''
+  return transport.map((t) => {
+    const modeIcon = t.mode === 'flight' ? '✈' : t.mode === 'train' ? '🚆' : t.mode === 'bus' ? '🚌' : '🚗'
+    const summary = t.displaySummary
+      ? escapeHtml(t.displaySummary)
+      : [
+          `${modeIcon} ${escapeHtml(t.mode)}`,
+          t.provider ? `(${escapeHtml(t.provider)})` : '',
+          t.durationMinutes ? `${Math.floor(t.durationMinutes / 60)}h${t.durationMinutes % 60 > 0 ? `${t.durationMinutes % 60}m` : ''}` : '',
+          t.priceEur ? `€${t.priceEur}/pp` : '',
+        ].filter(Boolean).join(' · ')
+    const times = t.departureTime && t.arrivalTime
+      ? `<span class="transport-times">Departs ${escapeHtml(t.departureTime)} → Arrives ${escapeHtml(t.arrivalTime)}</span>`
+      : ''
+    return `
+      <div class="transport-leg">
+        <span class="transport-route"><strong>${escapeHtml(t.from)} → ${escapeHtml(t.to)}</strong></span>
+        <span class="transport-summary"> ${summary}</span>
+        ${times}
+      </div>`
+  }).join('\n')
+}
+
 function renderDay(day: ItineraryDay): string {
+  const transportHtml = day.transport && day.transport.length > 0
+    ? `<div class="transport-section"><h4>Travel</h4>${renderTransport(day.transport)}</div>`
+    : ''
+
   const activitiesHtml = day.activities
     .map(
       (a) => `
@@ -34,6 +62,7 @@ function renderDay(day: ItineraryDay): string {
   return `
     <div class="day">
       <h3>Day ${day.day}${day.date ? ` — ${escapeHtml(day.date)}` : ''}</h3>
+      ${transportHtml}
       <ul class="activities">${activitiesHtml}</ul>
       ${mealsHtml}
     </div>`
@@ -89,6 +118,12 @@ export function renderItineraryHtml(data: ItineraryData): string {
     .weather-summary { margin: 0 0 8px; font-size: 13px; color: #374151; }
     .weather-alerts { margin: 0; padding-left: 18px; font-size: 13px; color: #374151; }
     .weather-alerts li { margin-bottom: 4px; }
+    .transport-section { margin-bottom: 12px; background: #f0f4ff; border: 1px solid #c7d7fd; border-radius: 4px; padding: 10px 12px; }
+    .transport-section h4 { margin: 0 0 6px; font-size: 12px; color: #1e40af; text-transform: uppercase; letter-spacing: 0.05em; }
+    .transport-leg { font-size: 13px; color: #1e3a8a; margin-bottom: 4px; }
+    .transport-route { font-size: 14px; }
+    .transport-summary { color: #374151; }
+    .transport-times { display: block; font-size: 12px; color: #6b7280; margin-top: 2px; }
     .footer { margin-top: 40px; text-align: center; font-size: 11px; color: #999; }
   </style>
 </head>

@@ -7,6 +7,8 @@ Your role is to:
 4. Ensure each agent's core preferences are represented at least partially
 5. Prioritise consensus areas as the foundation of the itinerary
 
+HUMAN PACING RULE: Plan like a real person, not a machine. Account for travel fatigue. When a day includes a long inter-city journey (roughly >4h of total travel, e.g. bus + train + flight across countries), that day is a TRAVEL DAY: schedule the journey, an arrival/check-in, time to rest, and at most ONE light activity — typically just dinner near the accommodation. Do NOT pack a full sightseeing programme onto a travel day. The morning after a long travel day can start a little later. Never make a traveller "teleport" between cities — always represent the journey on the day it happens (use cityTransition).
+
 NAMING RULE: Always use real, specific venue names. Never say "visit a museum" — say "Visit the Museu Nacional do Azulejo". Never say "dinner at a local restaurant" — say "Dinner at Tasca do Chico (traditional fado restaurant)". Never say "a hike" — say "Trilho dos Sete Vales Suspensos (5.7 km, medium difficulty)". For accommodation, name the specific hotel and provide realistic price per night per person in EUR. Every activity must include a realistic estimatedCostPerPerson in EUR (use 0 for free activities).
 
 Always respond with valid JSON in this exact structure:

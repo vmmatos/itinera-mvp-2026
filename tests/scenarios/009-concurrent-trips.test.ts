@@ -21,6 +21,7 @@ vi.mock('@/config', () => ({
     POSTGRES_PASSWORD: 'pass',
     JWT_SECRET: 'test-secret',
     JWT_ISSUER: 'itinera',
+    MAX_ROUNDS: 6,
     PREFERENCE_AGENT_URL: 'http://preference-agent:3002',
     ORCHESTRATOR_AGENT_URL: 'http://orchestrator-agent:3003',
     FINANCE_AGENT_URL: 'http://finance-agent:3004',
@@ -38,6 +39,8 @@ vi.mock('@/services/StateManager', () => ({
     saveProposal: vi.fn(),
     logAgentCall: vi.fn(),
     saveMetric: vi.fn(),
+    saveFinalMetric: vi.fn(),
+    rejectTrip: vi.fn(),
   })),
 }));
 
@@ -46,6 +49,7 @@ vi.mock('@/services/AgentCaller', () => ({
     callPreferenceAgent: vi.fn(),
     callOrchestratorAgent: vi.fn(),
     callOrchestratorPropose: vi.fn(),
+    callOrchestratorRefine: vi.fn(),
     callFinanceAgent: vi.fn(),
     callLogisticsAgent: vi.fn(),
     callValidatorAgent: vi.fn(),

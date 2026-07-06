@@ -32,6 +32,12 @@ import { RedisService } from '@/services/RedisService';
 import { ProposalStorageService } from '@/services/ProposalStorageService';
 
 const VALID_TRIP_ID = '550e8400-e29b-41d4-a716-446655440000';
+const VALID_PROPOSAL_JSON = JSON.stringify({
+  accommodation: [{ city: 'Paris', name: 'Hotel Lumiere Paris', type: 'hotel', pricePerNightPerPerson: 80, nights: 3 }],
+  itinerary: [{ day: 1, activities: [{ time: 'morning', activity: 'Visit Eiffel Tower', venue: 'Eiffel Tower, Champ de Mars 5', estimatedCostPerPerson: 25 }] }],
+  satisfactionEstimates: { alice: 0.8 },
+  compromiseRationale: 'balanced',
+});
 const MOCK_CONFLICTS = {
   conflicts: [{ agents: ['alice', 'carlos'], topic: 'pace', severity: 3 }],
   consensusAreas: [],
@@ -53,7 +59,7 @@ describe('CompromiseGenerator', () => {
     generator = new CompromiseGenerator(anthropic, publisher, redis, storage);
 
     vi.mocked(anthropic.complete).mockResolvedValue({
-      content: '{"itinerary":[],"compromiseRationale":"balanced","satisfactionEstimates":{}}',
+      content: VALID_PROPOSAL_JSON,
       latencyMs: 600,
       tokensUsed: 300,
     });

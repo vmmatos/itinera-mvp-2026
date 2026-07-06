@@ -1,4 +1,4 @@
-.PHONY: dev infra up stop logs shell kong-config db-migrate db-seed test test-unit test-local test-scenarios help
+.PHONY: dev infra up stop logs shell kong-config db-migrate db-seed test test-unit test-local test-scenarios test-smoke flush-transport-cache help
 
 DC := docker compose \
 	-f dev/docker-compose.yaml \
@@ -83,6 +83,14 @@ endif
 ## Run scenario tests locally
 test-scenarios:
 	cd tests/scenarios && yarn test
+
+## Run smoke tests against live services (requires make dev + WORKFLOW_ENGINE=v2)
+test-smoke:
+	cd tests/smoke && yarn test
+
+## Flush Redis transport cache (run after deploying TransportService fixes)
+flush-transport-cache:
+	$(DC) exec redis sh -c 'redis-cli --scan --pattern "transport:*" | xargs -r redis-cli DEL'
 
 ## Tear down all containers and volumes (destructive)
 down:

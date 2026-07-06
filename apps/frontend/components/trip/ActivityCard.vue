@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { AGENT_COLOURS } from '~/types/index'
-import type { TransportActivityData } from '~/types/index'
-import { modeIcon } from '~/utils/itinerary'
+import type { TransportActivityData, TransportOption } from '~/types/index'
+import { routeIcon, formatDuration } from '~/utils/itinerary'
 
 export interface ActivityCardProps {
   venue?:         string
@@ -24,6 +24,66 @@ const props = withDefaults(defineProps<{
 }>(), {
   isDebug:        false,
   currencySymbol: '€',
+})
+
+// ── Transport card helpers ───────────────────────────────────
+const td = computed<TransportActivityData | undefined>(() => props.activity.transportData)
+
+// Alternatives stripped of bogus 0-duration entries (hub→dest API misses).
+const validAlts = computed<TransportOption[]>(() =>
+  (td.value?.alternatives ?? []).filter((a) => a.durationMinutes > 0),
+)
+
+function modeName(mode: string): string {
+  return mode === 'flight' ? 'Flight' : mode === 'train' ? 'Train' : mode === 'bus' ? 'Bus' : 'Drive'
+}
+
+// Route text for the row header. Multi-leg routes carry a pre-built
+// displaySummary (e.g. "Bus + Train + Flight — 9h, ~€172/person"); direct
+// routes get "Train TGV →Barcelona" style with the provider/ref.
+function optHeadLabel(opt: TransportOption, to: string): string {
+  if (opt.displaySummary) return opt.displaySummary
+  const ref = opt.flightNumber ?? opt.trainLine ?? opt.provider ?? ''
+  return `${modeName(opt.mode)}${ref ? ` ${ref}` : ''} →${to}`
+}
+
+// Price/duration live in displaySummary for multi-leg, so suppress the
+// redundant badges in that case and only surface the departure time.
+function showPriceDur(opt: TransportOption): boolean {
+  return !opt.displaySummary
+}
+
+function priceDelta(alt: TransportOption, base?: TransportOption): string {
+  if (typeof alt.priceEur !== 'number' || typeof base?.priceEur !== 'number') return ''
+  const d = alt.priceEur - base.priceEur
+  if (d === 0) return ''
+  return d > 0 ? `+€${d}` : `−€${Math.abs(d)}`
+}
+
+// One-line qualifier under the selected option: why it was picked.
+const qualifier = computed<string>(() => {
+  const sel = td.value?.selectedOption
+  if (!sel) return ''
+  const all = [sel, ...validAlts.value]
+  const priced = all.filter((o) => typeof o.priceEur === 'number') as Array<TransportOption & { priceEur: number }>
+
+  if (priced.length > 1 && typeof sel.priceEur === 'number') {
+    const cheapest = Math.min(...priced.map((o) => o.priceEur))
+    if (sel.priceEur === cheapest) {
+      const nextUp = priced.map((o) => o.priceEur).filter((p) => p > cheapest).sort((a, b) => a - b)[0]
+      if (nextUp !== undefined) return `Cheapest option — €${sel.priceEur} vs €${nextUp} alternative`
+    }
+  }
+
+  if (validAlts.value.length > 0) {
+    const fastest = Math.min(...all.map((o) => o.durationMinutes))
+    if (sel.durationMinutes === fastest) {
+      const nextSlower = all.map((o) => o.durationMinutes).filter((m) => m > fastest).sort((a, b) => a - b)[0]
+      if (nextSlower !== undefined) return `Fastest option — ${formatDuration(sel.durationMinutes)} vs ${formatDuration(nextSlower)}`
+    }
+  }
+
+  return 'Recommended option'
 })
 
 const venueLine = computed(() => {
@@ -58,30 +118,103 @@ function agentLineVar(agent: string): string {
 
 <template>
   <!-- Transport leg card -->
-  <div v-if="activity.transportData" class="ac-transport">
-    <div class="ac-transport-head">
-      <span class="ac-transport-icon">{{ modeIcon(activity.transportData.selectedOption.mode) }}</span>
-      <span class="ac-transport-label">{{ activity.name }}</span>
+  <div v-if="td" class="ac-transport">
+    <!-- Selected option: icon + route on the left, badges on the right -->
+    <div class="ac-tr-main">
+      <span class="ac-tr-icon">{{ routeIcon(td.selectedOption) }}</span>
+      <span class="ac-tr-route">{{ optHeadLabel(td.selectedOption, td.to) }}</span>
+      <span class="ac-tr-badges">
+        <span
+          v-if="showPriceDur(td.selectedOption) && td.selectedOption.priceEur"
+          class="ac-tr-badge ac-tr-badge-price"
+        >€{{ td.selectedOption.priceEur }}/person</span>
+        <span
+          v-if="showPriceDur(td.selectedOption)"
+          class="ac-tr-badge"
+        >{{ formatDuration(td.selectedOption.durationMinutes) }}</span>
+        <span
+          v-if="td.selectedOption.departureTime"
+          class="ac-tr-badge ac-tr-badge-time"
+        >{{ td.selectedOption.departureTime }}</span>
+      </span>
     </div>
+
+    <!-- Departure / arrival airport (direct flights only, no segments) -->
     <div
-      v-for="(w, wi) in activity.transportData.selectedOption.warnings"
+      v-if="!td.selectedOption.segments?.length && (td.selectedOption.originAirport || td.selectedOption.destinationAirport)"
+      class="ac-tr-airports"
+    >
+      <span v-if="td.selectedOption.originAirport">✈ {{ td.selectedOption.originAirport }}</span>
+      <span v-if="td.selectedOption.originAirport && td.selectedOption.destinationAirport"> → </span>
+      <span v-if="td.selectedOption.destinationAirport">{{ td.selectedOption.destinationAirport }}</span>
+    </div>
+
+    <!-- Segment details: stop names + provider per leg (multi-leg routes) -->
+    <div
+      v-if="td.selectedOption.segments?.length"
+      class="ac-tr-segments"
+    >
+      <div
+        v-for="(seg, si) in td.selectedOption.segments"
+        :key="si"
+        class="ac-tr-seg"
+      >
+        <span class="ac-tr-seg-icon">{{ seg.mode === 'flight' ? '✈' : seg.mode === 'train' ? '🚆' : seg.mode === 'bus' ? '🚌' : '🚗' }}</span>
+        <span class="ac-tr-seg-body">
+          <span class="ac-tr-seg-route">{{ seg.from }} → {{ seg.to }}</span>
+          <span v-if="seg.provider" class="ac-tr-seg-provider"> · {{ seg.provider }}</span>
+          <span v-if="seg.trainLine && seg.trainLine !== seg.provider" class="ac-tr-seg-line"> ({{ seg.trainLine }})</span>
+          <span v-if="seg.flightNumber" class="ac-tr-seg-line"> · {{ seg.flightNumber }}</span>
+          <span v-if="seg.fromStop || seg.toStop" class="ac-tr-seg-stops">
+            <template v-if="seg.fromStop">🚏 Board at: {{ seg.fromStop }}</template>
+            <template v-if="seg.fromStop && seg.toStop"> · </template>
+            <template v-if="seg.toStop">Alight at: {{ seg.toStop }}</template>
+          </span>
+        </span>
+        <span v-if="seg.departureTime" class="ac-tr-seg-time">{{ seg.departureTime }}</span>
+      </div>
+    </div>
+
+    <!-- Direct train/bus stops (no segments) -->
+    <div
+      v-if="!td.selectedOption.segments?.length && (td.selectedOption.fromStop || td.selectedOption.toStop)"
+      class="ac-tr-airports"
+    >
+      <template v-if="td.selectedOption.fromStop">🚏 {{ td.selectedOption.fromStop }}</template>
+      <template v-if="td.selectedOption.fromStop && td.selectedOption.toStop"> → </template>
+      <template v-if="td.selectedOption.toStop">{{ td.selectedOption.toStop }}</template>
+    </div>
+
+    <!-- Why this option won -->
+    <div class="ac-tr-qualifier">{{ qualifier }}</div>
+
+    <!-- Warnings -->
+    <div
+      v-for="(w, wi) in td.selectedOption.warnings"
       :key="wi"
       class="ac-transport-warn"
     >⚠ {{ w }}</div>
-    <details v-if="activity.transportData.alternatives.length > 0" class="ac-transport-alts">
-      <summary>{{ activity.transportData.alternatives.length }} alternative{{ activity.transportData.alternatives.length > 1 ? 's' : '' }}</summary>
+
+    <!-- Alternatives -->
+    <details v-if="validAlts.length > 0" class="ac-transport-alts">
+      <summary>{{ validAlts.length }} other option{{ validAlts.length > 1 ? 's' : '' }}</summary>
       <div
-        v-for="(alt, ai) in activity.transportData.alternatives"
+        v-for="(alt, ai) in validAlts"
         :key="ai"
-        class="ac-transport-alt-row"
+        class="ac-tr-alt"
       >
-        {{ modeIcon(alt.mode) }}
-        {{ alt.mode === 'flight' ? 'Flight' : alt.mode === 'train' ? 'Train' : 'Drive' }}
-        <template v-if="alt.flightNumber ?? alt.trainLine">{{ alt.flightNumber ?? alt.trainLine }}</template>
-        →{{ activity.transportData.to }}
-        <template v-if="alt.departureTime">{{ alt.departureTime }}</template>
-        <template v-if="alt.priceEur"> · €{{ alt.priceEur }}/person</template>
-        · {{ Math.floor(alt.durationMinutes / 60) }}h{{ alt.durationMinutes % 60 > 0 ? ` ${alt.durationMinutes % 60}m` : '' }}
+        <span class="ac-tr-alt-icon">{{ routeIcon(alt) }}</span>
+        <span class="ac-tr-alt-route">{{ optHeadLabel(alt, td.to) }}</span>
+        <span class="ac-tr-alt-meta">
+          <template v-if="alt.departureTime">{{ alt.departureTime }} · </template>
+          <template v-if="showPriceDur(alt) && alt.priceEur">
+            €{{ alt.priceEur }}<span
+              v-if="priceDelta(alt, td.selectedOption)"
+              class="ac-tr-delta"
+            > ({{ priceDelta(alt, td.selectedOption) }})</span> ·
+          </template>
+          {{ formatDuration(alt.durationMinutes) }}
+        </span>
       </div>
     </details>
   </div>
@@ -217,22 +350,162 @@ function agentLineVar(agent: string): string {
   border: 1px solid rgba(0, 170, 255, 0.18);
 }
 
-.ac-transport-head {
+.ac-tr-main {
   display: flex;
   align-items: center;
   gap: var(--s-2);
 }
 
-.ac-transport-icon {
+.ac-tr-icon {
   font-size: 15px;
   line-height: 1;
+  flex-shrink: 0;
 }
 
-.ac-transport-label {
+.ac-tr-route {
   font-family: var(--mono);
   font-size: var(--t-12);
   color: var(--fg-0);
   font-weight: 500;
+  flex: 1;
+  min-width: 0;
+}
+
+.ac-tr-badges {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.ac-tr-badge {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--fg-2);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--r-1);
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+
+.ac-tr-badge-price {
+  color: var(--green);
+  background: var(--g-bg, rgba(0, 200, 120, 0.08));
+  border-color: var(--g-line, rgba(0, 200, 120, 0.22));
+}
+
+.ac-tr-badge-time {
+  color: var(--fg-1);
+}
+
+.ac-tr-airports {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--fg-2);
+  margin-top: 3px;
+  letter-spacing: 0.02em;
+  opacity: 0.8;
+}
+
+.ac-tr-segments {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ac-tr-seg {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--fg-2);
+  padding: 4px 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border-left: 2px solid rgba(0, 170, 255, 0.25);
+  border-radius: 0 var(--r-1) var(--r-1) 0;
+}
+
+.ac-tr-seg-icon {
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+
+.ac-tr-seg-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.ac-tr-seg-route {
+  color: var(--fg-1);
+  font-weight: 500;
+}
+
+.ac-tr-seg-provider {
+  color: var(--fg-3);
+}
+
+.ac-tr-seg-line {
+  color: var(--fg-3);
+}
+
+.ac-tr-seg-stops {
+  color: var(--fg-3);
+  font-size: 9px;
+  opacity: 0.85;
+  margin-top: 1px;
+}
+
+.ac-tr-seg-time {
+  flex-shrink: 0;
+  color: var(--fg-2);
+  align-self: flex-start;
+}
+
+.ac-tr-qualifier {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--fg-3);
+  margin-top: 4px;
+  letter-spacing: 0.02em;
+}
+
+.ac-tr-alt {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-family: var(--mono);
+  font-size: var(--t-12);
+  color: var(--fg-2);
+  padding: 3px 0 3px var(--s-3);
+  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  margin-top: 3px;
+}
+
+.ac-tr-alt-icon {
+  flex-shrink: 0;
+}
+
+.ac-tr-alt-route {
+  flex: 1;
+  min-width: 0;
+  color: var(--fg-1);
+}
+
+.ac-tr-alt-meta {
+  flex-shrink: 0;
+  color: var(--fg-3);
+  white-space: nowrap;
+}
+
+.ac-tr-delta {
+  color: var(--amber);
 }
 
 .ac-transport-warn {
@@ -261,12 +534,4 @@ function agentLineVar(agent: string): string {
   user-select: none;
 }
 
-.ac-transport-alt-row {
-  font-family: var(--mono);
-  font-size: var(--t-12);
-  color: var(--fg-2);
-  padding: 3px 0 3px var(--s-3);
-  border-left: 1px solid rgba(255, 255, 255, 0.08);
-  margin-top: 3px;
-}
 </style>

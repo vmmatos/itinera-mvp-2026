@@ -1,3 +1,4 @@
+import { withProposalContract } from './proposal-contract';
 export const TRIP_ID = '550e8400-e29b-41d4-a716-446655440002';
 
 export const TRIP_CONTEXT =
@@ -200,7 +201,7 @@ export const CONVERGENCE_ANALYSIS_RESPONSE = JSON.stringify({
 
 // Balanced compromise — addresses all 4 profiles, budget ≤ €600 for 4 people
 // Per-person cost: day1 (15+18+0+30) + day2 (0+25+5+40) = 63 + 70 = 133 × 4 = €532 ≤ €600 ✓
-export const COMPROMISE_RESPONSE = JSON.stringify({
+export const COMPROMISE_RESPONSE = JSON.stringify(withProposalContract({
   itinerary: [
     {
       day: 1,
@@ -283,7 +284,7 @@ export const COMPROMISE_RESPONSE = JSON.stringify({
     'Mixed-format days alternate cultural morning (Alice), outdoor afternoon (Carlos), and quality shared meals (Diana, Bob). Sintra delivers heritage + nature; Cascais delivers coast + seafood gastronomy. All four preferences represented across each day.',
   satisfactionEstimates: { alice: 0.72, bob: 0.75, carlos: 0.68, diana: 0.71 },
   unresolvedConflicts: [],
-});
+}));
 
 // Used for error-path tests
 export const NON_JSON_RESPONSE = 'Sorry, I cannot process this request at the moment.';

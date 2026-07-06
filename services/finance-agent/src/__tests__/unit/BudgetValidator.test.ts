@@ -6,8 +6,10 @@ const validator = new BudgetValidator();
 
 function makeBreakdown(grandTotal: number): CostBreakdown {
   return {
-    byCategory: { activities: grandTotal, meals: 0, transport: 0 },
+    byCategory: { accommodation: 0, activities: grandTotal, meals: 0, transport: 0 },
+    perPersonTotal: grandTotal,
     grandTotal,
+    groupSize: 1,
     currency: 'EUR',
     items: [],
   };

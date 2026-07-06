@@ -1,5 +1,5 @@
 import { BaseService } from '@itinera/shared';
-import type { DateInput, TransportMode } from '@itinera/shared';
+import type { DateInput, TransportMode, TransportOption, RouteGraph, BudgetPlan, TouristSlotInput } from '@itinera/shared';
 import jwt from 'jsonwebtoken';
 import { config } from '@/config';
 
@@ -16,6 +16,7 @@ export interface AgentTripContext {
   region?: string | null;
   dateInput?: DateInput | null;
   transportPreference?: TransportMode;
+  groupSize?: number;
 }
 
 interface AgentEventLike {
@@ -118,6 +119,22 @@ export class AgentCaller extends BaseService {
     return toAgentCallResult(resp.compromise, Date.now() - start);
   }
 
+  async callOrchestratorRefine(
+    tripId: string,
+    round: number,
+    proposal: Record<string, unknown>,
+    feedback: string,
+    context = '',
+  ): Promise<AgentCallResult> {
+    const start = Date.now();
+    const resp = await this.post<{ refined: AgentEventLike }>(
+      'orchestrator-agent',
+      '/refine',
+      { tripId, round, proposal, feedback, context },
+    );
+    return toAgentCallResult(resp.refined, Date.now() - start);
+  }
+
   async callFinanceAgent(
     tripId: string,
     round: number,
@@ -134,6 +151,7 @@ export class AgentCaller extends BaseService {
         proposal,
         budgetTotal: Number(tripContext?.budgetTotal ?? 5000),
         budgetCurrency: tripContext?.budgetCurrency ?? 'EUR',
+        groupSize: tripContext?.groupSize ?? 1,
         dateInput: tripContext?.dateInput ?? null,
       },
     );
@@ -168,5 +186,87 @@ export class AgentCaller extends BaseService {
     proposal: Record<string, unknown>,
   ): Promise<AgentCallResult> {
     return this.post<AgentCallResult>('validator', '/', { tripId, round, proposal });
+  }
+
+  // ── WorkflowEngine v2 methods ──────────────────────────────────────────────
+
+  async callLogisticsPlan(
+    tripId: string,
+    destinations: Array<{ city: string; country: string; nights: number }>,
+    dateInput: DateInput | null,
+    transportPreference: TransportMode,
+    budgetTotal: number,
+    budgetCurrency: string,
+    groupSize: number,
+  ): Promise<RouteGraph> {
+    const resp = await this.post<{ routeGraph: RouteGraph }>(
+      'logistics',
+      '/plan',
+      { tripId, destinations, dateInput, transportPreference, budgetTotal, budgetCurrency, groupSize },
+    );
+    return resp.routeGraph;
+  }
+
+  async callFinanceEstimate(
+    tripId: string,
+    routeGraph: RouteGraph,
+    budgetTotal: number,
+    budgetCurrency: string,
+    groupSize: number,
+  ): Promise<BudgetPlan> {
+    const resp = await this.post<{ budgetPlan: BudgetPlan }>(
+      'finance',
+      '/estimate',
+      { tripId, routeGraph, budgetTotal, budgetCurrency, groupSize },
+    );
+    return resp.budgetPlan;
+  }
+
+  async callPreferenceAgentSlots(
+    tripId: string,
+    round: number,
+    slots: TouristSlotInput[],
+  ): Promise<AgentCallResult[]> {
+    const start = Date.now();
+    const resp = await this.post<{ proposals: AgentEventLike[] }>(
+      'preference-agent',
+      '/propose-slots',
+      { tripId, round, slots },
+    );
+    return (resp.proposals ?? []).map((p) => toAgentCallResult(p, Date.now() - start));
+  }
+
+  async callOrchestratorMerge(
+    tripId: string,
+    round: number,
+    routeGraph: RouteGraph,
+    touristOutputs: Record<string, unknown>,
+    budgetPlan: BudgetPlan,
+    context = '',
+  ): Promise<AgentCallResult> {
+    const start = Date.now();
+    const resp = await this.post<{ merged: AgentEventLike }>(
+      'orchestrator-agent',
+      '/merge',
+      { tripId, round, routeGraph, touristOutputs, budgetPlan, context },
+    );
+    return toAgentCallResult(resp.merged, Date.now() - start);
+  }
+
+  // ── End WorkflowEngine v2 methods ──────────────────────────────────────────
+
+  async callTransportLegs(
+    destinations: { city: string; country: string }[],
+    preference: TransportMode,
+    departureDateIso?: string,
+  ): Promise<Record<string, TransportOption[]>> {
+    const start = Date.now();
+    const resp = await this.post<{ legs: Record<string, TransportOption[]> }>(
+      'logistics',
+      '/transport-legs',
+      { destinations, preference, departureDateIso },
+    );
+    this.logger.debug('Transport legs resolved', { latencyMs: Date.now() - start, pairs: Object.keys(resp.legs).length });
+    return resp.legs;
   }
 }

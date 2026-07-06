@@ -1,3 +1,4 @@
+import { withProposalContract } from './proposal-contract';
 export const TRIP_ID = '550e8400-e29b-41d4-a716-446655440001';
 
 export const TRIP_CONTEXT =
@@ -70,7 +71,7 @@ export const CONFLICT_ANALYSIS_RESPONSE = JSON.stringify({
 });
 
 // Anthropic mock response: balanced compromise itinerary
-export const COMPROMISE_RESPONSE = JSON.stringify({
+export const COMPROMISE_RESPONSE = JSON.stringify(withProposalContract({
   itinerary: [
     {
       day: 1,
@@ -151,7 +152,7 @@ export const COMPROMISE_RESPONSE = JSON.stringify({
     'Both agents thrive in Sintra. Alice\'s cultural priorities (palaces, heritage) and Bob\'s preferences (wine, relaxed pace, scenic nature) are both well served. All sites are within walking distance or short drive.',
   satisfactionEstimates: { alice: 0.87, bob: 0.83 },
   unresolvedConflicts: [],
-});
+}));
 
 // Used for error-path tests
 export const NON_JSON_RESPONSE = 'Sorry, I cannot process this request at the moment.';

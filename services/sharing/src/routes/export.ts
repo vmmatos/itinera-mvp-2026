@@ -40,9 +40,16 @@ const ExportPDFSchema = z.object({
         transport: z
           .array(
             z.object({
-              from: z.string(),
-              to: z.string(),
-              mode: z.string(),
+              from:            z.string(),
+              to:              z.string(),
+              mode:            z.string(),
+              provider:        z.string().optional(),
+              durationMinutes: z.number().optional(),
+              priceEur:        z.number().optional(),
+              departureTime:   z.string().optional(),
+              arrivalTime:     z.string().optional(),
+              displaySummary:  z.string().optional(),
+              segments:        z.array(z.record(z.unknown())).optional(),
             }),
           )
           .optional(),

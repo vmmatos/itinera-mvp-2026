@@ -104,6 +104,11 @@ const mockTransportService = {
     durationMinutes: 120,
     warnings: [],
   }]),
+  estimateLeg: vi.fn().mockResolvedValue({
+    mode: 'car',
+    durationMinutes: 120,
+    warnings: ['No transport options found — estimate only'],
+  }),
 } as unknown as TransportService;
 
 function buildApp(): express.Express {
@@ -447,5 +452,264 @@ describe('GET /weather/:region', () => {
     await request(app).get('/weather/Paris');
 
     expect(mockRedis.get).toHaveBeenCalledWith('weather:Paris:current');
+  });
+});
+
+describe('POST /plan — transit slot blocking', () => {
+  const PLAN_BASE = {
+    tripId: VALID_UUID,
+    budgetTotal: 2000,
+    budgetCurrency: 'EUR',
+    groupSize: 2,
+    transportPreference: 'best',
+    dateInput: { mode: 'fixed', startDate: '2026-07-10', endDate: '2026-07-12' },
+    destinations: [
+      { city: 'Comporta', country: 'Portugal', nights: 1 },
+      { city: 'Mertola', country: 'Portugal', nights: 1 },
+    ],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(mockRedis.get).mockResolvedValue(null);
+    vi.mocked(mockRedis.set).mockResolvedValue(undefined);
+  });
+
+  it('short inbound (2h, 07:00→09:00): only morning blocked as inbound-transit', async () => {
+    vi.mocked(mockTransportService.resolveTransportOptions).mockResolvedValue([{
+      mode: 'bus',
+      durationMinutes: 120,
+      departureTime: '07:00',
+      arrivalTime: '09:00',
+      warnings: [],
+    }]);
+
+    const app = buildApp();
+    const res = await request(app).post('/plan').send(PLAN_BASE);
+
+    expect(res.status).toBe(200);
+    const mertola = res.body.routeGraph.cityStays[1];
+    const windows: { slot: string; isTransitDay: boolean; blockedReason?: string }[] = mertola.timeWindows;
+
+    expect(windows.find(w => w.slot === 'morning')).toMatchObject({ isTransitDay: true, blockedReason: 'inbound-transit' });
+    expect(windows.find(w => w.slot === 'afternoon')).toMatchObject({ isTransitDay: false });
+    expect(windows.find(w => w.slot === 'evening')).toMatchObject({ isTransitDay: false });
+  });
+
+  it('afternoon departure (15:37): travel day belongs to the ORIGIN — morning free there, afternoon+evening outbound', async () => {
+    // Departing at/after noon means the traveller spends the travel date in
+    // the origin city: free slots before departure, outbound-transit after.
+    // The destination's stay does not emit windows for that date.
+    vi.mocked(mockTransportService.resolveTransportOptions).mockResolvedValue([{
+      mode: 'bus',
+      durationMinutes: 293,
+      departureTime: '15:37',
+      warnings: [],
+    }]);
+
+    const app = buildApp();
+    const res = await request(app).post('/plan').send(PLAN_BASE);
+
+    expect(res.status).toBe(200);
+    const comporta = res.body.routeGraph.cityStays[0];
+    const cw: { date: string; slot: string; isTransitDay: boolean; blockedReason?: string }[] = comporta.timeWindows;
+
+    // Regular stay day (2026-07-10) untouched.
+    expect(cw.filter(w => w.date === '2026-07-10').every(w => !w.isTransitDay)).toBe(true);
+    // Travel date (2026-07-11) gained by the origin: morning free, then outbound.
+    const travelDay = cw.filter(w => w.date === '2026-07-11');
+    expect(travelDay.find(w => w.slot === 'morning')).toMatchObject({ isTransitDay: false });
+    expect(travelDay.find(w => w.slot === 'afternoon')).toMatchObject({ isTransitDay: true, blockedReason: 'outbound-transit' });
+    expect(travelDay.find(w => w.slot === 'evening')).toMatchObject({ isTransitDay: true, blockedReason: 'outbound-transit' });
+
+    // Destination (1-night stay consumed by the late arrival) emits no windows for that date.
+    const mertola = res.body.routeGraph.cityStays[1];
+    const mw: { date: string }[] = mertola.timeWindows;
+    expect(mw.filter(w => w.date === '2026-07-11')).toHaveLength(0);
+  });
+
+  it('early-morning flight (05:45→07:30): previous day fully free, travel day blocks morning only', async () => {
+    vi.mocked(mockTransportService.resolveTransportOptions).mockResolvedValue([{
+      mode: 'flight',
+      durationMinutes: 165,
+      departureTime: '05:45',
+      arrivalTime: '07:30',
+      warnings: [],
+    }]);
+
+    const app = buildApp();
+    const res = await request(app).post('/plan').send(PLAN_BASE);
+
+    expect(res.status).toBe(200);
+    const comporta = res.body.routeGraph.cityStays[0];
+    expect((comporta.timeWindows as { isTransitDay: boolean }[]).every(w => !w.isTransitDay)).toBe(true);
+
+    const mertola = res.body.routeGraph.cityStays[1];
+    const windows: { slot: string; isTransitDay: boolean; blockedReason?: string }[] = mertola.timeWindows;
+    expect(windows.find(w => w.slot === 'morning')).toMatchObject({ isTransitDay: true, blockedReason: 'inbound-transit' });
+    expect(windows.find(w => w.slot === 'afternoon')).toMatchObject({ isTransitDay: false });
+    expect(windows.find(w => w.slot === 'evening')).toMatchObject({ isTransitDay: false });
+  });
+
+  it('evening flight landing past midnight (21:15→00:10): origin keeps the day until the evening slot, destination starts next day with recovery morning', async () => {
+    vi.mocked(mockTransportService.resolveTransportOptions).mockResolvedValue([{
+      mode: 'flight',
+      durationMinutes: 197,
+      departureTime: '21:15',
+      arrivalTime: '00:10',
+      warnings: [],
+    }]);
+
+    const app = buildApp();
+    const res = await request(app).post('/plan').send({
+      ...PLAN_BASE,
+      dateInput: { mode: 'fixed', startDate: '2026-07-10', endDate: '2026-07-13' },
+      destinations: [
+        { city: 'Comporta', country: 'Portugal', nights: 1 },
+        { city: 'Barcelona', country: 'Spain', nights: 2 },
+      ],
+    });
+
+    expect(res.status).toBe(200);
+
+    // Origin owns the travel date: morning+afternoon free for activities,
+    // evening is the journey.
+    const comporta = res.body.routeGraph.cityStays[0];
+    const cw: { date: string; slot: string; isTransitDay: boolean; blockedReason?: string }[] = comporta.timeWindows;
+    const travelDay = cw.filter(w => w.date === '2026-07-11');
+    expect(travelDay.find(w => w.slot === 'morning')).toMatchObject({ isTransitDay: false });
+    expect(travelDay.find(w => w.slot === 'afternoon')).toMatchObject({ isTransitDay: false });
+    expect(travelDay.find(w => w.slot === 'evening')).toMatchObject({ isTransitDay: true, blockedReason: 'outbound-transit' });
+
+    // Destination: no windows on the travel date; first day starts the
+    // morning after with recovery (landed at 00:10), rest free.
+    const barcelona = res.body.routeGraph.cityStays[1];
+    const bw: { date: string; slot: string; isTransitDay: boolean; blockedReason?: string }[] = barcelona.timeWindows;
+    expect(bw.filter(w => w.date === '2026-07-11')).toHaveLength(0);
+    const day2 = bw.filter(w => w.date === '2026-07-12');
+    expect(day2.find(w => w.slot === 'morning')).toMatchObject({ isTransitDay: true, blockedReason: 'inbound-recovery' });
+    expect(day2.find(w => w.slot === 'afternoon')).toMatchObject({ isTransitDay: false });
+    expect(day2.find(w => w.slot === 'evening')).toMatchObject({ isTransitDay: false });
+  });
+
+  it('no departure time, long duration (5h): fallback blocks morning+afternoon inbound on the travel day', async () => {
+    vi.mocked(mockTransportService.resolveTransportOptions).mockResolvedValue([{
+      mode: 'car',
+      durationMinutes: 300,
+      warnings: [],
+    }]);
+
+    const app = buildApp();
+    const res = await request(app).post('/plan').send(PLAN_BASE);
+
+    expect(res.status).toBe(200);
+    const mertola = res.body.routeGraph.cityStays[1];
+    const mertolaWindows: { slot: string; isTransitDay: boolean; blockedReason?: string }[] = mertola.timeWindows;
+
+    expect(mertolaWindows.find(w => w.slot === 'morning')).toMatchObject({ isTransitDay: true, blockedReason: 'inbound-transit' });
+    expect(mertolaWindows.find(w => w.slot === 'afternoon')).toMatchObject({ isTransitDay: true, blockedReason: 'inbound-recovery' });
+    expect(mertolaWindows.find(w => w.slot === 'evening')).toMatchObject({ isTransitDay: false });
+
+    const comporta = res.body.routeGraph.cityStays[0];
+    const comportaWindows: { slot: string; isTransitDay: boolean }[] = comporta.timeWindows;
+    expect(comportaWindows.every(w => !w.isTransitDay)).toBe(true);
+  });
+
+  it('short car leg with no times (2.5h): morning blocked assuming a 09:00 departure', async () => {
+    // Car options carry no departure/arrival times. A morning-consuming drive
+    // must still block the morning — travel-consumed slots never hold activities.
+    vi.mocked(mockTransportService.resolveTransportOptions).mockResolvedValue([{
+      mode: 'car',
+      durationMinutes: 150,
+      warnings: [],
+    }]);
+
+    const app = buildApp();
+    const res = await request(app).post('/plan').send(PLAN_BASE);
+
+    expect(res.status).toBe(200);
+    const mertola = res.body.routeGraph.cityStays[1];
+    const windows: { slot: string; isTransitDay: boolean; blockedReason?: string }[] = mertola.timeWindows;
+
+    expect(windows.find(w => w.slot === 'morning')).toMatchObject({ isTransitDay: true, blockedReason: 'inbound-transit' });
+    expect(windows.find(w => w.slot === 'afternoon')).toMatchObject({ isTransitDay: false });
+    expect(windows.find(w => w.slot === 'evening')).toMatchObject({ isTransitDay: false });
+  });
+
+  it('failed leg resolution keeps orderedLegs aligned with cityStays (placeholder, not dropped)', async () => {
+    // First leg fails, second resolves. Dropping the failure would shift the
+    // second leg into slot 0 and misalign every cityStay's inbound/outbound.
+    vi.mocked(mockTransportService.resolveTransportOptions)
+      .mockRejectedValueOnce(new Error('No transport options found'))
+      .mockResolvedValueOnce([{ mode: 'bus', durationMinutes: 120, departureTime: '07:00', arrivalTime: '09:00', warnings: [] }]);
+
+    const app = buildApp();
+    const res = await request(app).post('/plan').send({
+      ...PLAN_BASE,
+      dateInput: { mode: 'fixed', startDate: '2026-07-10', endDate: '2026-07-13' },
+      destinations: [
+        { city: 'Comporta', country: 'Portugal', nights: 1 },
+        { city: 'Mertola', country: 'Portugal', nights: 1 },
+        { city: 'Faro', country: 'Portugal', nights: 1 },
+      ],
+    });
+
+    expect(res.status).toBe(200);
+    const legs: { from: string; to: string; bestOption: { warnings: string[] } }[] = res.body.routeGraph.orderedLegs;
+    expect(legs).toHaveLength(2);
+    expect(legs[0]).toMatchObject({ from: 'Comporta', to: 'Mertola' });
+    expect(legs[1]).toMatchObject({ from: 'Mertola', to: 'Faro' });
+    // Failed leg falls back to the distance-aware estimate with a visible warning.
+    expect(legs[0].bestOption.warnings.some((w) => w.includes('estimate'))).toBe(true);
+    expect(mockTransportService.estimateLeg).toHaveBeenCalledWith(
+      expect.objectContaining({ from: 'Comporta', to: 'Mertola' }),
+    );
+  });
+
+  it('failed long leg falls back to a flight estimate, never a short drive', async () => {
+    // Bali→Cabo Verde: every real mode fails; estimateLeg (distance-aware)
+    // returns a synthesised flight instead of the old fixed 2h-car placeholder.
+    vi.mocked(mockTransportService.resolveTransportOptions)
+      .mockRejectedValueOnce(new Error('No transport options found'));
+    vi.mocked(mockTransportService.estimateLeg).mockResolvedValueOnce({
+      mode: 'flight',
+      provider: 'estimate',
+      durationMinutes: 1190,
+      priceEur: 1340,
+      warnings: ['No transport options found — estimated flight, verify before booking'],
+    });
+
+    const app = buildApp();
+    const res = await request(app).post('/plan').send({
+      ...PLAN_BASE,
+      dateInput: { mode: 'fixed', startDate: '2026-07-10', endDate: '2026-07-20' },
+      destinations: [
+        { city: 'Bali', country: 'Indonesia', nights: 5 },
+        { city: 'Cabo Verde', country: 'Cape Verde', nights: 5 },
+      ],
+    });
+
+    expect(res.status).toBe(200);
+    const legs: { bestOption: { mode: string; durationMinutes: number; warnings: string[] } }[] =
+      res.body.routeGraph.orderedLegs;
+    expect(legs).toHaveLength(1);
+    expect(legs[0].bestOption.mode).toBe('flight');
+    expect(legs[0].bestOption.durationMinutes).toBeGreaterThan(600);
+    expect(legs[0].bestOption.warnings.some((w) => w.includes('estimated flight'))).toBe(true);
+  });
+
+  it('single destination (no inbound leg): all slots free', async () => {
+    const app = buildApp();
+    const res = await request(app).post('/plan').send({
+      ...PLAN_BASE,
+      destinations: [{ city: 'Comporta', country: 'Portugal', nights: 2 }],
+    });
+
+    expect(res.status).toBe(200);
+    const comporta = res.body.routeGraph.cityStays[0];
+    const windows: { slot: string; isTransitDay: boolean }[] = comporta.timeWindows;
+
+    expect(windows.every(w => !w.isTransitDay)).toBe(true);
+    expect(mockTransportService.resolveTransportOptions).not.toHaveBeenCalled();
   });
 });

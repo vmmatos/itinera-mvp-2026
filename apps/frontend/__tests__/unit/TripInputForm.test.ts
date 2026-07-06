@@ -180,8 +180,8 @@ describe('TripInputForm', () => {
     const payload = mockCreateTrip.mock.calls[0][0]
     expect(payload.name).toBe('Test trip')
     expect(payload.region).toBe('Spain')
-    expect(payload.startDate).toBe('2026-08-01')
-    expect(payload.endDate).toBe('2026-08-08')
+    expect(payload.dateInput?.startDate).toBe('2026-08-01')
+    expect(payload.dateInput?.endDate).toBe('2026-08-08')
     expect(payload.budgetCurrency).toBe('EUR')
     expect(payload.travellers[0].preferences.persona).toBe('culture')
 

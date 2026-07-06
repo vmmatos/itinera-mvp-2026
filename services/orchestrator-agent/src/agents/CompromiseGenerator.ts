@@ -1,7 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import type { AgentEvent, AgentName, AIMessage, IAIProvider } from '@itinera/shared';
-import { BaseOrchestratorAgent } from '@/agents/BaseOrchestratorAgent';
+import { BaseOrchestratorAgent, ITINERARY_MAX_TOKENS } from '@/agents/BaseOrchestratorAgent';
 import { config } from '@/config';
 import { RabbitMQPublisher } from '@/services/RabbitMQPublisher';
 import { RedisService } from '@/services/RedisService';
@@ -46,7 +46,8 @@ export class CompromiseGenerator extends BaseOrchestratorAgent {
         },
       ];
 
-      const event = await this.callAIAndBuild(tripId, round, 'propose', messages);
+      // Full multi-day, multi-city itinerary JSON — needs a large output budget or it truncates.
+      const event = await this.callAIAndBuild(tripId, round, 'propose', messages, ITINERARY_MAX_TOKENS);
       await this.redis.set(cacheKey, event, config.CACHE_TTL_SECONDS);
       return event;
     });

@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { ValidationError } from '@itinera/shared';
-import type { TransportMode, TransportOption } from '@itinera/shared';
+import { ValidationError, createLogger } from '@itinera/shared';
+import type { TransportMode, TransportOption, RouteGraph, CityStay, TimeWindow, TransportLeg } from '@itinera/shared';
 import type { WeatherService } from '@/services/WeatherService';
 import type { AttractionDB } from '@/services/AttractionDB';
 import type { RedisService } from '@/services/RedisService';
@@ -11,6 +11,7 @@ import type { WeatherAnalyzer } from '@/agents/WeatherAnalyzer';
 import type { HolidayService } from '@/services/HolidayService';
 import type { RestrictionsValidator } from '@/validators/RestrictionsValidator';
 import type { TransportService } from '@/services/TransportService';
+import { buildLogisticsVerdict } from '@/services/LogisticsVerdict';
 import { toCountryCode } from '@/utils/countryCodeMapper';
 import { config } from '@/config';
 
@@ -43,6 +44,40 @@ function timeToMinutes(hhmm: string): number {
   return (h ?? 0) * 60 + (m ?? 0);
 }
 
+const SLOTS = ['morning', 'afternoon', 'evening'] as const;
+
+const logger = createLogger('logistics-routes');
+
+/** Maps HH:MM → slot index (0=morning, 1=afternoon, 2=evening). Returns null if time is absent. */
+function timeToSlotIndex(time: string | undefined): number | null {
+  if (!time) return null;
+  const h = parseInt(time.split(':')[0] ?? '0', 10);
+  if (h < 12) return 0;
+  if (h < 18) return 1;
+  return 2;
+}
+
+/**
+ * Computes the arrival slot index from departure time + duration.
+ * Handles midnight rollover via modulo — result is always 0/1/2.
+ */
+function computeArrivalSlotIndex(departureTime: string | undefined, durationMinutes: number): number | null {
+  if (!departureTime) return null;
+  const [hStr, mStr] = departureTime.split(':');
+  const totalMinutes = parseInt(hStr ?? '0', 10) * 60 + parseInt(mStr ?? '0', 10) + durationMinutes;
+  const arrivalHour = Math.floor(totalMinutes / 60) % 24;
+  if (arrivalHour < 12) return 0;
+  if (arrivalHour < 18) return 1;
+  return 2;
+}
+
+/** True when the journey lands past midnight relative to its departure day (e.g. 21:15 + 3h17m → 00:10 next day). */
+function crossesMidnight(departureTime: string | undefined, durationMinutes: number): boolean {
+  if (!departureTime) return false;
+  const [hStr, mStr] = departureTime.split(':');
+  return parseInt(hStr ?? '0', 10) * 60 + parseInt(mStr ?? '0', 10) + durationMinutes >= 24 * 60;
+}
+
 const AttractionQuerySchema = z.object({
   category: z.string().optional(),
 });
@@ -66,7 +101,7 @@ export function createLogisticsRouter(
   router.post('/validate', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const parsed = ValidateSchema.safeParse(req.body);
     if (!parsed.success) {
-      next(new ValidationError(parsed.error.flatten().fieldErrors.toString()));
+      next(new ValidationError(JSON.stringify(parsed.error.flatten().fieldErrors)));
       return;
     }
 
@@ -259,17 +294,339 @@ export function createLogisticsRouter(
     const transportCostEur = Object.values(transportOptions)
       .reduce((sum, opts) => sum + (opts[0]?.priceEur ?? 0), 0);
 
+    const validationContent = (validation.content ?? {}) as Record<string, unknown>;
+    const verdict = buildLogisticsVerdict({
+      overallRisk: validationContent['overallRisk'],
+      aiTimingIssues: Array.isArray(validationContent['timingIssues'])
+        ? (validationContent['timingIssues'] as unknown[])
+        : [],
+      timingResult,
+      restrictionWarnings: restrictionsResult.warnings,
+      transportOptions,
+    });
+
     const augmentedValidation = {
       ...validation,
       content: {
-        ...(validation.content as Record<string, unknown>),
+        ...validationContent,
         restrictionWarnings: restrictionsResult.warnings,
         transportOptions,
         transportCostEur: transportCostEur > 0 ? transportCostEur : undefined,
+        verdict,
       },
     };
 
     res.json({ validation: augmentedValidation });
+  });
+
+  // Lightweight endpoint: resolve transport legs for destination pairs only.
+  // No weather, no AI — used by orchestrator to inject real routes into the propose context.
+  const TransportLegsSchema = z.object({
+    destinations: z.array(z.object({ city: z.string(), country: z.string() })).min(2),
+    preference: z.enum(['flight', 'train', 'car', 'best']).default('best'),
+    departureDateIso: z.string().optional(),
+  });
+
+  router.post('/transport-legs', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const parsed = TransportLegsSchema.safeParse(req.body);
+    if (!parsed.success) {
+      next(new ValidationError(JSON.stringify(parsed.error.flatten().fieldErrors)));
+      return;
+    }
+
+    const { destinations, preference, departureDateIso } = parsed.data;
+    const legs: Record<string, TransportOption[]> = {};
+
+    await Promise.allSettled(
+      destinations.slice(0, -1).map(async (origin, i) => {
+        const dest = destinations[i + 1];
+        if (!dest) return;
+        const key = `${origin.city}->${dest.city}`;
+        const options = await transportService.resolveTransportOptions(
+          { from: origin.city, to: dest.city, departureDateIso },
+          preference as TransportMode,
+        );
+        legs[key] = options.slice(0, 4); // top 4 options per pair
+      }),
+    );
+
+    res.json({ legs });
+  });
+
+  // Structural planning endpoint: generates route_graph — city order, transport legs,
+  // time windows, sleep points, and per-block budget allocation.
+  // Pure code + transport APIs — no LLM involved.
+  const PlanSchema = z.object({
+    tripId:              z.string().uuid(),
+    destinations:        z.array(z.object({ city: z.string(), country: z.string(), nights: z.number().int().min(1) })).min(1),
+    dateInput:           DateInputSchema,
+    transportPreference: z.enum(['flight', 'train', 'car', 'best']).default('best'),
+    budgetTotal:         z.coerce.number().positive(),
+    budgetCurrency:      z.string().default('EUR'),
+    groupSize:           z.coerce.number().int().min(1).default(1),
+  });
+
+  // Accommodation typically ~35% of experience budget per city
+  const ACCOMMODATION_RATIO = 0.35;
+  // Transit days with >4h travel block the morning slot
+  const TRANSIT_THRESHOLD_MINUTES = 240;
+  const SLOT_DURATION_MINUTES = 120;
+
+  router.post('/plan', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const parsed = PlanSchema.safeParse(req.body);
+    if (!parsed.success) {
+      next(new ValidationError(JSON.stringify(parsed.error.flatten().fieldErrors)));
+      return;
+    }
+
+    const { destinations, dateInput, transportPreference, budgetTotal, groupSize } = parsed.data;
+    const preference = transportPreference as TransportMode;
+
+    // Compute start date from dateInput
+    let startDateStr: string | undefined;
+    if (dateInput?.mode === 'fixed') {
+      startDateStr = (dateInput as { startDate: string }).startDate;
+    } else if (dateInput?.mode === 'flexible' && (dateInput as { resolvedStart?: string }).resolvedStart) {
+      startDateStr = (dateInput as { resolvedStart?: string }).resolvedStart;
+    }
+
+    const baseDate = startDateStr ? new Date(startDateStr) : new Date();
+
+    // Resolve transport legs for all adjacent destination pairs in parallel
+    type LegResult = { index: number; options: TransportOption[] };
+    const legResults: LegResult[] = [];
+
+    await Promise.allSettled(
+      destinations.slice(0, -1).map(async (origin, i) => {
+        const dest = destinations[i + 1];
+        if (!dest) return;
+
+        // Departure date = baseDate + sum of nights before this leg
+        const nightsBeforeLeg = destinations.slice(0, i + 1).reduce((s, d) => s + d.nights, 0);
+        const departureDate = new Date(baseDate);
+        departureDate.setUTCDate(baseDate.getUTCDate() + nightsBeforeLeg);
+        const departureDateIso = departureDate.toISOString().slice(0, 10);
+
+        try {
+          const options = await transportService.resolveTransportOptions(
+            { from: origin.city, to: dest.city, departureDateIso },
+            preference,
+          );
+          legResults.push({ index: i, options });
+        } catch (err) {
+          // A failed leg must still occupy its slot — dropping it silently
+          // shifts every later leg and misaligns cityStays inbound/outbound
+          // indexing. A distance-aware estimate fills the slot; if even that
+          // fails, the placeholder fallback below handles empty options.
+          logger.warn('Transport leg resolution failed — using estimate', {
+            from: origin.city,
+            to: dest.city,
+            error: String(err),
+          });
+          try {
+            const estimated = await transportService.estimateLeg({
+              from: origin.city, to: dest.city, departureDateIso,
+            });
+            legResults.push({ index: i, options: [estimated] });
+          } catch {
+            legResults.push({ index: i, options: [] });
+          }
+        }
+      }),
+    );
+
+    legResults.sort((a, b) => a.index - b.index);
+
+    // Build ordered legs
+    const totalTransportCostEurPerPerson = legResults.reduce(
+      (sum, lr) => sum + (lr.options[0]?.priceEur ?? 0), 0,
+    );
+
+    const orderedLegs: TransportLeg[] = legResults.map((lr, i) => {
+      const origin = destinations[lr.index];
+      const dest = destinations[lr.index + 1];
+      const nightsBeforeLeg = destinations.slice(0, lr.index + 1).reduce((s, d) => s + d.nights, 0);
+      const departureDate = new Date(baseDate);
+      departureDate.setUTCDate(baseDate.getUTCDate() + nightsBeforeLeg);
+
+      const best = lr.options[0] ?? {
+        mode: 'car' as const,
+        durationMinutes: 120,
+        warnings: ['No transport options found — estimate only'],
+      };
+
+      return {
+        from: origin?.city ?? `City ${lr.index + 1}`,
+        to: dest?.city ?? `City ${lr.index + 2}`,
+        departureDate: departureDate.toISOString().slice(0, 10),
+        bestOption: best,
+        alternatives: lr.options.slice(1, 4),
+        totalCostEurPerPerson: best.priceEur ?? 0,
+      } satisfies TransportLeg;
+    });
+
+    // Build city stays with time windows
+    const experienceBudgetPerPerson = Math.max(0, budgetTotal / groupSize - totalTransportCostEurPerPerson);
+    const totalNights = destinations.reduce((s, d) => s + d.nights, 0);
+    const accommodationBudgetPerPersonPerNight =
+      totalNights > 0 ? (experienceBudgetPerPerson * ACCOMMODATION_RATIO) / totalNights : 0;
+
+    // ── Travel-day attribution (deterministic reasoning over the schedule) ──
+    // A leg departing before noon consumes the DESTINATION's arrival day (fly
+    // out early, afternoon free in the new city). A leg departing at/after
+    // noon belongs to the ORIGIN's calendar day: the traveller spends the free
+    // slots there, the departure slot onwards is outbound transit, and the
+    // destination's first usable day is the following one (morning recovery
+    // after a late/past-midnight arrival).
+    const isLong = (leg: TransportLeg) => leg.bestOption.durationMinutes > TRANSIT_THRESHOLD_MINUTES;
+
+    interface TravelDayPlan {
+      owner: 'origin' | 'destination';
+      /** owner=origin: block depSlot..evening as outbound-transit on the travel date. */
+      outboundFromIdx: number;
+      /** owner=destination: block 0..idx as inbound-transit on the travel date. */
+      inboundUpToIdx: number | null;
+      /** owner=destination + past-midnight arrival: entire travel date blocked. */
+      wholeDayTransit: boolean;
+      /** Recovery morning on the day AFTER the travel date. */
+      nextMorningRecovery: boolean;
+      /** Journey exceeds the transit threshold — its last blocked slot is recovery. */
+      longJourney: boolean;
+    }
+
+    const legPlans: TravelDayPlan[] = orderedLegs.map((leg) => {
+      const best = leg.bestOption;
+      const depIdx = timeToSlotIndex(best.departureTime);
+      const crosses = crossesMidnight(best.departureTime, best.durationMinutes);
+
+      if (depIdx !== null && depIdx >= 1) {
+        // Afternoon/evening departure → origin's day.
+        const arrHour = best.arrivalTime ? parseInt(best.arrivalTime.split(':')[0] ?? '0', 10) : null;
+        const lateArrival = crosses || (arrHour !== null && arrHour >= 22);
+        return {
+          owner: 'origin',
+          outboundFromIdx: depIdx,
+          inboundUpToIdx: null,
+          wholeDayTransit: false,
+          nextMorningRecovery: lateArrival || isLong(leg),
+          longJourney: isLong(leg),
+        };
+      }
+
+      // Morning departure (or no times — car legs assume a 09:00 start).
+      if (crosses) {
+        return {
+          owner: 'destination',
+          outboundFromIdx: 2,
+          inboundUpToIdx: 2,
+          wholeDayTransit: true,
+          nextMorningRecovery: true,
+          longJourney: isLong(leg),
+        };
+      }
+      const arrIdx =
+        timeToSlotIndex(best.arrivalTime) ??
+        computeArrivalSlotIndex(best.departureTime, best.durationMinutes) ??
+        (isLong(leg) ? 0 : computeArrivalSlotIndex('09:00', best.durationMinutes));
+      let upTo: number | null = null;
+      if (arrIdx !== null) {
+        const raw = Math.max(arrIdx, depIdx ?? 0);
+        upTo = isLong(leg) ? Math.min(raw + 1, 2) : raw;
+      }
+      return {
+        owner: 'destination',
+        outboundFromIdx: 2,
+        inboundUpToIdx: upTo,
+        wholeDayTransit: false,
+        nextMorningRecovery: false,
+        longJourney: isLong(leg),
+      };
+    });
+
+    const cityStays: CityStay[] = destinations.map((dest, i) => {
+      const nightsBeforeArrival = destinations.slice(0, i).reduce((s, d) => s + d.nights, 0);
+      const arrivalDate = new Date(baseDate);
+      arrivalDate.setUTCDate(baseDate.getUTCDate() + nightsBeforeArrival);
+      const departureDate = new Date(baseDate);
+      departureDate.setUTCDate(baseDate.getUTCDate() + nightsBeforeArrival + dest.nights);
+
+      const inboundPlan = i > 0 ? legPlans[i - 1] : undefined;
+      const outboundPlan = legPlans[i]; // undefined for the final city
+
+      const dateAt = (offsetDays: number): string => {
+        const d = new Date(arrivalDate);
+        d.setUTCDate(arrivalDate.getUTCDate() + offsetDays);
+        return d.toISOString().slice(0, 10);
+      };
+
+      const pushDay = (
+        dateStr: string,
+        blockFor: (idx: number) => TimeWindow['blockedReason'] | undefined,
+      ): void => {
+        for (const slot of SLOTS) {
+          const idx = SLOTS.indexOf(slot);
+          const blockedReason = blockFor(idx);
+          timeWindows.push({
+            date: dateStr,
+            slot,
+            durationMinutes: SLOT_DURATION_MINUTES,
+            isTransitDay: blockedReason !== undefined,
+            blockedReason,
+          });
+        }
+      };
+
+      const timeWindows: TimeWindow[] = [];
+      for (let n = 0; n < dest.nights; n++) {
+        const dateStr = dateAt(n);
+        const isFirstDay = n === 0;
+        const isSecondDay = n === 1;
+
+        // Travel date owned by the origin → this stay has no presence there.
+        if (isFirstDay && inboundPlan?.owner === 'origin') continue;
+
+        pushDay(dateStr, (idx) => {
+          if (isFirstDay && inboundPlan && inboundPlan.owner === 'destination' && inboundPlan.inboundUpToIdx !== null && idx <= inboundPlan.inboundUpToIdx) {
+            const recovery =
+              !inboundPlan.wholeDayTransit &&
+              inboundPlan.longJourney &&
+              idx === inboundPlan.inboundUpToIdx;
+            return recovery ? 'inbound-recovery' : 'inbound-transit';
+          }
+          // Morning after a late/past-midnight arrival is recovery, not sightseeing.
+          if (isSecondDay && inboundPlan?.nextMorningRecovery && idx === 0) return 'inbound-recovery';
+          return undefined;
+        });
+      }
+
+      // Origin-owned travel date: this stay gains that day — free slots before
+      // departure (its tourist agent fills them), outbound-transit afterwards.
+      if (outboundPlan?.owner === 'origin') {
+        pushDay(dateAt(dest.nights), (idx) =>
+          idx >= outboundPlan.outboundFromIdx ? 'outbound-transit' : undefined,
+        );
+      }
+
+      return {
+        city: dest.city,
+        country: dest.country,
+        arrivalDate: arrivalDate.toISOString().slice(0, 10),
+        departureDate: departureDate.toISOString().slice(0, 10),
+        nights: dest.nights,
+        timeWindows,
+        sleepPoint: `${dest.city} city centre`,
+        budgetPerPersonPerNight: Math.round(accommodationBudgetPerPersonPerNight),
+      } satisfies CityStay;
+    });
+
+    const routeGraph: RouteGraph = {
+      orderedLegs,
+      cityStays,
+      totalTransportCostEurPerPerson: Math.round(totalTransportCostEurPerPerson),
+      totalDurationDays: totalNights,
+    };
+
+    res.json({ routeGraph });
   });
 
   router.get('/attractions/:region', async (req: Request, res: Response, next: NextFunction): Promise<void> => {

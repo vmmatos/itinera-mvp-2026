@@ -165,6 +165,31 @@ const goToStep2 = (): void => {
 const store = useTripPlannerStore()
 const api   = useApi()
 
+// ── Destination preview (option-1 hybrid): echo what the system understood ──
+interface ParsedDestination { city: string; country: string; nights: number }
+const parsedDestinations = ref<ParsedDestination[]>([])
+let previewTimer: ReturnType<typeof setTimeout> | null = null
+
+const previewDays = computed(() => (dateMode.value === 'flexible' ? flexDays.value : nights.value))
+
+watch([region, previewDays], () => {
+  if (previewTimer) clearTimeout(previewTimer)
+  const r = region.value.trim()
+  const days = previewDays.value
+  if (!r || days < 1) { parsedDestinations.value = []; return }
+  previewTimer = setTimeout(() => { void fetchDestinationPreview(r, days) }, 500)
+})
+
+const fetchDestinationPreview = async (regionText: string, days: number): Promise<void> => {
+  try {
+    const resp = await api.post<{ success: boolean; data: { destinations: ParsedDestination[] } }>(
+      '/api/v1/trips/preview-destinations',
+      { region: regionText, days },
+    )
+    parsedDestinations.value = resp.data.data.destinations
+  } catch { /* preview is best-effort */ }
+}
+
 const activeTripId = ref<string | null>(null)
 
 // Reopen existing confirmed trip directly at step 4, or pre-fill from lastInput
@@ -274,6 +299,7 @@ interface ProposalEntry {
 
 const liveProposals    = ref<ProposalEntry[]>([])
 const negotiationStatus = ref<string>('negotiating')
+const rejectionReason  = ref<string>('')
 let pollInterval: ReturnType<typeof setInterval> | null = null
 
 const AGENT_COLOUR: Record<string, string> = {
@@ -305,19 +331,67 @@ const ROUND_AGENTS: Record<number, string[]> = {
   6: ['validator'],
 }
 
+// ── Workflow Engine v2 state maps ─────────────────────────────
+const WORKFLOW_STATES = [
+  'LOGISTICS_PLANNING',
+  'FINANCE_ENVELOPE_CHECK',
+  'PARALLEL_TURISTIC_PLANNING',
+  'MERGE_AND_SCORE',
+  'FINANCE_VALIDATE',
+  'FINAL_VALIDATION',
+  'FINISH',
+] as const
+
+const STATE_LABELS: Record<string, string> = {
+  INTAKE_COMPLETE:             'Preparing…',
+  LOGISTICS_PLANNING:          'Building route',
+  FINANCE_ENVELOPE_CHECK:      'Checking budget',
+  PARALLEL_TURISTIC_PLANNING:  'Planning experiences',
+  MERGE_AND_SCORE:             'Merging proposals',
+  FINANCE_VALIDATE:            'Validating costs',
+  FINAL_VALIDATION:            'Final check',
+  ASK_REFINEMENT:              'Needs adjustment',
+  FINISH:                      'Done',
+}
+
+const STATE_ACTIVE_AGENTS: Record<string, string[]> = {
+  LOGISTICS_PLANNING:          ['logistics'],
+  FINANCE_ENVELOPE_CHECK:      ['finance'],
+  PARALLEL_TURISTIC_PLANNING:  ['alice', 'bob', 'carlos', 'diana'],
+  MERGE_AND_SCORE:             ['orchestrator'],
+  FINANCE_VALIDATE:            ['finance'],
+  FINAL_VALIDATION:            ['validator'],
+}
+
+const workflowState = ref<string | null>(null)
+
+const workflowStateIndex = computed(() =>
+  workflowState.value ? WORKFLOW_STATES.indexOf(workflowState.value as typeof WORKFLOW_STATES[number]) : -1,
+)
+
+const activeWorkflowAgents = computed(() =>
+  workflowState.value ? (STATE_ACTIVE_AGENTS[workflowState.value] ?? []) : [],
+)
+
 const startNegotiationPolling = (tripId: string): void => {
   const poll = async (): Promise<void> => {
     try {
       const [tripResp, propResp] = await Promise.all([
-        api.get<{ success: boolean; data: { status: string } }>(`/api/v1/trips/${tripId}`),
+        api.get<{ success: boolean; data: { status: string; rejectionReason?: string | null; workflowState?: string | null } }>(`/api/v1/trips/${tripId}`),
         api.get<{ success: boolean; data: ProposalEntry[] }>(`/api/v1/trips/${tripId}/proposals`),
       ])
       negotiationStatus.value = tripResp.data.data.status
+      workflowState.value = tripResp.data.data.workflowState ?? null
       liveProposals.value = propResp.data.data
 
       if (negotiationStatus.value === 'confirmed') {
         stopPolling()
         setTimeout(() => { step.value = 4 }, 800)
+      } else if (negotiationStatus.value === 'rejected') {
+        // Budget impossible — agents could not reach a bookable plan. Ask to reformulate.
+        rejectionReason.value = tripResp.data.data.rejectionReason
+          || 'Budget unrealistic for this trip — increase the budget or reduce the scope.'
+        stopPolling()
       } else if (negotiationStatus.value === 'cancelled') {
         stopPolling()
       }
@@ -447,6 +521,8 @@ interface ItineraryDay {
   cityTransition?: ItineraryCityTransition
   activities:      ItineraryActivity[]
   meals?:          Array<{ type: string; name: string }>
+  // Set by mergeTransportIntoProposal in NegotiationLoop; preferred over logistics options.
+  rawTransport?:   Array<Record<string, unknown>>
 }
 
 const latestByAgent = computed((): Record<string, ProposalEntry> => {
@@ -495,6 +571,9 @@ function buildDays(obj: unknown): ItineraryDay[] {
       city:    typeof d['city'] === 'string' && d['city'].trim() ? d['city'].trim() : undefined,
       country: typeof d['country'] === 'string' && d['country'].trim() ? d['country'].trim() : undefined,
       cityTransition: cityTransition?.to ? cityTransition : undefined,
+      rawTransport: Array.isArray(d['transport'])
+        ? (d['transport'] as Array<Record<string, unknown>>)
+        : undefined,
       activities: Array.isArray(d['activities'])
         ? (d['activities'] as Array<Record<string, unknown>>).map((a) => ({
             name:         String(a['name'] ?? a['activity'] ?? a['title'] ?? '—'),
@@ -589,22 +668,59 @@ const parsedItinerary = computed((): ItineraryDay[] => {
   return []
 })
 
-// Enriches parsedItinerary with transport activities from logistics content
+// Enriches parsedItinerary with transport activities.
+// Priority: day.transport from orchestrator proposal (set by mergeTransportIntoProposal
+// with confirmed pre-resolved legs) > logistics content transportOptions.
 const timelineDays = computed((): ItineraryDay[] => {
   const logisticsContent = latestByAgent.value['logistics']?.content as Record<string, unknown> | undefined
   const rawTransportOpts = logisticsContent?.['transportOptions'] as Record<number, TransportOption[]> | undefined
-  if (!rawTransportOpts || Object.keys(rawTransportOpts).length === 0) {
-    return parsedItinerary.value
-  }
+
   return parsedItinerary.value.map((day) => {
-    const opts = rawTransportOpts[day.day]
     const ct = day.cityTransition
-    if (!opts || opts.length === 0 || !ct?.to) return day
-    const [best, ...rest] = opts
+    if (!ct?.to) return day
+
+    // Try orchestrator's day.transport first (has confirmed legs + real alternatives)
+    let best: TransportOption | undefined
+    let rest: TransportOption[] = []
+
+    const rt = day.rawTransport?.[0]
+    if (rt && typeof rt['mode'] === 'string' && typeof rt['durationMinutes'] === 'number' && rt['durationMinutes'] > 0) {
+      best = {
+        mode: rt['mode'] as TransportOption['mode'],
+        provider: typeof rt['provider'] === 'string' ? rt['provider'] : undefined,
+        durationMinutes: rt['durationMinutes'] as number,
+        departureTime: typeof rt['departureTime'] === 'string' ? rt['departureTime'] : undefined,
+        arrivalTime: typeof rt['arrivalTime'] === 'string' ? rt['arrivalTime'] : undefined,
+        priceEur: typeof rt['priceEur'] === 'number' ? rt['priceEur'] : undefined,
+        flightNumber: typeof rt['flightNumber'] === 'string' ? rt['flightNumber'] : undefined,
+        trainLine: typeof rt['trainLine'] === 'string' ? rt['trainLine'] : undefined,
+        warnings: Array.isArray(rt['warnings']) ? (rt['warnings'] as string[]) : [],
+        segments: Array.isArray(rt['segments']) ? (rt['segments'] as TransportOption['segments']) : undefined,
+        displaySummary: typeof rt['displaySummary'] === 'string' ? rt['displaySummary'] : undefined,
+        originAirport: typeof rt['originAirport'] === 'string' ? rt['originAirport'] : undefined,
+        destinationAirport: typeof rt['destinationAirport'] === 'string' ? rt['destinationAirport'] : undefined,
+        fromStop: typeof rt['fromStop'] === 'string' ? rt['fromStop'] : undefined,
+        toStop: typeof rt['toStop'] === 'string' ? rt['toStop'] : undefined,
+      }
+      rest = Array.isArray(rt['alternatives']) ? (rt['alternatives'] as TransportOption[]) : []
+    } else {
+      // Fall back to logistics transportOptions (keyed by day number)
+      const opts = rawTransportOpts?.[day.day]
+      if (!opts || opts.length === 0) return day
+      const [b, ...r] = opts
+      if (!b || b.durationMinutes === 0) return day
+      best = b
+      rest = r
+    }
+
     if (!best) return day
+    // Anchor the journey card where the travel begins on this day: the first
+    // transit placeholder — "In transit" (arrival day) or "Check out and
+    // depart" (late-departure day owned by the origin city).
+    const firstTransit = day.activities.find((a) => /in transit|check out and depart/i.test(a.name))
     const transportActivity: ItineraryActivity = {
       name:          formatTransportLabel(best, ct.to),
-      time:          best.departureTime ?? 'morning',
+      time:          firstTransit?.time ?? best.departureTime ?? 'morning',
       transportData: { to: ct.to, selectedOption: best, alternatives: rest },
     }
     return { ...day, activities: [...day.activities, transportActivity] }
@@ -809,6 +925,18 @@ const buildExportPayload = (): Record<string, unknown> => ({
         notes:    a.notes,
       })),
       meals: d.meals?.map((m) => ({ type: m.type, name: m.name })),
+      transport: d.rawTransport?.map((t) => ({
+        from:           t['from'] as string,
+        to:             t['to'] as string,
+        mode:           t['mode'] as string,
+        provider:       t['provider'] as string | undefined,
+        durationMinutes: t['durationMinutes'] as number | undefined,
+        priceEur:       t['priceEur'] as number | undefined,
+        departureTime:  t['departureTime'] as string | undefined,
+        arrivalTime:    t['arrivalTime'] as string | undefined,
+        displaySummary: t['displaySummary'] as string | undefined,
+        segments:       t['segments'] as Array<Record<string, unknown>> | undefined,
+      })),
     })),
   },
 })
@@ -1096,6 +1224,23 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
             >
               Destination is required
             </p>
+            <!-- Echo of how the system understood the destinations + nights split -->
+            <div
+              v-if="parsedDestinations.length"
+              style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 0"
+              data-testid="parsed-destinations"
+            >
+              <span class="helper" style="text-transform:none;letter-spacing:0;width:100%;margin-bottom:2px">
+                Understood as:
+              </span>
+              <span
+                v-for="(d, i) in parsedDestinations"
+                :key="i"
+                style="font-family:var(--mono);font-size:var(--t-12);padding:3px 8px;border:var(--hair);border-radius:var(--r-1);background:var(--bg-2)"
+              >
+                {{ d.city }}<template v-if="d.country">, {{ d.country }}</template> · {{ d.nights }}n
+              </span>
+            </div>
           </div>
         </div>
 
@@ -1392,19 +1537,23 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
             <span v-else-if="negotiationStatus === 'cancelled'" style="color:var(--red);font-family:var(--mono);font-size:var(--t-13)">
               ✗ cancelled
             </span>
+            <span v-else-if="negotiationStatus === 'rejected'" style="color:var(--amber, #f59e0b);font-family:var(--mono);font-size:var(--t-13)">
+              ⚠ needs reformulation
+            </span>
           </div>
         </div>
 
-        <!-- Active agent working indicator -->
+        <!-- Active agent working indicator (v2: state-based / v1: round-based) -->
         <div
-          v-if="negotiationStatus === 'negotiating' && activeRound > 0"
+          v-if="negotiationStatus === 'negotiating' && (workflowState ? activeWorkflowAgents.length > 0 : activeRound > 0)"
           data-testid="active-agent-indicator"
           style="margin-bottom:var(--s-4);padding:var(--s-3) var(--s-4);border:var(--hair);border-radius:var(--r-2);background:var(--bg-2);display:flex;align-items:center;gap:var(--s-4);flex-wrap:wrap"
         >
-          <span class="helper">Round {{ activeRound }} / 6 · {{ ROUND_LABELS[activeRound] ?? '' }}</span>
+          <span v-if="workflowState" class="helper">{{ STATE_LABELS[workflowState] ?? workflowState }}</span>
+          <span v-else class="helper">Round {{ activeRound }} / 6 · {{ ROUND_LABELS[activeRound] ?? '' }}</span>
           <div style="display:flex;gap:var(--s-4);flex-wrap:wrap">
             <div
-              v-for="agent in ROUND_AGENTS[activeRound]"
+              v-for="agent in (workflowState ? activeWorkflowAgents : ROUND_AGENTS[activeRound])"
               :key="agent"
               style="display:flex;align-items:center;gap:var(--s-2)"
             >
@@ -1428,6 +1577,13 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
           <button class="btn" @click="emit('cancel')">Back to dashboard</button>
         </div>
 
+        <!-- Rejected state — budget impossible, ask user to reformulate -->
+        <div v-else-if="negotiationStatus === 'rejected'" style="padding:var(--s-6);background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.28);border-radius:var(--r-2);text-align:center">
+          <p style="color:var(--amber, #f59e0b);font-size:var(--t-15);margin:0 0 var(--s-3)">This trip needs reformulating</p>
+          <p class="helper" style="margin:0 0 var(--s-4);text-transform:none;letter-spacing:0">{{ rejectionReason }}</p>
+          <button class="btn" @click="step = 2">Adjust trip &amp; budget</button>
+        </div>
+
         <!-- Live event feed -->
         <div
           v-else
@@ -1449,55 +1605,142 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
             <div
               v-for="p in liveProposals"
               :key="p.id"
-              style="padding:var(--s-3) var(--s-4);border-bottom:var(--hair);display:flex;align-items:flex-start;gap:var(--s-3)"
+              style="padding:var(--s-3) var(--s-4);border-bottom:var(--hair)"
             >
-              <span
-                style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-top:5px;flex-shrink:0"
-                :style="`background:${AGENT_COLOUR[p.agent] ?? 'var(--fg-3)'}`"
-              />
-              <div style="flex:1;min-width:0">
-                <div style="display:flex;align-items:center;gap:var(--s-2);margin-bottom:3px">
-                  <span
-                    style="font-size:var(--t-12);font-family:var(--mono);font-weight:600"
-                    :style="`color:${AGENT_COLOUR[p.agent] ?? 'var(--fg-2)'}`"
-                  >{{ p.agent }}</span>
-                  <span class="helper" style="font-family:var(--mono)">round {{ p.round }} · {{ ROUND_LABELS[p.round] ?? 'processing' }}</span>
+              <!-- Route graph summary card (logistics plan event) -->
+              <template v-if="p.agent === 'logistics' && typeof p.content === 'object' && p.content !== null && 'cityStays' in p.content">
+                <div style="display:flex;align-items:center;gap:var(--s-2);margin-bottom:var(--s-2)">
+                  <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--blue);flex-shrink:0" />
+                  <span style="font-size:var(--t-12);font-family:var(--mono);font-weight:600;color:var(--blue)">logistics</span>
+                  <span class="helper" style="font-family:var(--mono)">route plan</span>
                 </div>
-                <p style="margin:0;font-size:var(--t-13);color:var(--fg-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:400px">
-                  {{ typeof p.content === 'object' && p.content !== null
-                      ? Object.keys(p.content).slice(0,3).join(', ') + (Object.keys(p.content).length > 3 ? '…' : '')
-                      : '—' }}
-                </p>
-              </div>
+                <div style="font-size:var(--t-13);color:var(--fg-2);line-height:1.8">
+                  <div
+                    v-for="(leg, i) in (p.content as Record<string, unknown[]>)['orderedLegs'] ?? []"
+                    :key="i"
+                    style="font-family:var(--mono)"
+                  >
+                    {{ (leg as Record<string, unknown>)['from'] }} → {{ (leg as Record<string, unknown>)['to'] }}
+                    <span class="helper" style="margin-left:var(--s-2)">
+                      {{ ((leg as Record<string, unknown>)['bestOption'] as Record<string, unknown>)?.['mode'] }}
+                      · {{ Math.round(Number(((leg as Record<string, unknown>)['bestOption'] as Record<string, unknown>)?.['durationMinutes']) / 60 * 10) / 10 }}h
+                      · €{{ ((leg as Record<string, unknown>)['totalCostEurPerPerson']) ?? '?' }}/pp
+                    </span>
+                  </div>
+                  <div
+                    v-for="stay in (p.content as Record<string, unknown[]>)['cityStays'] ?? []"
+                    :key="(stay as Record<string, unknown>)['city'] as string"
+                    style="font-family:var(--mono)"
+                  >
+                    {{ (stay as Record<string, unknown>)['city'] }} {{ (stay as Record<string, unknown>)['nights'] }} nights
+                  </div>
+                </div>
+              </template>
+
+              <!-- Budget envelope card (finance estimate event) -->
+              <template v-else-if="p.agent === 'finance' && typeof p.content === 'object' && p.content !== null && 'perBlock' in p.content">
+                <div style="display:flex;align-items:center;gap:var(--s-2);margin-bottom:var(--s-2)">
+                  <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--amber);flex-shrink:0" />
+                  <span style="font-size:var(--t-12);font-family:var(--mono);font-weight:600;color:var(--amber)">finance</span>
+                  <span class="helper" style="font-family:var(--mono)">budget envelope</span>
+                  <span
+                    :style="`font-family:var(--mono);font-size:10px;padding:1px 6px;border-radius:var(--r-1);${(p.content as Record<string, unknown>)['feasible'] ? 'background:rgba(0,255,136,0.12);color:var(--green)' : 'background:rgba(255,93,93,0.12);color:var(--red)'}`"
+                  >{{ (p.content as Record<string, unknown>)['feasible'] ? 'feasible' : 'infeasible' }}</span>
+                </div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px var(--s-4);font-size:var(--t-13);font-family:var(--mono)">
+                  <span class="helper">Transport</span>
+                  <span>€{{ ((p.content as Record<string, unknown[]>)['perBlock'] ?? []).reduce((s: number, b: unknown) => s + Number((b as Record<string, unknown>)['transportCostEurPerPerson'] ?? 0), 0).toFixed(0) }}/pp</span>
+                  <span class="helper">Accommodation</span>
+                  <span>€{{ ((p.content as Record<string, unknown[]>)['perBlock'] ?? []).reduce((s: number, b: unknown) => s + Number((b as Record<string, unknown>)['accommodationBudgetEurPerPerson'] ?? 0), 0).toFixed(0) }}/pp</span>
+                  <span class="helper">Experiences</span>
+                  <span>€{{ ((p.content as Record<string, unknown[]>)['perBlock'] ?? []).reduce((s: number, b: unknown) => s + Number((b as Record<string, unknown>)['experiencesBudgetEurPerPerson'] ?? 0), 0).toFixed(0) }}/pp</span>
+                  <span class="helper">Buffer</span>
+                  <span>{{ Number((p.content as Record<string, unknown>)['bufferPct'] ?? 0).toFixed(1) }}%</span>
+                </div>
+              </template>
+
+              <!-- Default event row -->
+              <template v-else>
+                <div style="display:flex;align-items:flex-start;gap:var(--s-3)">
+                  <span
+                    style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-top:5px;flex-shrink:0"
+                    :style="`background:${AGENT_COLOUR[p.agent] ?? 'var(--fg-3)'}`"
+                  />
+                  <div style="flex:1;min-width:0">
+                    <div style="display:flex;align-items:center;gap:var(--s-2);margin-bottom:3px">
+                      <span
+                        style="font-size:var(--t-12);font-family:var(--mono);font-weight:600"
+                        :style="`color:${AGENT_COLOUR[p.agent] ?? 'var(--fg-2)'}`"
+                      >{{ p.agent }}</span>
+                      <span class="helper" style="font-family:var(--mono)">round {{ p.round }} · {{ ROUND_LABELS[p.round] ?? 'processing' }}</span>
+                    </div>
+                    <p style="margin:0;font-size:var(--t-13);color:var(--fg-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:400px">
+                      {{ typeof p.content === 'object' && p.content !== null
+                          ? Object.keys(p.content).slice(0,3).join(', ') + (Object.keys(p.content).length > 3 ? '…' : '')
+                          : '—' }}
+                    </p>
+                  </div>
+                </div>
+              </template>
             </div>
           </div>
         </div>
 
-        <!-- Round progress — segmented -->
+        <!-- Progress bar — v2: state-based / v1: round-based -->
         <div v-if="negotiationStatus === 'negotiating'" style="margin-top:var(--s-5)" data-testid="round-progress">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--s-2)">
-            <span class="helper">
-              Round {{ completedRound }} / 6{{ completedRound > 0 ? ' · ' + ROUND_LABELS[completedRound] : '' }}
-            </span>
-            <span class="helper">{{ Math.round((completedRound / 6) * 100) }}%</span>
-          </div>
-          <div style="display:flex;gap:3px" data-testid="progress-segments">
-            <div
-              v-for="n in 6"
-              :key="n"
-              style="flex:1;height:8px;border-radius:var(--r-1);overflow:hidden;background:var(--bg-3)"
-            >
-              <div
-                v-if="n <= completedRound"
-                style="height:100%;background:var(--green);border-radius:var(--r-1)"
-              />
-              <div
-                v-else-if="n === activeRound"
-                class="progress-segment-active"
-                style="height:100%;background:var(--green-dim);border-radius:var(--r-1)"
-              />
+
+          <!-- v2: workflow state steps -->
+          <template v-if="workflowState">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--s-2)">
+              <span class="helper">{{ STATE_LABELS[workflowState] ?? workflowState }}</span>
+              <span class="helper">{{ Math.round(((workflowStateIndex + 1) / WORKFLOW_STATES.length) * 100) }}%</span>
             </div>
-          </div>
+            <div style="display:flex;gap:3px" data-testid="progress-segments">
+              <div
+                v-for="(state, idx) in WORKFLOW_STATES"
+                :key="state"
+                style="flex:1;height:8px;border-radius:var(--r-1);overflow:hidden;background:var(--bg-3)"
+                :title="STATE_LABELS[state] ?? state"
+              >
+                <div
+                  v-if="idx < workflowStateIndex"
+                  style="height:100%;background:var(--green);border-radius:var(--r-1)"
+                />
+                <div
+                  v-else-if="idx === workflowStateIndex"
+                  class="progress-segment-active"
+                  style="height:100%;background:var(--green-dim);border-radius:var(--r-1)"
+                />
+              </div>
+            </div>
+          </template>
+
+          <!-- v1: round-based (unchanged) -->
+          <template v-else>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:var(--s-2)">
+              <span class="helper">
+                Round {{ completedRound }} / 6{{ completedRound > 0 ? ' · ' + ROUND_LABELS[completedRound] : '' }}
+              </span>
+              <span class="helper">{{ Math.round((completedRound / 6) * 100) }}%</span>
+            </div>
+            <div style="display:flex;gap:3px" data-testid="progress-segments">
+              <div
+                v-for="n in 6"
+                :key="n"
+                style="flex:1;height:8px;border-radius:var(--r-1);overflow:hidden;background:var(--bg-3)"
+              >
+                <div
+                  v-if="n <= completedRound"
+                  style="height:100%;background:var(--green);border-radius:var(--r-1)"
+                />
+                <div
+                  v-else-if="n === activeRound"
+                  class="progress-segment-active"
+                  style="height:100%;background:var(--green-dim);border-radius:var(--r-1)"
+                />
+              </div>
+            </div>
+          </template>
         </div>
 
         <!-- Auto-advance hint -->

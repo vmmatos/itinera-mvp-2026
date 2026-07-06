@@ -42,7 +42,7 @@ async function start(): Promise<void> {
   const places = new PlacesService();
   const attractions = new AttractionDB(places, redis, config.ATTRACTIONS_CACHE_TTL_SECONDS);
   const mapService = new MapService();
-  const transport = new TransportService(mapService);
+  const transport = new TransportService(mapService, redis, places);
   const timing = new TimingValidator();
   const analyzer = new WeatherAnalyzer(anthropic, publisher, redis, storage);
   const holidays = new HolidayService(redis);

@@ -1,4 +1,4 @@
-export type TripStatus = 'draft' | 'negotiating' | 'confirmed' | 'completed' | 'cancelled';
+export type TripStatus = 'draft' | 'negotiating' | 'confirmed' | 'completed' | 'cancelled' | 'rejected';
 export type ProposalStatus = 'pending' | 'accepted' | 'rejected' | 'superseded';
 export type UserRole = 'user' | 'admin' | 'service';
 export type DateWindow = 'tight' | 'moderate' | 'open';
@@ -109,8 +109,24 @@ export interface Attraction {
 
 export type TransportMode = 'flight' | 'train' | 'car' | 'best';
 
+export interface TransportSegment {
+  from: string;
+  to: string;
+  mode: 'flight' | 'train' | 'bus' | 'car';
+  provider?: string;
+  durationMinutes: number;
+  priceEur?: number;
+  departureTime?: string;
+  flightNumber?: string;
+  trainLine?: string;
+  /** Departure stop/station/airport name (e.g. "Grândola train station", "Faro Airport") */
+  fromStop?: string;
+  /** Arrival stop/station/airport name */
+  toStop?: string;
+}
+
 export interface TransportOption {
-  mode: 'flight' | 'train' | 'car';
+  mode: 'flight' | 'train' | 'car' | 'bus';
   provider?: string;
   durationMinutes: number;
   departureTime?: string;
@@ -119,4 +135,16 @@ export interface TransportOption {
   flightNumber?: string;
   trainLine?: string;
   warnings: string[];
+  /** Present for multi-leg routes composed via hub routing. */
+  segments?: TransportSegment[];
+  /** Human-readable summary, e.g. "Bus + Train + Flight — 9h, ~€172/person" */
+  displaySummary?: string;
+  /** For flights: departure airport code + name, e.g. "FAO – Faro Airport" */
+  originAirport?: string;
+  /** For flights: arrival airport code + name, e.g. "BCN – Barcelona–El Prat" */
+  destinationAirport?: string;
+  /** Departure stop / station name (populated for train segments from Google Routes) */
+  fromStop?: string;
+  /** Arrival stop / station name */
+  toStop?: string;
 }
