@@ -33,7 +33,6 @@ vi.mock('@/data-source', () => ({
 }));
 
 vi.mock('@/services/StateManager');
-vi.mock('@/services/NegotiationLoop');
 
 import { TripController } from '@/controllers/TripController';
 import type { TripService } from '@/services/TripService';

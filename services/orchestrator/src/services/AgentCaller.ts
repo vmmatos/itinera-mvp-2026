@@ -1,5 +1,5 @@
 import { BaseService } from '@itinera/shared';
-import type { DateInput, TransportMode, TransportOption, RouteGraph, BudgetPlan, TouristSlotInput } from '@itinera/shared';
+import type { DateInput, TransportMode, RouteGraph, BudgetPlan, TouristSlotInput } from '@itinera/shared';
 import jwt from 'jsonwebtoken';
 import { config } from '@/config';
 
@@ -75,66 +75,6 @@ export class AgentCaller extends BaseService {
     return response.json() as Promise<T>;
   }
 
-  async callPreferenceAgent(
-    tripId: string,
-    agentName: string,
-    round: number,
-    context = '',
-  ): Promise<AgentCallResult> {
-    const start = Date.now();
-    const resp = await this.post<{ proposals: AgentEventLike[] }>(
-      'preference-agent',
-      '/propose',
-      { tripId, round, agents: [agentName], context },
-    );
-    return toAgentCallResult(resp.proposals[0], Date.now() - start);
-  }
-
-  async callOrchestratorAgent(
-    tripId: string,
-    round: number,
-    proposals: Record<string, unknown>[],
-  ): Promise<AgentCallResult> {
-    const start = Date.now();
-    const resp = await this.post<{ analysis: AgentEventLike }>(
-      'orchestrator-agent',
-      '/analyze',
-      { tripId, round, proposals },
-    );
-    return toAgentCallResult(resp.analysis, Date.now() - start);
-  }
-
-  async callOrchestratorPropose(
-    tripId: string,
-    round: number,
-    conflicts: Record<string, unknown>,
-    context = '',
-  ): Promise<AgentCallResult> {
-    const start = Date.now();
-    const resp = await this.post<{ compromise: AgentEventLike }>(
-      'orchestrator-agent',
-      '/propose',
-      { tripId, round, conflicts, context },
-    );
-    return toAgentCallResult(resp.compromise, Date.now() - start);
-  }
-
-  async callOrchestratorRefine(
-    tripId: string,
-    round: number,
-    proposal: Record<string, unknown>,
-    feedback: string,
-    context = '',
-  ): Promise<AgentCallResult> {
-    const start = Date.now();
-    const resp = await this.post<{ refined: AgentEventLike }>(
-      'orchestrator-agent',
-      '/refine',
-      { tripId, round, proposal, feedback, context },
-    );
-    return toAgentCallResult(resp.refined, Date.now() - start);
-  }
-
   async callFinanceAgent(
     tripId: string,
     round: number,
@@ -156,28 +96,6 @@ export class AgentCaller extends BaseService {
       },
     );
     return toAgentCallResult(resp.review, Date.now() - start);
-  }
-
-  async callLogisticsAgent(
-    tripId: string,
-    round: number,
-    proposal: Record<string, unknown>,
-    tripContext?: AgentTripContext,
-  ): Promise<AgentCallResult> {
-    const start = Date.now();
-    const resp = await this.post<{ validation: AgentEventLike }>(
-      'logistics',
-      '/validate',
-      {
-        tripId,
-        round,
-        proposal,
-        region: tripContext?.region ?? 'unknown',
-        dateInput: tripContext?.dateInput ?? null,
-        transportPreference: tripContext?.transportPreference ?? 'best',
-      },
-    );
-    return toAgentCallResult(resp.validation, Date.now() - start);
   }
 
   async callValidatorAgent(
@@ -254,19 +172,4 @@ export class AgentCaller extends BaseService {
   }
 
   // ── End WorkflowEngine v2 methods ──────────────────────────────────────────
-
-  async callTransportLegs(
-    destinations: { city: string; country: string }[],
-    preference: TransportMode,
-    departureDateIso?: string,
-  ): Promise<Record<string, TransportOption[]>> {
-    const start = Date.now();
-    const resp = await this.post<{ legs: Record<string, TransportOption[]> }>(
-      'logistics',
-      '/transport-legs',
-      { destinations, preference, departureDateIso },
-    );
-    this.logger.debug('Transport legs resolved', { latencyMs: Date.now() - start, pairs: Object.keys(resp.legs).length });
-    return resp.legs;
-  }
 }

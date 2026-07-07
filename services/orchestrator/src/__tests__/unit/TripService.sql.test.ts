@@ -45,11 +45,10 @@ vi.mock('@/data-source', () => ({
 }));
 
 vi.mock('@/services/StateManager');
-vi.mock('@/services/NegotiationLoop');
 
 import { TripService } from '@/services/TripService';
 import { StateManager } from '@/services/StateManager';
-import { NegotiationLoop } from '@/services/NegotiationLoop';
+import type { IOrchestrationEngine } from '@/services/WorkflowEngine';
 import { AppDataSource } from '@/data-source';
 
 // Canonical SQL injection probe — chosen because it would break a naive interpolated query
@@ -65,8 +64,8 @@ describe('TripService — SQL injection safety (security audit #30)', () => {
     vi.clearAllMocks();
 
     const stateManager = new StateManager();
-    const loop = new NegotiationLoop({} as never, {} as never, {} as never);
-    service = new TripService(stateManager, loop);
+    const engine: IOrchestrationEngine = { run: vi.fn(), setTripService: vi.fn() };
+    service = new TripService(stateManager, engine);
 
     mockFind = vi.fn().mockResolvedValue([]);
     mockFindOne = vi.fn().mockResolvedValue(null);

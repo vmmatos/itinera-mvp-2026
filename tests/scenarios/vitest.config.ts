@@ -17,8 +17,7 @@ export default defineConfig({
       { find: '@/agents/BudgetValidator', replacement: `${financeAgentSrc}/agents/BudgetValidator` },
       // Logistics-agent internal @/ imports — must precede the generic @/ rule
       { find: '@/agents/BaseLogisticsAgent', replacement: `${logisticsAgentSrc}/agents/BaseLogisticsAgent` },
-      // Orchestrator service imports for scenarios 008 + 010-015 — must precede the generic @/ rule
-      { find: '@/services/NegotiationLoop',         replacement: `${orchestratorSrc}/services/NegotiationLoop` },
+      // Orchestrator service imports for scenarios 010-017 — must precede the generic @/ rule
       { find: '@/services/WorkflowEngine',          replacement: `${orchestratorSrc}/services/WorkflowEngine` },
       { find: '@/services/WorkflowStateMachine',    replacement: `${orchestratorSrc}/services/WorkflowStateMachine` },
       { find: '@/services/TransportPriorityEngine', replacement: `${orchestratorSrc}/services/TransportPriorityEngine` },

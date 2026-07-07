@@ -55,58 +55,6 @@ describe('AgentCaller', () => {
     vi.unstubAllGlobals();
   });
 
-  it('callPreferenceAgent: posts to /propose with correct body', async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ proposals: [AGENT_EVENT] }),
-    });
-
-    const result = await caller.callPreferenceAgent('trip-1', 'alice', 1);
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      'http://preference-agent:3002/propose',
-      expect.objectContaining({
-        method: 'POST',
-        body: JSON.stringify({ tripId: 'trip-1', round: 1, agents: ['alice'], context: '' }),
-        headers: expect.objectContaining({ Authorization: 'Bearer mock-service-token' }),
-      }),
-    );
-    expect(result.content).toEqual(AGENT_RESULT.content);
-    expect(result.reasoning).toBe(AGENT_RESULT.reasoning);
-    expect(result.tokensUsed).toBe(AGENT_RESULT.tokensUsed);
-  });
-
-  it('callOrchestratorAgent: posts to /analyze with proposals', async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ analysis: AGENT_EVENT }),
-    });
-
-    await caller.callOrchestratorAgent('trip-1', 2, [{ dest: 'paris' }]);
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      'http://orchestrator-agent:3003/analyze',
-      expect.objectContaining({ method: 'POST' }),
-    );
-  });
-
-  it('callOrchestratorRefine: posts to /refine with proposal and feedback', async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ refined: AGENT_EVENT }),
-    });
-
-    await caller.callOrchestratorRefine('trip-1', 4, { itinerary: [] }, 'FINANCE ISSUES:\n- Over budget', 'ctx');
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      'http://orchestrator-agent:3003/refine',
-      expect.objectContaining({
-        method: 'POST',
-        body: expect.stringContaining('"feedback":"FINANCE ISSUES'),
-      }),
-    );
-  });
-
   it('callFinanceAgent: posts to /review with budget context', async () => {
     fetchMock.mockResolvedValue({
       ok: true,
@@ -137,23 +85,6 @@ describe('AgentCaller', () => {
     expect(sentBody['budgetTotal']).toBe(3000);
   });
 
-  it('callLogisticsAgent: posts to /validate with region', async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ validation: AGENT_EVENT }),
-    });
-
-    await caller.callLogisticsAgent('trip-1', 4, { destination: 'paris' }, { region: 'Paris, France' });
-
-    expect(fetchMock).toHaveBeenCalledWith(
-      'http://logistics-agent:3005/validate',
-      expect.objectContaining({
-        method: 'POST',
-        body: expect.stringContaining('"region":"Paris, France"'),
-      }),
-    );
-  });
-
   it('callValidatorAgent: posts to / with tripId, round, proposal', async () => {
     fetchMock.mockResolvedValue({
       ok: true,
@@ -172,10 +103,10 @@ describe('AgentCaller', () => {
   it('includes Authorization header on all calls', async () => {
     fetchMock.mockResolvedValue({
       ok: true,
-      json: () => Promise.resolve({ proposals: [AGENT_EVENT] }),
+      json: () => Promise.resolve({ review: AGENT_EVENT }),
     });
 
-    await caller.callPreferenceAgent('trip-1', 'alice', 1);
+    await caller.callFinanceAgent('trip-1', 3, { budget: 5000 }, { budgetTotal: 3000, budgetCurrency: 'EUR' });
 
     expect(fetchMock).toHaveBeenCalledWith(
       expect.any(String),
@@ -193,41 +124,16 @@ describe('AgentCaller', () => {
     });
 
     await expect(
-      caller.callPreferenceAgent('trip-1', 'alice', 1),
-    ).rejects.toThrow('preference-agent returned 500');
+      caller.callFinanceAgent('trip-1', 3, { budget: 5000 }, { budgetTotal: 3000, budgetCurrency: 'EUR' }),
+    ).rejects.toThrow('finance returned 500');
   });
 
   it('throws when fetch itself rejects (network error)', async () => {
     fetchMock.mockRejectedValue(new Error('ECONNREFUSED'));
 
     await expect(
-      caller.callPreferenceAgent('trip-1', 'alice', 1),
+      caller.callFinanceAgent('trip-1', 3, { budget: 5000 }, { budgetTotal: 3000, budgetCurrency: 'EUR' }),
     ).rejects.toThrow('ECONNREFUSED');
-  });
-
-  it('callLogisticsAgent: includes dateInput in body when provided', async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ validation: AGENT_EVENT }),
-    });
-
-    const dateInput = { mode: 'flexible' as const, days: 7, preferredMonth: '2026-07', window: 'moderate' as const };
-    await caller.callLogisticsAgent('trip-1', 4, {}, { region: 'Portugal', dateInput });
-
-    const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string) as Record<string, unknown>;
-    expect(sentBody['dateInput']).toEqual(dateInput);
-  });
-
-  it('callLogisticsAgent: sends null dateInput when not provided', async () => {
-    fetchMock.mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ validation: AGENT_EVENT }),
-    });
-
-    await caller.callLogisticsAgent('trip-1', 4, {}, { region: 'Portugal' });
-
-    const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string) as Record<string, unknown>;
-    expect(sentBody['dateInput']).toBeNull();
   });
 
   it('callFinanceAgent: includes dateInput in body when provided', async () => {
