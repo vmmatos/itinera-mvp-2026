@@ -40,7 +40,7 @@ interface SerpFlightsResponse {
 // ── Google Routes API (v2) — transit response shapes ─────────────
 interface RoutesTransitStep {
   transitDetails?: {
-    transitLine?: { name?: string; nameShort?: string };
+    transitLine?: { name?: string; nameShort?: string; agencies?: Array<{ name?: string }> };
     stopDetails?: {
       departureTime?: string; // RFC3339
       arrivalTime?: string;
@@ -351,7 +351,7 @@ export class TransportService extends BaseService {
           'Content-Type': 'application/json',
           'X-Goog-Api-Key': config.GOOGLE_MAPS_API_KEY,
           'X-Goog-FieldMask':
-            'routes.duration,routes.legs.steps.transitDetails.transitLine.name,routes.legs.steps.transitDetails.stopDetails',
+            'routes.duration,routes.legs.steps.transitDetails.transitLine.name,routes.legs.steps.transitDetails.transitLine.nameShort,routes.legs.steps.transitDetails.transitLine.agencies,routes.legs.steps.transitDetails.stopDetails',
         },
         body: JSON.stringify({
           origin: { address: pair.from },
@@ -387,6 +387,9 @@ export class TransportService extends BaseService {
         const trainLine =
           transit?.transitDetails?.transitLine?.name ??
           transit?.transitDetails?.transitLine?.nameShort;
+        // Real rail operator (e.g. "SBB", "SNCF", "CP") as reported by Google for
+        // this specific route — never assume a nationality when it's missing.
+        const agencyName = transit?.transitDetails?.transitLine?.agencies?.[0]?.name;
         const departureTimeIso = transit?.transitDetails?.stopDetails?.departureTime;
         const departureStopName = transit?.transitDetails?.stopDetails?.departureStop?.name;
         const lastTransitStep = [...steps].reverse().find((s) => s.transitDetails?.stopDetails?.arrivalTime);
@@ -394,8 +397,7 @@ export class TransportService extends BaseService {
         const arrivalStopName = lastTransitStep?.transitDetails?.stopDetails?.arrivalStop?.name;
         return {
           mode: 'train',
-          // trainLine (e.g. "Intercidades") used as provider for display.
-          provider: trainLine ?? 'CP — Comboios de Portugal',
+          provider: agencyName ?? trainLine ?? 'Train',
           durationMinutes,
           departureTime: clockFromIso(departureTimeIso),
           arrivalTime: clockFromIso(arrivalTimeIso),
