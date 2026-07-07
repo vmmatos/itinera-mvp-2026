@@ -20,7 +20,7 @@ const mountForm = () =>
   mount(TripInputForm, {
     global: {
       plugins: [createPinia()],
-      stubs: { transition: true, TripTimeline: true, TripActivityCard: true, AppLogo: true },
+      stubs: { transition: true, TripTimeline: true, TripActivityCard: true, TripBudgetBreakdown: true, AppLogo: true },
     },
   })
 
@@ -427,7 +427,7 @@ describe('TripInputForm — Refine trip (step 4)', () => {
       props: { viewTripId: VALID_TRIP_UUID },
       global: {
         plugins: [createPinia()],
-        stubs: { transition: true, TripTimeline: true, TripActivityCard: true, AppLogo: true },
+        stubs: { transition: true, TripTimeline: true, TripActivityCard: true, TripBudgetBreakdown: true, AppLogo: true },
       },
     })
 

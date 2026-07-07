@@ -11,6 +11,7 @@ import type { WeatherAnalyzer } from '@/agents/WeatherAnalyzer';
 import type { HolidayService } from '@/services/HolidayService';
 import type { RestrictionsValidator } from '@/validators/RestrictionsValidator';
 import type { TransportService } from '@/services/TransportService';
+import type { PricingEnricher } from '@/services/PricingEnricher';
 import { buildLogisticsVerdict } from '@/services/LogisticsVerdict';
 import { toCountryCode } from '@/utils/countryCodeMapper';
 import { config } from '@/config';
@@ -95,6 +96,7 @@ export function createLogisticsRouter(
   holidayService: HolidayService,
   restrictionsValidator: RestrictionsValidator,
   transportService: TransportService,
+  pricingEnricher: PricingEnricher,
 ): Router {
   const router = Router();
 
@@ -250,6 +252,23 @@ export function createLogisticsRouter(
     );
     // --- end transport ---
 
+    // --- Real pricing (card #73: accommodation, restaurants, activities) ---
+    const fixedDateInput = dateInput?.mode === 'fixed' ? (dateInput as { startDate: string; endDate: string }) : undefined;
+    const pricing = await pricingEnricher
+      .enrich(
+        region,
+        rawItinerary.map((day) => ({
+          city: typeof day['city'] === 'string' ? day['city'] : undefined,
+          activities: (Array.isArray(day['activities']) ? (day['activities'] as RawDay[]) : []).map((act) => ({
+            name: typeof act['name'] === 'string' ? act['name'] : undefined,
+          })),
+        })),
+        fixedDateInput?.startDate,
+        fixedDateInput?.endDate,
+      )
+      .catch(() => undefined);
+    // --- end pricing ---
+
     const isFlexible = dateInput?.mode === 'flexible';
     const flexibleNoMonth = isFlexible && !(dateInput as { preferredMonth?: string }).preferredMonth;
 
@@ -312,6 +331,7 @@ export function createLogisticsRouter(
         restrictionWarnings: restrictionsResult.warnings,
         transportOptions,
         transportCostEur: transportCostEur > 0 ? transportCostEur : undefined,
+        pricing,
         verdict,
       },
     };

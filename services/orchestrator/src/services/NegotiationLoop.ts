@@ -114,7 +114,10 @@ export class NegotiationLoop extends BaseService {
           // prices the real legs into the budget (and can block if it overshoots).
           logistics = await this.validateLogistics(tripId, round, proposal, tripContext);
           proposal = this.enforceCanonicalDestinations(
-            this.mergeTransportIntoProposal(proposal, logistics.content, confirmedLegs, destinations),
+            this.mergeRealPricingIntoProposal(
+              this.mergeTransportIntoProposal(proposal, logistics.content, confirmedLegs, destinations),
+              logistics.content,
+            ),
             destinations,
           );
           finance = await this.reviewFinance(tripId, round, proposal, tripContext);
@@ -169,7 +172,10 @@ export class NegotiationLoop extends BaseService {
         // Fold the chosen transport legs into the proposal so the next Finance
         // round counts their cost (folded #72: transport in budget).
         proposal = this.enforceCanonicalDestinations(
-          this.mergeTransportIntoProposal(proposal, logistics.content, confirmedLegs, destinations),
+          this.mergeRealPricingIntoProposal(
+            this.mergeTransportIntoProposal(proposal, logistics.content, confirmedLegs, destinations),
+            logistics.content,
+          ),
           destinations,
         );
 
@@ -538,6 +544,61 @@ export class NegotiationLoop extends BaseService {
       this.snapTravelSlot(day, best.departureTime);
     }
     return { ...proposal, itinerary };
+  }
+
+  // Card #73 — overwrite the LLM's guessed accommodation/activity/meal prices
+  // with real prices resolved by logistics-agent (SerpApi google_hotels,
+  // Google Places price_level, the seeded attractions table), same pattern as
+  // mergeTransportIntoProposal for transport. Each priced item also carries
+  // isEstimate/source so the finance agent can flag unpriced items to the user.
+  private mergeRealPricingIntoProposal(
+    proposal: Record<string, unknown>,
+    logisticsContent: Record<string, unknown>,
+  ): Record<string, unknown> {
+    const pricing = logisticsContent['pricing'] as
+      | {
+          accommodationByCity?: Record<string, { amount: number; isEstimate: boolean; source: string }>;
+          restaurantPricePerMeal?: { amount: number; isEstimate: boolean; source: string };
+          activityPriceByName?: Record<string, { amount: number; isEstimate: boolean; source: string }>;
+        }
+      | undefined;
+    if (!pricing) return proposal;
+
+    const accommodation = Array.isArray(proposal['accommodation'])
+      ? (proposal['accommodation'] as Array<Record<string, unknown>>).map((a) => {
+          const city = typeof a['city'] === 'string' ? a['city'] : undefined;
+          const priced = city ? pricing.accommodationByCity?.[city] : undefined;
+          if (!priced || priced.amount <= 0) return a;
+          return { ...a, pricePerNightPerPerson: priced.amount, isEstimate: priced.isEstimate, source: priced.source };
+        })
+      : proposal['accommodation'];
+
+    const itinerary = Array.isArray(proposal['itinerary'])
+      ? (proposal['itinerary'] as Array<Record<string, unknown>>).map((day) => {
+          const activities = Array.isArray(day['activities'])
+            ? (day['activities'] as Array<Record<string, unknown>>).map((act) => {
+                const name = typeof act['name'] === 'string' ? act['name'].toLowerCase() : undefined;
+                const priced = name ? pricing.activityPriceByName?.[name] : undefined;
+                if (!priced) return act;
+                return { ...act, estimatedCostPerPerson: priced.amount, isEstimate: priced.isEstimate, source: priced.source };
+              })
+            : day['activities'];
+
+          const restaurantPrice = pricing.restaurantPricePerMeal;
+          const meals = Array.isArray(day['meals']) && restaurantPrice
+            ? (day['meals'] as Array<Record<string, unknown>>).map((meal) => ({
+                ...meal,
+                estimatedCostPerPerson: restaurantPrice.amount,
+                isEstimate: restaurantPrice.isEstimate,
+                source: restaurantPrice.source,
+              }))
+            : day['meals'];
+
+          return { ...day, activities, meals };
+        })
+      : proposal['itinerary'];
+
+    return { ...proposal, accommodation, itinerary };
   }
 
   private buildTransportLeg(

@@ -7,6 +7,8 @@ export interface Place {
   location: { lat: number; lng: number };
   category: string;
   rating: number | null;
+  /** Google Places price_level (0-4). Only populated by searchRestaurants. */
+  priceLevel: number | null;
   openingHours: Record<string, string>;
   metadata: Record<string, unknown>;
 }
@@ -18,11 +20,21 @@ interface GooglePlacesTextSearchResponse {
     location?: { latitude: number; longitude: number };
     types?: string[];
     rating?: number;
+    priceLevel?: string;
     regularOpeningHours?: {
       weekdayDescriptions?: string[];
     };
   }>;
 }
+
+// Google Places (New) returns priceLevel as an enum string, not a 1-4 number.
+const PRICE_LEVEL_ENUM: Record<string, number> = {
+  PRICE_LEVEL_FREE: 0,
+  PRICE_LEVEL_INEXPENSIVE: 1,
+  PRICE_LEVEL_MODERATE: 2,
+  PRICE_LEVEL_EXPENSIVE: 3,
+  PRICE_LEVEL_VERY_EXPENSIVE: 4,
+};
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -58,6 +70,27 @@ export class PlacesService extends BaseService {
 
     const data = (await res.json()) as GooglePlacesTextSearchResponse;
     return (data.places ?? []).map((p) => this.mapPlace(p, category ?? 'attraction'));
+  }
+
+  async searchRestaurants(region: string): Promise<Place[]> {
+    const res = await fetch(`${this.baseUrl}/places:searchText`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': this.apiKey,
+        'X-Goog-FieldMask':
+          'places.id,places.displayName,places.location,places.types,places.rating,places.priceLevel',
+      },
+      body: JSON.stringify({ textQuery: `restaurants in ${region}`, maxResultCount: 20 }),
+    });
+
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Google Places API error ${res.status}: ${body}`);
+    }
+
+    const data = (await res.json()) as GooglePlacesTextSearchResponse;
+    return (data.places ?? []).map((p) => this.mapPlace(p, 'restaurant'));
   }
 
   /**
@@ -108,6 +141,7 @@ export class PlacesService extends BaseService {
       },
       category: p.types?.[0] ?? defaultCategory,
       rating: p.rating ?? null,
+      priceLevel: p.priceLevel ? PRICE_LEVEL_ENUM[p.priceLevel] ?? null : null,
       openingHours,
       metadata: { types: p.types ?? [] },
     };

@@ -34,6 +34,7 @@ const MOCK_PLACES: Place[] = [
     location: { lat: 48.8584, lng: 2.2945 },
     category: 'tourist_attraction',
     rating: 4.7,
+    priceLevel: null,
     openingHours: { Monday: '9:00-23:45' },
     metadata: {},
   },
