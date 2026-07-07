@@ -1,14 +1,10 @@
 import { BaseService } from '@itinera/shared';
+import type { RestrictionWarning } from '@itinera/shared';
 import type { ScheduledActivity } from '@/validators/TimingValidator';
 import type { PublicHoliday } from '@/services/HolidayService';
 import { LOCAL_RESTRICTIONS } from '@/config/localRestrictions';
 
-export interface RestrictionWarning {
-  day: number;
-  activityName: string;
-  warningType: 'public_holiday' | 'sunday_closure' | 'monday_closure' | 'opening_hours';
-  message: string;
-}
+export type { RestrictionWarning };
 
 export interface RestrictionsValidationResult {
   warnings: RestrictionWarning[];

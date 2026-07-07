@@ -13,6 +13,13 @@ export interface DayHeaderFields {
   country?: string
 }
 
+export interface RestrictionWarning {
+  day:          number
+  activityName: string
+  warningType:  string
+  message:      string
+}
+
 export interface CityTransitionFields {
   to:               string
   travelTime:       string
@@ -68,6 +75,10 @@ export function formatDayHeader(day: DayHeaderFields): string {
 
 export function formatTransition(t: CityTransitionFields): string {
   return `→ Moving to ${t.to} (${t.travelTime})`
+}
+
+export function warningsForDay(warnings: RestrictionWarning[] | undefined, dayNum: number): RestrictionWarning[] {
+  return (warnings ?? []).filter((w) => w.day === dayNum)
 }
 
 export function formatTransportLabel(opt: TransportOption, to: string): string {

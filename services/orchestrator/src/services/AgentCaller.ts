@@ -1,5 +1,5 @@
 import { BaseService } from '@itinera/shared';
-import type { DateInput, TransportMode, RouteGraph, BudgetPlan, TouristSlotInput } from '@itinera/shared';
+import type { DateInput, TransportMode, RouteGraph, BudgetPlan, TouristSlotInput, RestrictionWarning } from '@itinera/shared';
 import jwt from 'jsonwebtoken';
 import { config } from '@/config';
 
@@ -123,6 +123,20 @@ export class AgentCaller extends BaseService {
       { tripId, destinations, dateInput, transportPreference, budgetTotal, budgetCurrency, groupSize },
     );
     return resp.routeGraph;
+  }
+
+  async callLogisticsRestrictions(
+    tripId: string,
+    itinerary: Array<Record<string, unknown>>,
+    region: string | null,
+    dateInput: DateInput | null,
+  ): Promise<RestrictionWarning[]> {
+    const resp = await this.post<{ warnings: RestrictionWarning[] }>(
+      'logistics',
+      '/restrictions',
+      { tripId, itinerary, region: region ?? 'unknown', dateInput },
+    );
+    return resp.warnings;
   }
 
   async callFinanceEstimate(
