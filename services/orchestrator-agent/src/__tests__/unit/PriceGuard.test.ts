@@ -9,6 +9,7 @@ function makeProposal(overrides: Partial<ProposalOutput> = {}): ProposalOutput {
     accommodation: [{ city: 'Lisboa', name: 'Hotel Bairro Alto', type: 'hotel', pricePerNightPerPerson: 90, nights: 3, country: 'PT' }],
     itinerary: [{ day: 1, city: 'Lisboa', country: 'PT', activities: [{ time: 'morning', activity: 'Visit Belém Tower', venue: 'Belém Tower, Praça do Império', estimatedCostPerPerson: 6 }] }],
     satisfactionEstimates: { alice: 0.8 },
+    decisions: [],
     ...overrides,
   };
 }

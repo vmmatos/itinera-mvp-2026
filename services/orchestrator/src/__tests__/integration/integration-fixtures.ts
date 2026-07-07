@@ -99,6 +99,14 @@ export const MERGED_ITINERARY_CONTENT = {
   satisfactionEstimates: { alice: 0.82, bob: 0.79, carlos: 0.77, diana: 0.83 },
 };
 
+export const MERGED_ITINERARY_WITH_DECISIONS = {
+  ...MERGED_ITINERARY_CONTENT,
+  decisions: [
+    { agent: 'alice', city: 'Porto', date: '2026-09-10', slot: 'morning', activity: 'Ribeira Market', status: 'accepted', reason: 'no conflicts', estimatedCostPerPerson: 0 },
+    { agent: 'bob', city: 'Porto', date: '2026-09-10', slot: 'afternoon', activity: 'Wine tasting', status: 'rejected', reason: 'over per-block budget' },
+  ],
+};
+
 export const FINANCE_APPROVED_RESULT = {
   content: { verdict: { approved: true, budgetFeasible: true, issues: [], warnings: [], reasoning: 'Within budget.' } },
   latencyMs: 280, tokensUsed: 320,

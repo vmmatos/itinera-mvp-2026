@@ -26,7 +26,20 @@ CRITICAL RULES:
 
 4. Output must use real, specific venue names — never generic descriptions.
 
-5. Respond with valid JSON matching exactly this structure:
+5. Decision log — for every slot proposal you were given across all 4 tourist
+   agents (not only the ones you used), emit exactly one entry in `decisions`:
+   - status="accepted": the proposal was used as-is for that slot.
+   - status="merged": the proposal shaped the final activity for that slot but
+     was combined/adapted with another agent's idea, or placed in a different
+     slot/day than proposed.
+   - status="rejected": the proposal was not used (budget, duplicate, conflict,
+     or a competing proposal was preferred for that slot).
+   - reason: one concise sentence explaining the decision.
+   - Use the SAME city/date/slot/activity values the tourist agent proposed for
+     that entry (not the final merged slot), so it can be traced back to the
+     original proposal.
+
+6. Respond with valid JSON matching exactly this structure:
 
 {
   "accommodation": [
@@ -65,7 +78,19 @@ CRITICAL RULES:
     "carlos": number,
     "diana": number
   },
-  "unresolvedConflicts": string[]
+  "unresolvedConflicts": string[],
+  "decisions": [
+    {
+      "agent": string,
+      "city": string,
+      "date": string,
+      "slot": "morning" | "afternoon" | "evening",
+      "activity": string,
+      "status": "accepted" | "merged" | "rejected",
+      "reason": string,
+      "estimatedCostPerPerson": number
+    }
+  ]
 }
 
 Do not include any text outside the JSON. Do not include markdown code fences.

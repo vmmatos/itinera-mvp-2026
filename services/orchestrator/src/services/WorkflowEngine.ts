@@ -1,6 +1,6 @@
 import { BaseService } from '@itinera/shared';
 import type { TransportMode, AgentEvent, NegotiationCompleteEvent, TransportOption, RouteGraph, RestrictionWarning } from '@itinera/shared';
-import type { WorkflowContext, WorkflowState, TouristSlotInput, TransportPriorityResult } from '@itinera/shared';
+import type { WorkflowContext, WorkflowState, TouristSlotInput, TransportPriorityResult, ProposalDecision } from '@itinera/shared';
 import { WorkflowStateMachine } from '@/services/WorkflowStateMachine';
 import { evaluateTransportPriority } from '@/services/TransportPriorityEngine';
 import { StateManager } from '@/services/StateManager';
@@ -301,6 +301,16 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
           latencyMs: result.latencyMs,
           tokensUsed: result.tokensUsed,
         });
+
+        // Persist the raw slot proposal so its status can later be updated
+        // once the merge stage decides accept/merge/reject per agent.
+        void this.stateManager.saveProposal({
+          tripId: context.tripId,
+          agent: name,
+          round: 1,
+          content: result.content,
+          action: 'propose',
+        });
       });
 
       this.logger.info('Tourist agents completed', {
@@ -335,6 +345,13 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
         context.budgetPlan,
         tripContext,
       );
+
+      // Extract the per-proposal decision log before enforceCanonicalDestinations/
+      // stripBlockedSlotActivities/injectRouteGraphTransport run — those only
+      // operate on itinerary/accommodation and would silently drop unknown keys.
+      const decisions = Array.isArray(result.content['decisions'])
+        ? (result.content['decisions'] as ProposalDecision[])
+        : [];
 
       // Enforce canonical destinations, strip LLM activities from blocked
       // transit slots (merge.txt is prompt-level only — this is the hard
@@ -425,6 +442,34 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
       });
 
       await this.publishAgentEvent(context.tripId, 1, 'orchestrator', 'merge', finalItinerary);
+
+      // Publish one decision event per input tourist-agent slot proposal, and
+      // roll each agent's decisions up into a single aggregate proposal-status
+      // update (fine-grained per-slot detail lives only in the live events —
+      // the DB row stays at agent+round granularity, see saveProposal above).
+      const statusByAgent = new Map<string, ProposalDecision['status']>();
+      for (const decision of decisions) {
+        await this.publishAgentEvent(
+          context.tripId,
+          1,
+          decision.agent,
+          'decision',
+          decision as unknown as Record<string, unknown>,
+        );
+        const prev = statusByAgent.get(decision.agent);
+        if (prev !== 'accepted' && prev !== 'merged') {
+          statusByAgent.set(decision.agent, decision.status);
+        }
+      }
+      for (const [agent, status] of statusByAgent) {
+        await this.stateManager
+          .updateProposalStatus(context.tripId, agent, 1, status)
+          .catch((err) => {
+            this.logger.warn('Failed to update proposal status from decision', {
+              tripId: context.tripId, agent, error: String(err),
+            });
+          });
+      }
 
       return {
         ...context,

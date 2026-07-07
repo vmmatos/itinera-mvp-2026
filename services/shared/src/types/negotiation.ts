@@ -6,6 +6,8 @@
  * human-like decision (ship best-effort, or reject an impossible trip).
  */
 
+import { z } from 'zod';
+
 /** Finance agent's stance on the current proposal. */
 export interface FinanceVerdict {
   /** True when the proposal fits within budget right now. */
@@ -36,3 +38,46 @@ export interface NegotiationCompleteEvent {
   consensusScore: number;
   rejected: boolean;
 }
+
+/** One tourist agent's proposed activity for a single route-graph slot. */
+export interface SlotProposal {
+  city: string;
+  date: string;
+  slot: 'morning' | 'afternoon' | 'evening';
+  activity: string;
+  venue: string;
+  category?: string;
+  description?: string;
+  estimatedCostPerPerson: number;
+  durationMinutes?: number;
+  satisfies?: string[];
+}
+
+export type ProposalDecisionStatus = 'accepted' | 'merged' | 'rejected';
+
+/**
+ * Orchestrator's verdict on one input tourist-agent slot proposal, emitted
+ * during merge so the frontend can show per-proposal accept/merge/reject
+ * status instead of only the aggregate merged itinerary.
+ */
+export interface ProposalDecision {
+  agent: string;
+  city: string;
+  date: string;
+  slot: 'morning' | 'afternoon' | 'evening';
+  activity: string;
+  status: ProposalDecisionStatus;
+  reason: string;
+  estimatedCostPerPerson?: number;
+}
+
+export const ProposalDecisionSchema = z.object({
+  agent: z.string(),
+  city: z.string(),
+  date: z.string(),
+  slot: z.enum(['morning', 'afternoon', 'evening']),
+  activity: z.string(),
+  status: z.enum(['accepted', 'merged', 'rejected']),
+  reason: z.string(),
+  estimatedCostPerPerson: z.number().min(0).optional(),
+});
