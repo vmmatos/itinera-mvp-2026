@@ -795,15 +795,28 @@ const costCategories = computed<Array<{ label: string; amount: number }>>(() => 
     : []
 })
 
+// WorkflowEngine.executeMerge attaches weatherAssessment to the merged
+// itinerary (agent 'orchestrator') post-merge — the earlier 'logistics'
+// proposal is just the /plan route-graph and never carries it.
+const latestOrchestratorContent = computed((): Record<string, unknown> | null => {
+  const withItinerary = [...liveProposals.value]
+    .filter((p) => p.agent === 'orchestrator' && Array.isArray((p.content as Record<string, unknown> | null)?.['itinerary']))
+    .sort((a, b) => b.round - a.round)
+  return (withItinerary[0]?.content as Record<string, unknown> | null) ?? null
+})
+
+const weatherAssessment = computed<Record<string, unknown> | null>(() => {
+  const wa = latestOrchestratorContent.value?.['weatherAssessment']
+  return wa && typeof wa === 'object' ? (wa as Record<string, unknown>) : null
+})
+
 const weatherAlerts = computed<string[]>(() => {
-  const lp = liveProposals.value.find((p) => p.agent === 'logistics')
-  const c = lp?.content
+  const c = weatherAssessment.value
   return Array.isArray(c?.['weatherAlerts']) ? (c['weatherAlerts'] as string[]) : []
 })
 
 const logisticsWeatherSummary = computed<string | null>(() => {
-  const lp = liveProposals.value.find((p) => p.agent === 'logistics')
-  const c = lp?.content
+  const c = weatherAssessment.value
   if (!c) return null
   const summary = c['weatherSummary'] ?? c['summary'] ?? c['overview']
   return typeof summary === 'string' ? summary.slice(0, 200) : null
@@ -813,8 +826,7 @@ const logisticsWeatherSummary = computed<string | null>(() => {
 interface WeatherCard { day: number; date?: string; risk: string; label: string }
 
 const dayWeatherCards = computed<WeatherCard[]>(() => {
-  const lp = liveProposals.value.find((p) => p.agent === 'logistics')
-  const c = lp?.content
+  const c = weatherAssessment.value
   if (!c) return []
 
   const assessments = c['dayAssessments']

@@ -197,4 +197,55 @@ describe('AgentCaller', () => {
       caller.callLogisticsRestrictions('trip-1', [], 'Paris', null),
     ).rejects.toThrow('logistics returned 500');
   });
+
+  it('callLogisticsWeatherAssessment: posts to /weather-assessment with tripId, round, itinerary, region, dateInput, restrictionWarnings', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ assessment: AGENT_EVENT }),
+    });
+
+    const dateInput = { mode: 'fixed' as const, startDate: '2026-06-10', endDate: '2026-06-12' };
+    const restrictionWarnings = [
+      { day: 1, activityName: 'Jerónimos Monastery', warningType: 'public_holiday' as const, message: '⚠ closed' },
+    ];
+    const result = await caller.callLogisticsWeatherAssessment(
+      'trip-1', 1, [{ day: 1, activities: [] }], 'Lisbon, Portugal', dateInput, restrictionWarnings,
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://logistics-agent:3005/weather-assessment',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string) as Record<string, unknown>;
+    expect(sentBody['tripId']).toBe('trip-1');
+    expect(sentBody['round']).toBe(1);
+    expect(sentBody['region']).toBe('Lisbon, Portugal');
+    expect(sentBody['dateInput']).toEqual(dateInput);
+    expect(sentBody['restrictionWarnings']).toEqual(restrictionWarnings);
+    expect(result).toEqual(AGENT_RESULT);
+  });
+
+  it('callLogisticsWeatherAssessment: defaults region to "unknown" when null', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ assessment: AGENT_EVENT }),
+    });
+
+    await caller.callLogisticsWeatherAssessment('trip-1', 1, [], null, null);
+
+    const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string) as Record<string, unknown>;
+    expect(sentBody['region']).toBe('unknown');
+  });
+
+  it('callLogisticsWeatherAssessment: throws when logistics-agent returns non-ok response', async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: () => Promise.resolve('internal server error'),
+    });
+
+    await expect(
+      caller.callLogisticsWeatherAssessment('trip-1', 1, [], 'Paris', null),
+    ).rejects.toThrow('logistics returned 500');
+  });
 });

@@ -477,3 +477,86 @@ describe('TripInputForm — Refine trip (step 4)', () => {
     expect(wrapper.text()).toContain('Group composition')
   })
 })
+
+describe('TripInputForm — Step 4 weather forecast (not-show-meteo)', () => {
+  const VALID_TRIP_UUID = '11111111-1111-1111-1111-111111111111'
+
+  const mountAtStep4 = () =>
+    mount(TripInputForm, {
+      props: { viewTripId: VALID_TRIP_UUID },
+      global: {
+        plugins: [createPinia()],
+        stubs: { transition: true, TripTimeline: true, TripActivityCard: true, TripBudgetBreakdown: true, AppLogo: true },
+      },
+    })
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    vi.useFakeTimers()
+    tripStoreMock.loading  = false
+    tripStoreMock.error    = null
+    tripStoreMock.lastInput = null
+    agentStreamMock.events.value = []
+    agentStreamMock.connected.value = false
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('renders the weather forecast card from the orchestrator proposal\'s weatherAssessment', async () => {
+    mockApiGet
+      .mockResolvedValueOnce({ data: { data: { status: 'confirmed' } } })
+      .mockResolvedValueOnce({
+        data: {
+          data: [
+            {
+              tripId: VALID_TRIP_UUID, type: 'propose', agent: 'orchestrator', round: 1, timestamp: '',
+              content: {
+                itinerary: [{ day: 1, date: '2026-08-10', city: 'Lisbon', activities: [] }],
+                weatherAssessment: {
+                  overallRisk: 'high',
+                  dayAssessments: [{ day: 1, date: '2026-08-10', weatherRisk: 'high', affectedActivities: [] }],
+                  timingIssues: [],
+                  summary: 'Storms expected on day 1 — consider indoor alternatives.',
+                },
+              },
+            },
+          ],
+        },
+      })
+
+    const wrapper = mountAtStep4()
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('Weather forecast')
+    expect(wrapper.text()).toContain('Storms expected on day 1')
+  })
+
+  it('hides the weather forecast card when no orchestrator proposal carries a weatherAssessment', async () => {
+    // Regression guard for the bug this fixes: the 'logistics' proposal is
+    // the /plan route-graph and must NOT be read as a weather source.
+    mockApiGet
+      .mockResolvedValueOnce({ data: { data: { status: 'confirmed' } } })
+      .mockResolvedValueOnce({
+        data: {
+          data: [
+            {
+              tripId: VALID_TRIP_UUID, type: 'propose', agent: 'logistics', round: 1, timestamp: '',
+              content: { orderedLegs: [], cityStays: [] },
+            },
+          ],
+        },
+      })
+
+    const wrapper = mountAtStep4()
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).not.toContain('Weather forecast')
+  })
+})

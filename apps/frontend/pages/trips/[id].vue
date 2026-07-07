@@ -120,11 +120,25 @@ function extractItinerary(proposals: RawProposal[]): TimelineDay[] {
 
 const timelineDays = computed((): TimelineDay[] => extractItinerary(rawProposals.value))
 
+// The merged itinerary (agent 'orchestrator') is where WorkflowEngine.executeMerge
+// attaches post-merge, non-LLM-proposal data — restrictionWarnings, weatherAssessment
+// (and its suggestedDates for flexible trips). Real activities+dates only exist once
+// this proposal is saved, so none of that data lives on the earlier 'logistics'
+// proposal (that one is just the /plan route-graph).
+const latestMergedContent = computed((): Record<string, unknown> | null => {
+  const withItinerary = rawProposals.value
+    .filter((p) => {
+      const c = p.content as Record<string, unknown> | null
+      return p.agent === 'orchestrator' && Array.isArray(c?.['itinerary'])
+    })
+    .sort((a, b) => b.round - a.round)
+  return (withItinerary[0]?.content as Record<string, unknown> | null) ?? null
+})
+
 const suggestedDates = computed(() => {
   if (trip.value?.dateInput?.mode !== 'flexible') return null
-  const lp = rawProposals.value.find((p) => p.agent === 'logistics')
-  const c = lp?.content as Record<string, unknown> | null
-  const sd = c?.['suggestedDates'] as Record<string, unknown> | undefined
+  const weatherAssessment = latestMergedContent.value?.['weatherAssessment'] as Record<string, unknown> | undefined
+  const sd = weatherAssessment?.['suggestedDates'] as Record<string, unknown> | undefined
   if (!sd?.['startDate'] || !sd?.['endDate']) return null
   return {
     startDate: String(sd['startDate']),
@@ -145,18 +159,8 @@ const budgetBreakdown = computed<BudgetBreakdown | null>(() => {
   return bd ?? null
 })
 
-// Warnings are attached to the merged itinerary (agent 'orchestrator') by
-// WorkflowEngine.executeMerge — public holidays/closures only resolve once
-// real activities+dates exist, which is after the merge, not at 'logistics'
-// (that proposal is the earlier /plan route-graph and never carries them).
 const restrictionWarnings = computed((): RestrictionWarning[] => {
-  const withItinerary = rawProposals.value
-    .filter((p) => {
-      const c = p.content as Record<string, unknown> | null
-      return p.agent === 'orchestrator' && Array.isArray(c?.['itinerary'])
-    })
-    .sort((a, b) => b.round - a.round)
-  const c = withItinerary[0]?.content as Record<string, unknown> | null
+  const c = latestMergedContent.value
   return Array.isArray(c?.['restrictionWarnings'])
     ? (c['restrictionWarnings'] as RestrictionWarning[])
     : []

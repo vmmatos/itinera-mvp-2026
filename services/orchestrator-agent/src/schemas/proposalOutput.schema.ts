@@ -22,7 +22,8 @@ const DaySchema = z.object({
   city: z.string().optional(),
   country: z.string().optional(),
   activities: z.array(ActivitySchema).min(0),
-  cityTransition: z.object({ to: z.string(), travelTime: z.string().optional() }).optional(),
+  // The LLM writes an explicit `null` (not an absent key) on non-transition days.
+  cityTransition: z.object({ to: z.string(), travelTime: z.string().optional() }).nullable().optional(),
 });
 
 const AccommodationSchema = z.object({

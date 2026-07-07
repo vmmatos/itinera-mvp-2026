@@ -23,15 +23,27 @@ import { createOrchestratorRouter } from '@/routes/orchestrator';
 import type { ConflictAnalyzer } from '@/agents/ConflictAnalyzer';
 import type { CompromiseGenerator } from '@/agents/CompromiseGenerator';
 import type { ProposalRefiner } from '@/agents/ProposalRefiner';
+import type { ItineraryMerger } from '@/agents/ItineraryMerger';
 
 const mockAnalyzer = { analyze: vi.fn() } as unknown as ConflictAnalyzer;
 const mockGenerator = { generateCompromise: vi.fn() } as unknown as CompromiseGenerator;
 const mockRefiner = { refine: vi.fn() } as unknown as ProposalRefiner;
+const mockMerger = { merge: vi.fn() } as unknown as ItineraryMerger;
 
 function buildApp(): express.Express {
   const app = express();
   app.use(express.json());
   app.use(createOrchestratorRouter(mockAnalyzer, mockGenerator, mockRefiner));
+  app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    res.status(400).json({ success: false, error: { message: err.message } });
+  });
+  return app;
+}
+
+function buildAppWithMerger(): express.Express {
+  const app = express();
+  app.use(express.json());
+  app.use(createOrchestratorRouter(mockAnalyzer, mockGenerator, mockRefiner, mockMerger));
   app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     res.status(400).json({ success: false, error: { message: err.message } });
   });
@@ -218,5 +230,53 @@ describe('POST /refine', () => {
     expect(mockRefiner.refine).toHaveBeenCalledWith(
       VALID_UUID, 2, proposal, 'add culture', 'Paris trip',
     );
+  });
+});
+
+describe('POST /merge', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  const MERGE_BODY = {
+    tripId: VALID_UUID,
+    round: 1,
+    routeGraph: { orderedLegs: [], cityStays: [] },
+    touristOutputs: { alice: {} },
+    budgetPlan: { perBlock: [], totalEurPerPerson: 0, grandTotal: 0, feasible: true, bufferPct: 10, currency: 'EUR' },
+  };
+
+  it('501-equivalent (400 via ValidationError) when merger is not configured', async () => {
+    const app = buildApp(); // built without a merger
+    const res = await request(app).post('/merge').send(MERGE_BODY);
+    expect(res.status).toBe(400);
+  });
+
+  it('400 when tripId is missing', async () => {
+    const app = buildAppWithMerger();
+    const res = await request(app).post('/merge').send({ ...MERGE_BODY, tripId: undefined });
+    expect(res.status).toBe(400);
+  });
+
+  it('200 returns merged AgentEvent', async () => {
+    const mockMerged = { ...MOCK_EVENT, type: 'agent.propose' };
+    vi.mocked(mockMerger.merge).mockResolvedValue(mockMerged);
+
+    const app = buildAppWithMerger();
+    const res = await request(app).post('/merge').send(MERGE_BODY);
+
+    expect(res.status).toBe(200);
+    expect(res.body.merged).toBeDefined();
+    expect(res.body.merged.type).toBe('agent.propose');
+  });
+
+  it('propagates a merge failure as an error response instead of hanging the request', async () => {
+    vi.mocked(mockMerger.merge).mockRejectedValue(
+      new Error('orchestrator agent failed to produce a valid itinerary after retry (truncated=true)'),
+    );
+
+    const app = buildAppWithMerger();
+    const res = await request(app).post('/merge').send(MERGE_BODY);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toContain('failed to produce a valid itinerary');
   });
 });

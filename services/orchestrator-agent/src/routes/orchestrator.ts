@@ -53,8 +53,12 @@ export function createOrchestratorRouter(
     }
 
     const { tripId, round, proposals } = parsed.data;
-    const analysis = await analyzer.analyze(tripId, round, proposals);
-    res.json({ analysis });
+    try {
+      const analysis = await analyzer.analyze(tripId, round, proposals);
+      res.json({ analysis });
+    } catch (err) {
+      next(err as Error);
+    }
   });
 
   router.post('/propose', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -65,8 +69,12 @@ export function createOrchestratorRouter(
     }
 
     const { tripId, round, conflicts, context } = parsed.data;
-    const compromise = await generator.generateCompromise(tripId, round, conflicts, context);
-    res.json({ compromise });
+    try {
+      const compromise = await generator.generateCompromise(tripId, round, conflicts, context);
+      res.json({ compromise });
+    } catch (err) {
+      next(err as Error);
+    }
   });
 
   router.post('/refine', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -77,8 +85,12 @@ export function createOrchestratorRouter(
     }
 
     const { tripId, round, proposal, feedback, context } = parsed.data;
-    const refined = await refiner.refine(tripId, round, proposal, feedback, context);
-    res.json({ refined });
+    try {
+      const refined = await refiner.refine(tripId, round, proposal, feedback, context);
+      res.json({ refined });
+    } catch (err) {
+      next(err as Error);
+    }
   });
 
   // Merge endpoint for WorkflowEngine v2: takes route_graph + 4 tourist outputs → unified itinerary.
@@ -94,15 +106,19 @@ export function createOrchestratorRouter(
     }
 
     const { tripId, round, routeGraph, touristOutputs, budgetPlan, context } = parsed.data;
-    const merged = await merger.merge(
-      tripId,
-      round,
-      routeGraph as unknown as Parameters<ItineraryMerger['merge']>[2],
-      touristOutputs,
-      budgetPlan as unknown as Parameters<ItineraryMerger['merge']>[4],
-      context,
-    );
-    res.json({ merged });
+    try {
+      const merged = await merger.merge(
+        tripId,
+        round,
+        routeGraph as unknown as Parameters<ItineraryMerger['merge']>[2],
+        touristOutputs,
+        budgetPlan as unknown as Parameters<ItineraryMerger['merge']>[4],
+        context,
+      );
+      res.json({ merged });
+    } catch (err) {
+      next(err as Error);
+    }
   });
 
   return router;

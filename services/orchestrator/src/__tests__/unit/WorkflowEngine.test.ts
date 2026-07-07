@@ -720,3 +720,90 @@ describe('WorkflowEngine — local restriction warnings (#76)', () => {
     expect(stateManager.transitionStatus).toHaveBeenCalledWith(TRIP_ID, 'confirmed');
   });
 });
+
+describe('WorkflowEngine — weather assessment (not-show-meteo)', () => {
+  it('attaches weatherAssessment from callLogisticsWeatherAssessment onto the saved merge proposal', async () => {
+    setupCommonMocks(stateManager, eventPublisher);
+    vi.mocked(agentCaller.callLogisticsPlan).mockResolvedValue(ROUTE_GRAPH);
+    vi.mocked(agentCaller.callFinanceEstimate).mockResolvedValue(BUDGET_PLAN);
+    vi.mocked(agentCaller.callPreferenceAgentSlots).mockResolvedValue([
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+    ]);
+    vi.mocked(agentCaller.callOrchestratorMerge).mockResolvedValue({
+      content: JSON.parse(JSON.stringify(MERGED_ITINERARY)) as Record<string, unknown>,
+      latencyMs: 200,
+      tokensUsed: 200,
+    });
+    vi.mocked(agentCaller.callFinanceAgent).mockResolvedValue({
+      content: { verdict: { approved: true, budgetFeasible: true, issues: [] } },
+      latencyMs: 100,
+      tokensUsed: 100,
+    });
+    vi.mocked(agentCaller.callValidatorAgent).mockResolvedValue({
+      content: { scoring: { overallScore: 80 } },
+      latencyMs: 50,
+      tokensUsed: 50,
+    });
+    vi.mocked(agentCaller.callLogisticsRestrictions).mockResolvedValue([]);
+    const assessment = {
+      overallRisk: 'medium',
+      dayAssessments: [{ day: 1, date: '2026-08-10', weatherRisk: 'medium', affectedActivities: [] }],
+      timingIssues: [],
+      summary: 'Rain expected on day 1.',
+    };
+    vi.mocked(agentCaller.callLogisticsWeatherAssessment).mockResolvedValue({
+      content: assessment,
+      latencyMs: 300,
+      tokensUsed: 400,
+    });
+    driveHappyPath();
+
+    await engine.run(TRIP_ID);
+
+    expect(agentCaller.callLogisticsWeatherAssessment).toHaveBeenCalledWith(
+      TRIP_ID, 1, MERGED_ITINERARY.itinerary, MOCK_TRIP.region, expect.objectContaining({ mode: 'fixed' }), [],
+    );
+    expect(mergedProposalContent()['weatherAssessment']).toEqual(assessment);
+    expect(stateManager.logAgentCall).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: 'logistics', action: 'weather-assessment', tokensUsed: 400 }),
+    );
+  });
+
+  it('does not block the merge or trip confirmation when the weather assessment call fails', async () => {
+    setupCommonMocks(stateManager, eventPublisher);
+    vi.mocked(agentCaller.callLogisticsPlan).mockResolvedValue(ROUTE_GRAPH);
+    vi.mocked(agentCaller.callFinanceEstimate).mockResolvedValue(BUDGET_PLAN);
+    vi.mocked(agentCaller.callPreferenceAgentSlots).mockResolvedValue([
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+    ]);
+    vi.mocked(agentCaller.callOrchestratorMerge).mockResolvedValue({
+      content: JSON.parse(JSON.stringify(MERGED_ITINERARY)) as Record<string, unknown>,
+      latencyMs: 200,
+      tokensUsed: 200,
+    });
+    vi.mocked(agentCaller.callFinanceAgent).mockResolvedValue({
+      content: { verdict: { approved: true, budgetFeasible: true, issues: [] } },
+      latencyMs: 100,
+      tokensUsed: 100,
+    });
+    vi.mocked(agentCaller.callValidatorAgent).mockResolvedValue({
+      content: { scoring: { overallScore: 80 } },
+      latencyMs: 50,
+      tokensUsed: 50,
+    });
+    vi.mocked(agentCaller.callLogisticsRestrictions).mockResolvedValue([]);
+    vi.mocked(agentCaller.callLogisticsWeatherAssessment).mockRejectedValue(new Error('logistics-agent unreachable'));
+    driveHappyPath();
+
+    await engine.run(TRIP_ID);
+
+    expect(mergedProposalContent()['weatherAssessment']).toEqual({});
+    expect(stateManager.transitionStatus).toHaveBeenCalledWith(TRIP_ID, 'confirmed');
+  });
+});

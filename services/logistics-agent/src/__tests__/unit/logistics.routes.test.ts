@@ -878,3 +878,140 @@ describe('POST /restrictions', () => {
     expect(fetchSpy).not.toHaveBeenCalled(); // no country resolved → holiday lookup skipped entirely
   });
 });
+
+// The orchestrator's merged itinerary is v2-shaped: activities carry
+// act['activity']/act['time'] (slot) rather than /validate's legacy
+// name/startTime/endTime, and transport legs key off leg['departureTime'].
+const V2_ITINERARY_DAY = {
+  day: 1,
+  date: '2026-06-01',
+  city: 'Paris',
+  activities: [{ activity: 'Eiffel Tower visit', time: 'morning' }],
+  transport: [],
+};
+
+describe('POST /weather-assessment', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(mockRedis.get).mockResolvedValue(null);
+    vi.mocked(mockRedis.set).mockResolvedValue(undefined);
+    vi.mocked(mockWeather.getMultiDayForecast).mockResolvedValue([MOCK_FORECAST]);
+    vi.mocked(mockTiming.validate).mockReturnValue(MOCK_TIMING_RESULT);
+    vi.mocked(mockAnalyzer.analyze).mockResolvedValue(MOCK_AGENT_EVENT);
+  });
+
+  it('400 when tripId is missing', async () => {
+    const app = buildApp();
+    const res = await request(app).post('/weather-assessment').send({
+      round: 1,
+      itinerary: [V2_ITINERARY_DAY],
+      region: 'Paris',
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('400 when tripId is not a UUID', async () => {
+    const app = buildApp();
+    const res = await request(app).post('/weather-assessment').send({
+      tripId: 'not-a-uuid',
+      round: 1,
+      itinerary: [V2_ITINERARY_DAY],
+      region: 'Paris',
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('200 returns the analyzer assessment on valid input', async () => {
+    const app = buildApp();
+    const res = await request(app).post('/weather-assessment').send({
+      tripId: VALID_UUID,
+      round: 1,
+      itinerary: [V2_ITINERARY_DAY],
+      region: 'Paris',
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.assessment).toBeDefined();
+    expect(res.body.assessment.content.overallRisk).toBe('low');
+  });
+
+  it('extracts v2-shaped activities (activity/time slot) for TimingValidator', async () => {
+    const app = buildApp();
+    await request(app).post('/weather-assessment').send({
+      tripId: VALID_UUID,
+      round: 1,
+      itinerary: [V2_ITINERARY_DAY],
+      region: 'Paris',
+    });
+
+    expect(mockTiming.validate).toHaveBeenCalledOnce();
+    const [activities] = (mockTiming.validate as ReturnType<typeof vi.fn>).mock.calls[0] as [unknown[]];
+    expect(activities).toHaveLength(1);
+    expect((activities[0] as { name: string; startTime: string }).name).toBe('Eiffel Tower visit');
+    expect((activities[0] as { name: string; startTime: string }).startTime).toBe('09:00'); // morning slot fallback
+  });
+
+  it('extracts v2-shaped transport legs (departureTime) for TimingValidator', async () => {
+    const app = buildApp();
+    await request(app).post('/weather-assessment').send({
+      tripId: VALID_UUID,
+      round: 1,
+      itinerary: [{
+        ...V2_ITINERARY_DAY,
+        transport: [{ from: 'Paris', to: 'Lyon', departureTime: '14:00', durationMinutes: 120 }],
+      }],
+      region: 'Paris',
+    });
+
+    const [, transport] = (mockTiming.validate as ReturnType<typeof vi.fn>).mock.calls[0] as [unknown[], unknown[]];
+    expect(transport).toHaveLength(1);
+    expect(transport[0]).toMatchObject({ from: 'Paris', to: 'Lyon', startTime: '14:00', durationMinutes: 120 });
+  });
+
+  it('passes restrictionWarnings through to the analyzer', async () => {
+    const app = buildApp();
+    const warnings = [{ day: 1, activityName: 'Eiffel Tower visit', warningType: 'public_holiday' as const, message: 'closed' }];
+
+    await request(app).post('/weather-assessment').send({
+      tripId: VALID_UUID,
+      round: 1,
+      itinerary: [V2_ITINERARY_DAY],
+      region: 'Paris',
+      restrictionWarnings: warnings,
+    });
+
+    expect(mockAnalyzer.analyze).toHaveBeenCalledWith(
+      VALID_UUID, 1, expect.any(Array), expect.any(Array), MOCK_TIMING_RESULT, null, warnings,
+    );
+  });
+
+  it('reuses the Redis-cached forecast (same cache key convention as /validate)', async () => {
+    vi.mocked(mockRedis.get).mockResolvedValue([MOCK_FORECAST]);
+
+    const app = buildApp();
+    await request(app).post('/weather-assessment').send({
+      tripId: VALID_UUID,
+      round: 1,
+      itinerary: [V2_ITINERARY_DAY],
+      region: 'Paris',
+    });
+
+    expect(mockRedis.get).toHaveBeenCalledWith('weather:Paris:multi');
+    expect(mockWeather.getMultiDayForecast).not.toHaveBeenCalled();
+  });
+
+  it('500s via the error handler when the analyzer call fails, instead of hanging the request', async () => {
+    vi.mocked(mockAnalyzer.analyze).mockRejectedValue(new Error('Claude API unreachable'));
+
+    const app = buildApp();
+    const res = await request(app).post('/weather-assessment').send({
+      tripId: VALID_UUID,
+      round: 1,
+      itinerary: [V2_ITINERARY_DAY],
+      region: 'Paris',
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toContain('Claude API unreachable');
+  });
+});
