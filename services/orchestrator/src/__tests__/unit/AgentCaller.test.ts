@@ -148,4 +148,53 @@ describe('AgentCaller', () => {
     const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string) as Record<string, unknown>;
     expect(sentBody['dateInput']).toEqual(dateInput);
   });
+
+  it('callLogisticsRestrictions: posts to /restrictions with tripId, itinerary, region, dateInput', async () => {
+    const warnings = [
+      { day: 1, activityName: 'Jerónimos Monastery', warningType: 'public_holiday', message: '⚠ closed' },
+    ];
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ warnings }),
+    });
+
+    const dateInput = { mode: 'fixed' as const, startDate: '2026-06-10', endDate: '2026-06-12' };
+    const result = await caller.callLogisticsRestrictions(
+      'trip-1', [{ day: 1, activities: [] }], 'Lisbon, Portugal', dateInput,
+    );
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://logistics-agent:3005/restrictions',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string) as Record<string, unknown>;
+    expect(sentBody['tripId']).toBe('trip-1');
+    expect(sentBody['region']).toBe('Lisbon, Portugal');
+    expect(sentBody['dateInput']).toEqual(dateInput);
+    expect(result).toEqual(warnings);
+  });
+
+  it('callLogisticsRestrictions: defaults region to "unknown" when null', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ warnings: [] }),
+    });
+
+    await caller.callLogisticsRestrictions('trip-1', [], null, null);
+
+    const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string) as Record<string, unknown>;
+    expect(sentBody['region']).toBe('unknown');
+  });
+
+  it('callLogisticsRestrictions: throws when logistics-agent returns non-ok response', async () => {
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: () => Promise.resolve('internal server error'),
+    });
+
+    await expect(
+      caller.callLogisticsRestrictions('trip-1', [], 'Paris', null),
+    ).rejects.toThrow('logistics returned 500');
+  });
 });

@@ -85,6 +85,13 @@ export interface TransportPriorityResult {
   downgradeReason?: string;
 }
 
+export interface RestrictionWarning {
+  day: number;
+  activityName: string;
+  warningType: 'public_holiday' | 'sunday_closure' | 'monday_closure' | 'opening_hours';
+  message: string;
+}
+
 export type WorkflowActionType =
   | 'CALL_LOGISTICS_PLAN'
   | 'CALL_FINANCE_ESTIMATE'

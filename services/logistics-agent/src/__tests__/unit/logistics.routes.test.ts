@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 
@@ -35,8 +35,8 @@ import type { AttractionDB } from '@/services/AttractionDB';
 import type { RedisService } from '@/services/RedisService';
 import type { TimingValidator } from '@/validators/TimingValidator';
 import type { WeatherAnalyzer } from '@/agents/WeatherAnalyzer';
-import type { HolidayService } from '@/services/HolidayService';
-import type { RestrictionsValidator } from '@/validators/RestrictionsValidator';
+import { HolidayService } from '@/services/HolidayService';
+import { RestrictionsValidator } from '@/validators/RestrictionsValidator';
 import type { Place } from '@/services/PlacesService';
 import type { TransportService } from '@/services/TransportService';
 import type { PricingEnricher } from '@/services/PricingEnricher';
@@ -743,5 +743,138 @@ describe('POST /plan — transit slot blocking', () => {
 
     expect(windows.every(w => !w.isTransitDay)).toBe(true);
     expect(mockTransportService.resolveTransportOptions).not.toHaveBeenCalled();
+  });
+});
+
+// Real HolidayService + RestrictionsValidator (not mocks) — only date.nager.at's `fetch`
+// and Google Places (via mockAttractions) are stubbed. Proves the full glue (region →
+// country code → holiday fetch → warning) actually works end to end, not just that each
+// unit is individually correct in isolation.
+describe('POST /restrictions', () => {
+  const realHolidayService = new HolidayService(mockRedis);
+  const realRestrictionsValidator = new RestrictionsValidator();
+
+  function restrictionsApp(): express.Express {
+    const app = express();
+    app.use(express.json());
+    app.use(createLogisticsRouter(
+      mockWeather, mockAttractions, mockTiming, mockAnalyzer, mockRedis,
+      realHolidayService, realRestrictionsValidator, mockTransportService, mockPricingEnricher,
+    ));
+    app.use((err: Error & { statusCode?: number }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+      res.status(err.statusCode ?? 400).json({ success: false, error: { message: err.message } });
+    });
+    return app;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(mockRedis.get).mockResolvedValue(null);
+    vi.mocked(mockRedis.set).mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('400 when tripId is missing', async () => {
+    const res = await request(restrictionsApp()).post('/restrictions').send({
+      itinerary: [VALID_ITINERARY_DAY],
+      region: 'Lisbon, Portugal',
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('400 when tripId is not a UUID', async () => {
+    const res = await request(restrictionsApp()).post('/restrictions').send({
+      tripId: 'not-a-uuid',
+      itinerary: [VALID_ITINERARY_DAY],
+      region: 'Lisbon, Portugal',
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('resolves "Lisbon, Portugal" to PT and returns a real public holiday warning', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve([
+        { date: '2026-06-10', localName: 'Dia de Portugal', name: 'Portugal Day', countryCode: 'PT', fixed: true, global: true, counties: null, types: ['Public'] },
+      ]),
+    }));
+    vi.mocked(mockAttractions.getAttractions).mockResolvedValue([]);
+
+    const res = await request(restrictionsApp()).post('/restrictions').send({
+      tripId: VALID_UUID,
+      itinerary: [{
+        day: 1,
+        activities: [{ name: 'Jerónimos Monastery', startTime: '10:00', endTime: '12:00' }],
+      }],
+      region: 'Lisbon, Portugal',
+      dateInput: { mode: 'fixed', startDate: '2026-06-10', endDate: '2026-06-10' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.warnings).toHaveLength(1);
+    expect(res.body.warnings[0].warningType).toBe('public_holiday');
+    expect(res.body.warnings[0].activityName).toBe('Jerónimos Monastery');
+    expect(res.body.warnings[0].message).toContain('Dia de Portugal');
+  });
+
+  it('still returns Sunday-closure warnings when Google Places is unavailable', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve([]) }));
+    vi.mocked(mockAttractions.getAttractions).mockRejectedValue(new Error('Places API down'));
+
+    const res = await request(restrictionsApp()).post('/restrictions').send({
+      tripId: VALID_UUID,
+      itinerary: [{
+        day: 1,
+        activities: [{ name: 'Lidl supermarket', startTime: '10:00', endTime: '11:00' }],
+      }],
+      region: 'Berlin, Germany',
+      dateInput: { mode: 'fixed', startDate: '2026-06-07', endDate: '2026-06-07' }, // Sunday
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.warnings).toHaveLength(1);
+    expect(res.body.warnings[0].warningType).toBe('sunday_closure');
+    expect(res.body.warnings[0].message).toContain('Germany');
+  });
+
+  it('never fails the request when date.nager.at is unreachable — returns 200 with empty warnings', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network down')));
+    vi.mocked(mockAttractions.getAttractions).mockResolvedValue([]);
+
+    const res = await request(restrictionsApp()).post('/restrictions').send({
+      tripId: VALID_UUID,
+      itinerary: [{
+        day: 1,
+        activities: [{ name: 'City walk', startTime: '10:00', endTime: '11:00' }],
+      }],
+      region: 'Lisbon, Portugal',
+      dateInput: { mode: 'fixed', startDate: '2026-06-11', endDate: '2026-06-11' }, // not a holiday
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.warnings).toEqual([]);
+  });
+
+  it('defaults to empty warnings for an unresolvable region (no country in the string)', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    vi.mocked(mockAttractions.getAttractions).mockResolvedValue([]);
+
+    const res = await request(restrictionsApp()).post('/restrictions').send({
+      tripId: VALID_UUID,
+      itinerary: [{
+        day: 1,
+        activities: [{ name: 'Lidl supermarket', startTime: '10:00', endTime: '11:00' }],
+      }],
+      region: 'Paris', // bare city, no country — toCountryCode returns null
+      dateInput: { mode: 'fixed', startDate: '2026-06-07', endDate: '2026-06-07' }, // Sunday
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.warnings).toEqual([]);
+    expect(fetchSpy).not.toHaveBeenCalled(); // no country resolved → holiday lookup skipped entirely
   });
 });

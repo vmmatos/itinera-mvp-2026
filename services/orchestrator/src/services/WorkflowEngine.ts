@@ -1,5 +1,5 @@
 import { BaseService } from '@itinera/shared';
-import type { TransportMode, AgentEvent, NegotiationCompleteEvent, TransportOption, RouteGraph } from '@itinera/shared';
+import type { TransportMode, AgentEvent, NegotiationCompleteEvent, TransportOption, RouteGraph, RestrictionWarning } from '@itinera/shared';
 import type { WorkflowContext, WorkflowState, TouristSlotInput, TransportPriorityResult } from '@itinera/shared';
 import { WorkflowStateMachine } from '@/services/WorkflowStateMachine';
 import { evaluateTransportPriority } from '@/services/TransportPriorityEngine';
@@ -347,6 +347,33 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
         ? this.injectRouteGraphTransport(stripped, context.routeGraph, context.destinations)
         : stripped;
 
+      // Public holiday / Sunday-Monday closure checks — real activities + dates only
+      // exist from this point on, so this can't run any earlier in the workflow.
+      // Non-blocking: a failure here must never stop the itinerary from being saved.
+      const restrictionsStart = Date.now();
+      let restrictionWarnings: RestrictionWarning[] = [];
+      try {
+        restrictionWarnings = await this.agentCaller.callLogisticsRestrictions(
+          context.tripId,
+          (withTransport as Record<string, unknown>)['itinerary'] as Array<Record<string, unknown>> ?? [],
+          trip.region ?? null,
+          context.dates,
+        );
+        await this.stateManager.logAgentCall({
+          tripId: context.tripId,
+          agent: 'logistics',
+          round: 1,
+          action: 'restrictions',
+          latencyMs: Date.now() - restrictionsStart,
+          tokensUsed: 0,
+        });
+      } catch (restrictionsErr) {
+        this.logger.warn('Restriction check failed — continuing without warnings', {
+          tripId: context.tripId, error: String(restrictionsErr),
+        });
+      }
+      const finalItinerary = { ...withTransport, restrictionWarnings };
+
       await this.stateManager.logAgentCall({
         tripId: context.tripId,
         agent: 'orchestrator',
@@ -360,16 +387,16 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
         tripId: context.tripId,
         agent: 'orchestrator',
         round: 1,
-        content: withTransport,
+        content: finalItinerary,
         action: 'propose',
         reasoning: result.reasoning,
       });
 
-      await this.publishAgentEvent(context.tripId, 1, 'orchestrator', 'merge', withTransport);
+      await this.publishAgentEvent(context.tripId, 1, 'orchestrator', 'merge', finalItinerary);
 
       return {
         ...context,
-        mergedItinerary: withTransport,
+        mergedItinerary: finalItinerary,
         totalTokensUsed: context.totalTokensUsed + result.tokensUsed,
       };
     } catch (err) {

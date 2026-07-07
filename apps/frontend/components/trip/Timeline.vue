@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { ActivityCardProps } from '~/components/trip/ActivityCard.vue'
-import { formatDayHeader } from '~/utils/itinerary'
+import type { RestrictionWarning } from '~/utils/itinerary'
+import { formatDayHeader, warningsForDay } from '~/utils/itinerary'
 
 export interface TimelineActivity extends ActivityCardProps {
   time?:      string
@@ -16,23 +17,12 @@ export interface TimelineDay {
   meals?:     Array<{ type: string; name: string }>
 }
 
-interface RestrictionWarning {
-  day:          number
-  activityName: string
-  warningType:  string
-  message:      string
-}
-
 const props = defineProps<{
   days:                 TimelineDay[]
   isDebug?:             boolean
   currencySymbol?:      string
   restrictionWarnings?: RestrictionWarning[]
 }>()
-
-function warningsForDay(dayNum: number): RestrictionWarning[] {
-  return (props.restrictionWarnings ?? []).filter((w) => w.day === dayNum)
-}
 
 type TimeSlot = 'morning' | 'afternoon' | 'evening' | 'unscheduled'
 
@@ -82,11 +72,11 @@ function activitiesForSlot(activities: TimelineActivity[], slot: TimeSlot): Time
 
       <!-- Restriction warnings (public holidays, closure rules, opening hours) -->
       <div
-        v-if="warningsForDay(day.day).length > 0"
+        v-if="warningsForDay(props.restrictionWarnings, day.day).length > 0"
         class="tl-restrictions"
       >
         <p
-          v-for="(w, wi) in warningsForDay(day.day)"
+          v-for="(w, wi) in warningsForDay(props.restrictionWarnings, day.day)"
           :key="wi"
           class="tl-restriction-item"
         >{{ w.message }}</p>

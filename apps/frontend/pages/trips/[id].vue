@@ -2,6 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import type { Trip, TransportOption, TransportActivityData, BudgetBreakdown } from '~/types/index'
 import type { TimelineDay, TimelineActivity } from '~/components/trip/Timeline.vue'
+import type { RestrictionWarning } from '~/utils/itinerary'
 import { formatTransportLabel } from '~/utils/itinerary'
 
 definePageMeta({
@@ -144,16 +145,18 @@ const budgetBreakdown = computed<BudgetBreakdown | null>(() => {
   return bd ?? null
 })
 
-interface RestrictionWarning {
-  day: number
-  activityName: string
-  warningType: string
-  message: string
-}
-
+// Warnings are attached to the merged itinerary (agent 'orchestrator') by
+// WorkflowEngine.executeMerge — public holidays/closures only resolve once
+// real activities+dates exist, which is after the merge, not at 'logistics'
+// (that proposal is the earlier /plan route-graph and never carries them).
 const restrictionWarnings = computed((): RestrictionWarning[] => {
-  const lp = rawProposals.value.find((p) => p.agent === 'logistics')
-  const c = lp?.content as Record<string, unknown> | null
+  const withItinerary = rawProposals.value
+    .filter((p) => {
+      const c = p.content as Record<string, unknown> | null
+      return p.agent === 'orchestrator' && Array.isArray(c?.['itinerary'])
+    })
+    .sort((a, b) => b.round - a.round)
+  const c = withItinerary[0]?.content as Record<string, unknown> | null
   return Array.isArray(c?.['restrictionWarnings'])
     ? (c['restrictionWarnings'] as RestrictionWarning[])
     : []

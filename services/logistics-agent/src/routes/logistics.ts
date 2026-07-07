@@ -2,7 +2,7 @@ import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { ValidationError, createLogger } from '@itinera/shared';
-import type { TransportMode, TransportOption, RouteGraph, CityStay, TimeWindow, TransportLeg } from '@itinera/shared';
+import type { TransportMode, TransportOption, RouteGraph, CityStay, TimeWindow, TransportLeg, RestrictionWarning } from '@itinera/shared';
 import type { WeatherService } from '@/services/WeatherService';
 import type { AttractionDB } from '@/services/AttractionDB';
 import type { RedisService } from '@/services/RedisService';
@@ -87,6 +87,90 @@ const WeatherQuerySchema = z.object({
   date: z.string().optional(),
 });
 
+const RestrictionsSchema = z.object({
+  tripId:    z.string().uuid(),
+  itinerary: z.array(z.record(z.unknown())).default([]),
+  region:    z.string().default('unknown'),
+  dateInput: DateInputSchema,
+});
+
+/** Flattens a fixed dateInput into one ISO date per itinerary day. Empty for flexible dates. */
+function buildTripDates(rawItinerary: Array<Record<string, unknown>>, dateInput: z.infer<typeof DateInputSchema>): string[] {
+  const tripDates: string[] = [];
+  if (dateInput?.mode === 'fixed') {
+    const start = new Date((dateInput as { startDate: string }).startDate);
+    const n = Math.max(rawItinerary.length, 1);
+    for (let i = 0; i < n; i++) {
+      const d = new Date(start);
+      d.setUTCDate(start.getUTCDate() + i);
+      tripDates.push(d.toISOString().slice(0, 10));
+    }
+  }
+  return tripDates;
+}
+
+/**
+ * Public holiday / Sunday-Monday closure / opening-hours checks — pure code,
+ * no LLM, no weather, no transport. Shared by /validate (legacy, still
+ * exercised by its own tests) and the lean /restrictions endpoint.
+ */
+async function computeRestrictionWarnings(
+  rawItinerary: Array<Record<string, unknown>>,
+  region: string,
+  dateInput: z.infer<typeof DateInputSchema>,
+  holidayService: HolidayService,
+  restrictionsValidator: RestrictionsValidator,
+  attractions: AttractionDB,
+): Promise<RestrictionWarning[]> {
+  const countryCode = toCountryCode(region);
+  const tripDates = buildTripDates(rawItinerary, dateInput);
+
+  const tripYears = [...new Set(tripDates.map((d) => Number(d.slice(0, 4))))];
+  const holidays =
+    countryCode && tripYears.length > 0
+      ? (await Promise.all(tripYears.map((y) => holidayService.getHolidays(countryCode, y)))).flat()
+      : [];
+
+  let openingHoursMap: Map<string, Record<string, string>> = new Map();
+  try {
+    const places = await attractions.getAttractions(region);
+    openingHoursMap = new Map(places.map((p) => [p.name.toLowerCase(), p.openingHours]));
+  } catch {
+    // Google Places unavailable — opening hours check skipped, other restriction checks still run
+  }
+
+  // Orchestrator sends act['activity'] + act['time'] (slot) rather than name/startTime/endTime.
+  // Build a separate list for restriction checks that handles both field shapes.
+  const TIME_SLOT_MAP: Record<string, string> = { morning: '09:00', afternoon: '14:00', evening: '19:00' };
+  const activitiesForRestrictions: ScheduledActivity[] = rawItinerary.flatMap((day) => {
+    const dayNum = typeof day['day'] === 'number' ? day['day'] : 1;
+    const acts = Array.isArray(day['activities']) ? (day['activities'] as Array<Record<string, unknown>>) : [];
+    return acts
+      .map((act) => {
+        const name =
+          typeof act['name'] === 'string' ? act['name'] :
+          typeof act['activity'] === 'string' ? act['activity'] : null;
+        if (!name) return null;
+        const timeSlot = typeof act['time'] === 'string' ? act['time'].toLowerCase() : '';
+        const startTime =
+          typeof act['startTime'] === 'string' ? act['startTime'] :
+          TIME_SLOT_MAP[timeSlot] ?? '10:00';
+        return { day: dayNum, name, startTime, endTime: '', location: region } satisfies ScheduledActivity;
+      })
+      .filter((a): a is ScheduledActivity => a !== null);
+  });
+
+  const result = restrictionsValidator.validate({
+    activities: activitiesForRestrictions,
+    tripDates,
+    countryCode,
+    holidays,
+    openingHoursMap,
+  });
+
+  return result.warnings;
+}
+
 export function createLogisticsRouter(
   weather: WeatherService,
   attractions: AttractionDB,
@@ -147,64 +231,13 @@ export function createLogisticsRouter(
     const timingResult = timing.validate(allActivities, allTransport);
 
     // --- Local restrictions ---
-    const countryCode = toCountryCode(region);
-
-    const tripDates: string[] = [];
-    if (dateInput?.mode === 'fixed') {
-      const start = new Date((dateInput as { startDate: string }).startDate);
-      const n = Math.max(rawItinerary.length, 1);
-      for (let i = 0; i < n; i++) {
-        const d = new Date(start);
-        d.setUTCDate(start.getUTCDate() + i);
-        tripDates.push(d.toISOString().slice(0, 10));
-      }
-    }
-
-    const tripYears = [...new Set(tripDates.map((d) => Number(d.slice(0, 4))))];
-    const holidays =
-      countryCode && tripYears.length > 0
-        ? (await Promise.all(tripYears.map((y) => holidayService.getHolidays(countryCode, y)))).flat()
-        : [];
-
-    let openingHoursMap: Map<string, Record<string, string>> = new Map();
-    try {
-      const places = await attractions.getAttractions(region);
-      openingHoursMap = new Map(places.map((p) => [p.name.toLowerCase(), p.openingHours]));
-    } catch {
-      // Google Places unavailable — opening hours check skipped, other restriction checks still run
-    }
-
-    // Orchestrator sends act['activity'] + act['time'] (slot) rather than name/startTime/endTime.
-    // Build a separate list for restriction checks that handles both field shapes.
-    const TIME_SLOT_MAP: Record<string, string> = { morning: '09:00', afternoon: '14:00', evening: '19:00' };
-    const activitiesForRestrictions: ScheduledActivity[] = rawItinerary.flatMap((day) => {
-      const dayNum = typeof day['day'] === 'number' ? day['day'] : 1;
-      const acts = Array.isArray(day['activities']) ? (day['activities'] as RawDay[]) : [];
-      return acts
-        .map((act) => {
-          const name =
-            typeof act['name'] === 'string' ? act['name'] :
-            typeof act['activity'] === 'string' ? act['activity'] : null;
-          if (!name) return null;
-          const timeSlot = typeof act['time'] === 'string' ? act['time'].toLowerCase() : '';
-          const startTime =
-            typeof act['startTime'] === 'string' ? act['startTime'] :
-            TIME_SLOT_MAP[timeSlot] ?? '10:00';
-          return { day: dayNum, name, startTime, endTime: '', location: region } satisfies ScheduledActivity;
-        })
-        .filter((a): a is ScheduledActivity => a !== null);
-    });
-
-    const restrictionsResult = restrictionsValidator.validate({
-      activities: activitiesForRestrictions,
-      tripDates,
-      countryCode,
-      holidays,
-      openingHoursMap,
-    });
+    const restrictionWarnings = await computeRestrictionWarnings(
+      rawItinerary, region, dateInput, holidayService, restrictionsValidator, attractions,
+    );
     // --- end restrictions ---
 
     // --- Transport resolution ---
+    const tripDates = buildTripDates(rawItinerary, dateInput);
     const preference = (transportPreference ?? 'best') as TransportMode;
     const transportOptions: Record<number, TransportOption[]> = {};
 
@@ -306,7 +339,7 @@ export function createLogisticsRouter(
       forecasts,
       timingResult,
       dateInput ?? null,
-      restrictionsResult.warnings,
+      restrictionWarnings,
       hasTransport ? transportOptions : undefined,
     );
 
@@ -320,7 +353,7 @@ export function createLogisticsRouter(
         ? (validationContent['timingIssues'] as unknown[])
         : [],
       timingResult,
-      restrictionWarnings: restrictionsResult.warnings,
+      restrictionWarnings,
       transportOptions,
     });
 
@@ -328,7 +361,7 @@ export function createLogisticsRouter(
       ...validation,
       content: {
         ...validationContent,
-        restrictionWarnings: restrictionsResult.warnings,
+        restrictionWarnings,
         transportOptions,
         transportCostEur: transportCostEur > 0 ? transportCostEur : undefined,
         pricing,
@@ -337,6 +370,24 @@ export function createLogisticsRouter(
     };
 
     res.json({ validation: augmentedValidation });
+  });
+
+  // Lightweight endpoint: public holiday / Sunday-Monday closure / opening-hours checks
+  // only — no weather, no transport, no pricing, no LLM. Used by the orchestrator right
+  // after the final itinerary is merged (dates + activities only exist by then).
+  router.post('/restrictions', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const parsed = RestrictionsSchema.safeParse(req.body);
+    if (!parsed.success) {
+      next(new ValidationError(JSON.stringify(parsed.error.flatten().fieldErrors)));
+      return;
+    }
+
+    const { itinerary, region, dateInput } = parsed.data;
+    const warnings = await computeRestrictionWarnings(
+      itinerary, region, dateInput, holidayService, restrictionsValidator, attractions,
+    );
+
+    res.json({ warnings });
   });
 
   // Lightweight endpoint: resolve transport legs for destination pairs only.

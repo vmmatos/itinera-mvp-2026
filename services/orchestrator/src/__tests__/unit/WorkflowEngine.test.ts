@@ -642,3 +642,81 @@ describe('WorkflowEngine — per-leg transport priority', () => {
     expect(withPriorities!.transportPriorities![0]!.wasPreferenceHonored).toBe(false);
   });
 });
+
+describe('WorkflowEngine — local restriction warnings (#76)', () => {
+  it('attaches restrictionWarnings from callLogisticsRestrictions onto the saved merge proposal', async () => {
+    setupCommonMocks(stateManager, eventPublisher);
+    vi.mocked(agentCaller.callLogisticsPlan).mockResolvedValue(ROUTE_GRAPH);
+    vi.mocked(agentCaller.callFinanceEstimate).mockResolvedValue(BUDGET_PLAN);
+    vi.mocked(agentCaller.callPreferenceAgentSlots).mockResolvedValue([
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+    ]);
+    vi.mocked(agentCaller.callOrchestratorMerge).mockResolvedValue({
+      content: JSON.parse(JSON.stringify(MERGED_ITINERARY)) as Record<string, unknown>,
+      latencyMs: 200,
+      tokensUsed: 200,
+    });
+    vi.mocked(agentCaller.callFinanceAgent).mockResolvedValue({
+      content: { verdict: { approved: true, budgetFeasible: true, issues: [] } },
+      latencyMs: 100,
+      tokensUsed: 100,
+    });
+    vi.mocked(agentCaller.callValidatorAgent).mockResolvedValue({
+      content: { scoring: { overallScore: 80 } },
+      latencyMs: 50,
+      tokensUsed: 50,
+    });
+    const warnings = [
+      { day: 1, activityName: 'Jerónimos Monastery', warningType: 'public_holiday' as const, message: '⚠ closed for Portugal Day' },
+    ];
+    vi.mocked(agentCaller.callLogisticsRestrictions).mockResolvedValue(warnings);
+    driveHappyPath();
+
+    await engine.run(TRIP_ID);
+
+    expect(agentCaller.callLogisticsRestrictions).toHaveBeenCalledWith(
+      TRIP_ID, MERGED_ITINERARY.itinerary, MOCK_TRIP.region, expect.objectContaining({ mode: 'fixed' }),
+    );
+    expect(mergedProposalContent()['restrictionWarnings']).toEqual(warnings);
+    expect(stateManager.logAgentCall).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: 'logistics', action: 'restrictions' }),
+    );
+  });
+
+  it('does not block the merge or trip confirmation when the restriction check fails', async () => {
+    setupCommonMocks(stateManager, eventPublisher);
+    vi.mocked(agentCaller.callLogisticsPlan).mockResolvedValue(ROUTE_GRAPH);
+    vi.mocked(agentCaller.callFinanceEstimate).mockResolvedValue(BUDGET_PLAN);
+    vi.mocked(agentCaller.callPreferenceAgentSlots).mockResolvedValue([
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+    ]);
+    vi.mocked(agentCaller.callOrchestratorMerge).mockResolvedValue({
+      content: JSON.parse(JSON.stringify(MERGED_ITINERARY)) as Record<string, unknown>,
+      latencyMs: 200,
+      tokensUsed: 200,
+    });
+    vi.mocked(agentCaller.callFinanceAgent).mockResolvedValue({
+      content: { verdict: { approved: true, budgetFeasible: true, issues: [] } },
+      latencyMs: 100,
+      tokensUsed: 100,
+    });
+    vi.mocked(agentCaller.callValidatorAgent).mockResolvedValue({
+      content: { scoring: { overallScore: 80 } },
+      latencyMs: 50,
+      tokensUsed: 50,
+    });
+    vi.mocked(agentCaller.callLogisticsRestrictions).mockRejectedValue(new Error('logistics-agent unreachable'));
+    driveHappyPath();
+
+    await engine.run(TRIP_ID);
+
+    expect(mergedProposalContent()['restrictionWarnings']).toEqual([]);
+    expect(stateManager.transitionStatus).toHaveBeenCalledWith(TRIP_ID, 'confirmed');
+  });
+});

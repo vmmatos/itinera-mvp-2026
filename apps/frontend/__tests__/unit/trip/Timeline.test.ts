@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { formatDayHeader, formatTransition } from '~/utils/itinerary'
+import { formatDayHeader, formatTransition, warningsForDay } from '~/utils/itinerary'
+import type { RestrictionWarning } from '~/utils/itinerary'
 
 describe('formatDayHeader', () => {
   // ── Happy path ──────────────────────────────────────────────
@@ -75,5 +76,48 @@ describe('formatTransition', () => {
   it('handles empty travelTime gracefully', () => {
     expect(formatTransition({ to: 'Sintra', travelTime: '' }))
       .toBe('→ Moving to Sintra ()')
+  })
+})
+
+describe('warningsForDay', () => {
+  // ── Happy path ──────────────────────────────────────────────
+
+  const holiday: RestrictionWarning = {
+    day: 1, activityName: 'Jerónimos Monastery', warningType: 'public_holiday',
+    message: '⚠ Jerónimos Monastery is likely closed on June 10 (Portugal Day)',
+  }
+  const sundayClosure: RestrictionWarning = {
+    day: 1, activityName: 'Lidl supermarket', warningType: 'sunday_closure',
+    message: '⚠ Most shops are closed on Sundays in Germany.',
+  }
+  const mondayClosure: RestrictionWarning = {
+    day: 2, activityName: 'Musée d\'Orsay', warningType: 'monday_closure',
+    message: '⚠ Many museums are closed on Mondays in France.',
+  }
+
+  it('returns only the warnings matching the given day', () => {
+    expect(warningsForDay([holiday, sundayClosure, mondayClosure], 1))
+      .toEqual([holiday, sundayClosure])
+  })
+
+  it('returns multiple warnings for the same day, in order', () => {
+    const result = warningsForDay([holiday, sundayClosure, mondayClosure], 1)
+    expect(result).toHaveLength(2)
+    expect(result[0]).toBe(holiday)
+    expect(result[1]).toBe(sundayClosure)
+  })
+
+  // ── Error / edge cases ───────────────────────────────────────
+
+  it('returns an empty array when no warning matches the day', () => {
+    expect(warningsForDay([holiday], 3)).toEqual([])
+  })
+
+  it('returns an empty array when warnings is undefined', () => {
+    expect(warningsForDay(undefined, 1)).toEqual([])
+  })
+
+  it('returns an empty array when warnings is an empty array', () => {
+    expect(warningsForDay([], 1)).toEqual([])
   })
 })
