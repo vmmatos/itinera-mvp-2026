@@ -200,6 +200,61 @@ describe('TransportService', () => {
       expect(train!.provider).toBe('AVE Madrid-Barcelona'); // trainLine doubles as display provider
     });
 
+    it('uses the real transit agency as provider when Google returns one (e.g. a Swiss SBB route)', async () => {
+      stubFetch({
+        sky: new Error('no flight'),
+        directions: {
+          routes: [{
+            duration: '7260s',
+            legs: [{
+              steps: [{
+                transitDetails: {
+                  transitLine: { name: 'IC 1', agencies: [{ name: 'SBB' }] },
+                  stopDetails: {
+                    departureTime: '2026-08-01T13:04:00Z',
+                    arrivalTime: '2026-08-01T15:05:00Z',
+                  },
+                },
+              }],
+            }],
+          }],
+        },
+      });
+
+      const result = await service.resolveTransportOptions({ from: 'Bern', to: 'Geneva', departureDateIso: '2099-08-01' }, 'best');
+      const train = result.find((o) => o.mode === 'train');
+      expect(train).toBeDefined();
+      expect(train!.provider).toBe('SBB');
+      expect(train!.trainLine).toBe('IC 1');
+    });
+
+    it('falls back to a generic "Train" provider — never a specific nationality — when Google returns neither an agency nor a line name', async () => {
+      stubFetch({
+        sky: new Error('no flight'),
+        directions: {
+          routes: [{
+            duration: '7260s',
+            legs: [{
+              steps: [{
+                transitDetails: {
+                  stopDetails: {
+                    departureTime: '2026-08-01T13:04:00Z',
+                    arrivalTime: '2026-08-01T15:05:00Z',
+                  },
+                },
+              }],
+            }],
+          }],
+        },
+      });
+
+      const result = await service.resolveTransportOptions({ from: 'Bern', to: 'Geneva', departureDateIso: '2099-08-01' }, 'best');
+      const train = result.find((o) => o.mode === 'train');
+      expect(train).toBeDefined();
+      expect(train!.provider).toBe('Train');
+      expect(train!.provider).not.toContain('Portugal');
+    });
+
     it('calls the Routes API computeRoutes endpoint with a TRANSIT/TRAIN request', async () => {
       await service.resolveTransportOptions({ from: 'Madrid', to: 'Barcelona', departureDateIso: '2099-08-01' }, 'best');
       const fetchMock = fetch as unknown as ReturnType<typeof vi.fn>;
