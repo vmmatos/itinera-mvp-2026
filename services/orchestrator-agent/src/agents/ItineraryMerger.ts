@@ -61,7 +61,12 @@ export class ItineraryMerger extends BaseOrchestratorAgent {
         },
       ];
 
-      const event = await this.callAIAndBuild(tripId, round, 'propose', messages, ITINERARY_MAX_TOKENS);
+      // strict: a truncated/invalid merge silently defaulted to an empty itinerary
+      // downstream (WorkflowEngine), which broke transport injection, restriction
+      // checks, and weather assessment without ever surfacing an error. Throwing
+      // here lets the existing MERGE_AND_SCORE retry/abandon state-machine logic
+      // handle it instead.
+      const event = await this.callAIAndBuild(tripId, round, 'propose', messages, ITINERARY_MAX_TOKENS, true);
       await this.redis.set(cacheKey, event, config.CACHE_TTL_SECONDS);
       return event;
     });

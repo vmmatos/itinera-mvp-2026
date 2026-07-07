@@ -60,9 +60,10 @@ export class AnthropicService extends BaseService implements IAIProvider {
     const tokensUsed = response.usage.input_tokens + response.usage.output_tokens;
     const firstBlock = response.content[0];
     const content = firstBlock?.type === 'text' ? firstBlock.text : '';
+    const truncated = response.stop_reason === 'max_tokens';
 
     // Truncated output produces invalid JSON downstream — make it loud.
-    if (response.stop_reason === 'max_tokens') {
+    if (truncated) {
       this.logger.warn('Anthropic response hit max_tokens — output truncated', {
         model: this.model,
         maxTokens: options?.maxTokens ?? DEFAULT_MAX_TOKENS,
@@ -77,7 +78,7 @@ export class AnthropicService extends BaseService implements IAIProvider {
       stopReason: response.stop_reason,
     });
 
-    return { content, latencyMs, tokensUsed };
+    return { content, latencyMs, tokensUsed, truncated };
   }
 
   private isRetryable(err: unknown): boolean {

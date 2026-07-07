@@ -64,6 +64,24 @@ describe('AnthropicService — happy path', () => {
     expect(mockCreate).toHaveBeenCalledWith(expect.objectContaining({ max_tokens: 8192 }));
   });
 
+  it('returns truncated: false for a normal completed response', async () => {
+    mockCreate.mockResolvedValue(HAPPY_RESPONSE);
+
+    const result = await service.complete('sys', [{ role: 'user', content: 'hi' }]);
+    expect(result.truncated).toBe(false);
+  });
+
+  it('returns truncated: true when Anthropic stop_reason is "max_tokens" (provider-specific value stays internal)', async () => {
+    mockCreate.mockResolvedValue({
+      content: [{ type: 'text', text: 'truncated mid-sent' }],
+      usage: { input_tokens: 80, output_tokens: 8192 },
+      stop_reason: 'max_tokens',
+    });
+
+    const result = await service.complete('sys', [{ role: 'user', content: 'hi' }], { maxTokens: 8192 });
+    expect(result.truncated).toBe(true);
+  });
+
   it('returns empty string when response has no text block', async () => {
     mockCreate.mockResolvedValue({
       content: [],
