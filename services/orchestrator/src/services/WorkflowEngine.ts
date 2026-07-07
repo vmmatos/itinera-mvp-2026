@@ -584,7 +584,7 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
     return map;
   }
 
-  // Copy of NegotiationLoop.enforceCanonicalDestinations — ensures LLM doesn't drift cities.
+  // Ensures the LLM doesn't drift city names/order away from the canonical destination list.
   private enforceCanonicalDestinations(
     proposal: Record<string, unknown>,
     destinations: Array<{ country: string; city?: string; nights: number }>,

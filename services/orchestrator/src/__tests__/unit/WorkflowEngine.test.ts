@@ -13,7 +13,6 @@ vi.mock('@/config', () => ({
     RABBITMQ_EXCHANGE: 'agent.events',
     PORT: 3001,
     JWT_SECRET: 'test-secret',
-    MAX_ROUNDS: 6,
     PREFERENCE_AGENT_URL: 'http://pref:3002',
     ORCHESTRATOR_AGENT_URL: 'http://orch:3003',
     FINANCE_AGENT_URL: 'http://fin:3004',

@@ -72,7 +72,7 @@ export class TripService extends BaseService {
 
   constructor(
     private readonly stateManager: StateManager,
-    private readonly negotiationLoop: IOrchestrationEngine,
+    private readonly engine: IOrchestrationEngine,
     destinationParser?: DestinationParser,
   ) {
     super('trip-service');
@@ -169,7 +169,7 @@ export class TripService extends BaseService {
   }
 
   startOrchestration(tripId: string): void {
-    this.negotiationLoop.run(tripId).catch((err: unknown) => {
+    this.engine.run(tripId).catch((err: unknown) => {
       this.logger.error('Orchestration failed', { tripId, error: String(err) });
     });
   }

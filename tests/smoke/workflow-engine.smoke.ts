@@ -2,7 +2,7 @@
  * Smoke tests — WorkflowEngine v2 service endpoints
  *
  * Hit real running services. Not mocked. Requires all services started:
- *   make dev && WORKFLOW_ENGINE=v2 make up s=orchestrator
+ *   make dev && make up s=orchestrator
  *
  * Run:
  *   make test-smoke

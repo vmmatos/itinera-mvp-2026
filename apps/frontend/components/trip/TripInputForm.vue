@@ -521,7 +521,7 @@ interface ItineraryDay {
   cityTransition?: ItineraryCityTransition
   activities:      ItineraryActivity[]
   meals?:          Array<{ type: string; name: string }>
-  // Set by mergeTransportIntoProposal in NegotiationLoop; preferred over logistics options.
+  // Per-day transport legs from the merged itinerary; preferred over logistics options.
   rawTransport?:   Array<Record<string, unknown>>
 }
 

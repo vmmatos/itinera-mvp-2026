@@ -84,7 +84,7 @@ endif
 test-scenarios:
 	cd tests/scenarios && yarn test
 
-## Run smoke tests against live services (requires make dev + WORKFLOW_ENGINE=v2)
+## Run smoke tests against live services (requires make dev)
 test-smoke:
 	cd tests/smoke && yarn test
 

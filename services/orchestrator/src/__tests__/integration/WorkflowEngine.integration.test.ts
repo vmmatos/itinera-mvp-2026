@@ -22,7 +22,6 @@ vi.mock('@itinera/shared', async (importOriginal) => {
 vi.mock('@/config', () => ({
   config: {
     RABBITMQ_EXCHANGE: 'agent.events', PORT: 3001, JWT_SECRET: 'test', JWT_ISSUER: 'itinera',
-    MAX_ROUNDS: 6, WORKFLOW_ENGINE: 'v2',
     PREFERENCE_AGENT_URL: 'http://pref:3002', ORCHESTRATOR_AGENT_URL: 'http://orch:3003',
     FINANCE_AGENT_URL: 'http://fin:3004', LOGISTICS_AGENT_URL: 'http://log:3005', VALIDATOR_URL: 'http://val:3006',
   },

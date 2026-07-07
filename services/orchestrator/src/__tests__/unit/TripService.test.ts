@@ -35,11 +35,10 @@ vi.mock('@/data-source', () => ({
 }));
 
 vi.mock('@/services/StateManager');
-vi.mock('@/services/NegotiationLoop');
 
 import { TripService } from '@/services/TripService';
 import { StateManager } from '@/services/StateManager';
-import { NegotiationLoop } from '@/services/NegotiationLoop';
+import type { IOrchestrationEngine } from '@/services/WorkflowEngine';
 import { AppDataSource } from '@/data-source';
 
 const OWNER_ID = 'user-001';
@@ -82,8 +81,8 @@ describe('TripService.listTrips', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     const stateManager = new StateManager();
-    const loop = new NegotiationLoop({} as never, {} as never, {} as never);
-    service = new TripService(stateManager, loop);
+    const engine: IOrchestrationEngine = { run: vi.fn(), setTripService: vi.fn() };
+    service = new TripService(stateManager, engine);
 
     mockFind = vi.fn();
     vi.mocked(AppDataSource.getRepository).mockReturnValue({ find: mockFind } as never);
@@ -139,5 +138,29 @@ describe('TripService.listTrips', () => {
 
     const call = mockFind.mock.calls[0][0] as { where: { ownerId: string } };
     expect(call.where).toEqual({ ownerId: OWNER_ID });
+  });
+});
+
+describe('TripService.startOrchestration', () => {
+  it('delegates to engine.run with the tripId (happy path)', async () => {
+    const run = vi.fn().mockResolvedValue(undefined);
+    const engine: IOrchestrationEngine = { run, setTripService: vi.fn() };
+    const service = new TripService(new StateManager(), engine);
+
+    service.startOrchestration('trip-123');
+    await Promise.resolve();
+
+    expect(run).toHaveBeenCalledWith('trip-123');
+  });
+
+  it('swallows engine.run rejection instead of throwing (error scenario)', async () => {
+    const run = vi.fn().mockRejectedValue(new Error('agent unreachable'));
+    const engine: IOrchestrationEngine = { run, setTripService: vi.fn() };
+    const service = new TripService(new StateManager(), engine);
+
+    expect(() => service.startOrchestration('trip-123')).not.toThrow();
+    await new Promise((r) => setImmediate(r));
+
+    expect(run).toHaveBeenCalledWith('trip-123');
   });
 });
