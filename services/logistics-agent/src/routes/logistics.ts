@@ -94,6 +94,22 @@ const RestrictionsSchema = z.object({
   dateInput: DateInputSchema,
 });
 
+const RestrictionWarningSchema = z.object({
+  day:          z.number(),
+  activityName: z.string(),
+  warningType:  z.enum(['public_holiday', 'sunday_closure', 'monday_closure', 'opening_hours']),
+  message:      z.string(),
+});
+
+const WeatherAssessmentSchema = z.object({
+  tripId:              z.string().uuid(),
+  round:               z.number().int().min(1),
+  itinerary:           z.array(z.record(z.unknown())).default([]),
+  region:              z.string().default('unknown'),
+  dateInput:           DateInputSchema,
+  restrictionWarnings: z.array(RestrictionWarningSchema).optional(),
+});
+
 /** Flattens a fixed dateInput into one ISO date per itinerary day. Empty for flexible dates. */
 function buildTripDates(rawItinerary: Array<Record<string, unknown>>, dateInput: z.infer<typeof DateInputSchema>): string[] {
   const tripDates: string[] = [];
@@ -107,6 +123,42 @@ function buildTripDates(rawItinerary: Array<Record<string, unknown>>, dateInput:
     }
   }
   return tripDates;
+}
+
+/**
+ * Fetches (and Redis-caches) multi-day forecasts for a region. Shared by
+ * /validate (legacy) and /weather-assessment — the cache key/TTL logic is
+ * identical regardless of which proposal shape triggered the call.
+ */
+async function fetchWeatherForecasts(
+  region: string,
+  dateInput: z.infer<typeof DateInputSchema>,
+  itineraryLength: number,
+  redis: RedisService,
+  weather: WeatherService,
+): Promise<Awaited<ReturnType<WeatherService['getMultiDayForecast']>>> {
+  const isFlexible = dateInput?.mode === 'flexible';
+  const flexibleNoMonth = isFlexible && !(dateInput as { preferredMonth?: string }).preferredMonth;
+  if (flexibleNoMonth) return [];
+
+  const flexDays = isFlexible ? (dateInput as { days: number }).days : 0;
+  const daysToFetch = isFlexible ? flexDays + 7 : Math.max(itineraryLength, 1) + 1;
+  const weatherCacheKey = isFlexible
+    ? `weather:${region}:flex:${(dateInput as { preferredMonth?: string }).preferredMonth}`
+    : `weather:${region}:multi`;
+
+  const cached = await redis.get(weatherCacheKey);
+  if (cached) return cached as Awaited<ReturnType<WeatherService['getMultiDayForecast']>>;
+
+  try {
+    const forecasts = await weather.getMultiDayForecast(region, daysToFetch);
+    if (Array.isArray(forecasts) && forecasts.length > 0) {
+      await redis.set(weatherCacheKey, forecasts, config.WEATHER_CACHE_TTL_SECONDS);
+    }
+    return forecasts;
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -169,6 +221,74 @@ async function computeRestrictionWarnings(
   });
 
   return result.warnings;
+}
+
+/**
+ * Weather + timing impact assessment for the final merged itinerary. Lean
+ * counterpart to /validate's inline weather block: skips transport
+ * resolution and pricing (the orchestrator already resolved those before
+ * calling this), and reads activities/transport in the orchestrator's v2
+ * shape (act['activity']/act['time'] slot, leg['departureTime']) rather than
+ * the legacy name/startTime/endTime proposal shape /validate expects.
+ */
+async function computeWeatherAssessment(
+  tripId: string,
+  round: number,
+  rawItinerary: Array<Record<string, unknown>>,
+  region: string,
+  dateInput: z.infer<typeof DateInputSchema>,
+  weather: WeatherService,
+  timing: TimingValidator,
+  analyzer: WeatherAnalyzer,
+  redis: RedisService,
+  restrictionWarnings?: RestrictionWarning[],
+) {
+  const TIME_SLOT_MAP: Record<string, string> = { morning: '09:00', afternoon: '14:00', evening: '19:00' };
+
+  const activities: ScheduledActivity[] = rawItinerary.flatMap((day) => {
+    const dayNum = typeof day['day'] === 'number' ? day['day'] : 1;
+    const acts = Array.isArray(day['activities']) ? (day['activities'] as Array<Record<string, unknown>>) : [];
+    return acts
+      .map((act) => {
+        const name =
+          typeof act['name'] === 'string' ? act['name'] :
+          typeof act['activity'] === 'string' ? act['activity'] : null;
+        if (!name) return null;
+        const timeSlot = typeof act['time'] === 'string' ? act['time'].toLowerCase() : '';
+        const startTime =
+          typeof act['startTime'] === 'string' ? act['startTime'] :
+          TIME_SLOT_MAP[timeSlot] ?? '10:00';
+        return { day: dayNum, name, startTime, endTime: '', location: region } satisfies ScheduledActivity;
+      })
+      .filter((a): a is ScheduledActivity => a !== null);
+  });
+
+  const transportLegs: ScheduledTransport[] = rawItinerary.flatMap((day) => {
+    const dayNum = typeof day['day'] === 'number' ? day['day'] : 1;
+    const legs = Array.isArray(day['transport']) ? (day['transport'] as Array<Record<string, unknown>>) : [];
+    return legs
+      .map((leg) => {
+        const from = typeof leg['from'] === 'string' ? leg['from'] : null;
+        const to = typeof leg['to'] === 'string' ? leg['to'] : null;
+        const startTime =
+          typeof leg['departureTime'] === 'string' ? leg['departureTime'] :
+          typeof leg['startTime'] === 'string' ? leg['startTime'] : null;
+        if (!from || !to || !startTime) return null;
+        return {
+          day: dayNum,
+          from,
+          to,
+          startTime,
+          durationMinutes: typeof leg['durationMinutes'] === 'number' ? leg['durationMinutes'] : 0,
+        } satisfies ScheduledTransport;
+      })
+      .filter((l): l is ScheduledTransport => l !== null);
+  });
+
+  const timingResult = timing.validate(activities, transportLegs);
+  const forecasts = await fetchWeatherForecasts(region, dateInput, rawItinerary.length, redis, weather);
+
+  return analyzer.analyze(tripId, round, rawItinerary, forecasts, timingResult, dateInput ?? null, restrictionWarnings);
 }
 
 export function createLogisticsRouter(
@@ -302,34 +422,7 @@ export function createLogisticsRouter(
       .catch(() => undefined);
     // --- end pricing ---
 
-    const isFlexible = dateInput?.mode === 'flexible';
-    const flexibleNoMonth = isFlexible && !(dateInput as { preferredMonth?: string }).preferredMonth;
-
-    let forecasts: Awaited<ReturnType<WeatherService['getMultiDayForecast']>> = [];
-
-    if (!flexibleNoMonth) {
-      const flexDays = isFlexible ? (dateInput as { days: number }).days : 0;
-      const daysToFetch = isFlexible
-        ? flexDays + 7
-        : Math.max(rawItinerary.length, 1) + 1;
-      const weatherCacheKey = isFlexible
-        ? `weather:${region}:flex:${(dateInput as { preferredMonth?: string }).preferredMonth}`
-        : `weather:${region}:multi`;
-
-      const cached = await redis.get(weatherCacheKey);
-      if (cached) {
-        forecasts = cached as Awaited<ReturnType<WeatherService['getMultiDayForecast']>>;
-      } else {
-        try {
-          forecasts = await weather.getMultiDayForecast(region, daysToFetch);
-          if (Array.isArray(forecasts) && forecasts.length > 0) {
-            await redis.set(weatherCacheKey, forecasts, config.WEATHER_CACHE_TTL_SECONDS);
-          }
-        } catch {
-          forecasts = [];
-        }
-      }
-    }
+    const forecasts = await fetchWeatherForecasts(region, dateInput, rawItinerary.length, redis, weather);
 
     const hasTransport = Object.keys(transportOptions).length > 0;
     const validation = await analyzer.analyze(
@@ -388,6 +481,27 @@ export function createLogisticsRouter(
     );
 
     res.json({ warnings });
+  });
+
+  // Weather + timing impact assessment (OpenWeatherMap-backed LLM analysis).
+  // Used by the orchestrator right after the final itinerary is merged, same
+  // timing as /restrictions — real activities + dates only exist by then.
+  router.post('/weather-assessment', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const parsed = WeatherAssessmentSchema.safeParse(req.body);
+    if (!parsed.success) {
+      next(new ValidationError(JSON.stringify(parsed.error.flatten().fieldErrors)));
+      return;
+    }
+
+    const { tripId, round, itinerary, region, dateInput, restrictionWarnings } = parsed.data;
+    try {
+      const assessment = await computeWeatherAssessment(
+        tripId, round, itinerary, region, dateInput, weather, timing, analyzer, redis, restrictionWarnings,
+      );
+      res.json({ assessment });
+    } catch (err) {
+      next(err as Error);
+    }
   });
 
   // Lightweight endpoint: resolve transport legs for destination pairs only.

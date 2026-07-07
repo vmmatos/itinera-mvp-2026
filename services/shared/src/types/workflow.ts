@@ -92,6 +92,37 @@ export interface RestrictionWarning {
   message: string;
 }
 
+export interface WeatherAffectedActivity {
+  name: string;
+  venue: string;
+  risk: 'low' | 'medium' | 'high';
+  reason: string;
+  suggestion: string | null;
+}
+
+export interface WeatherDayAssessment {
+  day: number;
+  date: string | null;
+  weatherRisk: 'low' | 'medium' | 'high';
+  affectedActivities: WeatherAffectedActivity[];
+}
+
+export interface WeatherTimingIssue {
+  day: number;
+  activity1: string;
+  activity2: string;
+  issue: string;
+  suggestion: string;
+}
+
+export interface WeatherAssessment {
+  overallRisk: 'low' | 'medium' | 'high';
+  dayAssessments: WeatherDayAssessment[];
+  timingIssues: WeatherTimingIssue[];
+  summary: string;
+  suggestedDates?: { startDate?: string; endDate?: string; rationale: string };
+}
+
 export type WorkflowActionType =
   | 'CALL_LOGISTICS_PLAN'
   | 'CALL_FINANCE_ESTIMATE'

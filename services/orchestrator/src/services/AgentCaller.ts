@@ -139,6 +139,23 @@ export class AgentCaller extends BaseService {
     return resp.warnings;
   }
 
+  async callLogisticsWeatherAssessment(
+    tripId: string,
+    round: number,
+    itinerary: Array<Record<string, unknown>>,
+    region: string | null,
+    dateInput: DateInput | null,
+    restrictionWarnings?: RestrictionWarning[],
+  ): Promise<AgentCallResult> {
+    const start = Date.now();
+    const resp = await this.post<{ assessment: AgentEventLike }>(
+      'logistics',
+      '/weather-assessment',
+      { tripId, round, itinerary, region: region ?? 'unknown', dateInput, restrictionWarnings },
+    );
+    return toAgentCallResult(resp.assessment, Date.now() - start);
+  }
+
   async callFinanceEstimate(
     tripId: string,
     routeGraph: RouteGraph,

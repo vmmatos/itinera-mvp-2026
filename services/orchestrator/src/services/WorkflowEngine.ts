@@ -372,7 +372,39 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
           tripId: context.tripId, error: String(restrictionsErr),
         });
       }
-      const finalItinerary = { ...withTransport, restrictionWarnings };
+
+      // OpenWeatherMap-backed weather/timing impact assessment — same timing
+      // constraint as restrictions (real activities + dates only exist now).
+      // Non-blocking: a failure here must never stop the itinerary from being saved.
+      const weatherStart = Date.now();
+      let weatherAssessment: Record<string, unknown> = {};
+      let weatherTokensUsed = 0;
+      try {
+        const weatherResult = await this.agentCaller.callLogisticsWeatherAssessment(
+          context.tripId,
+          1,
+          (withTransport as Record<string, unknown>)['itinerary'] as Array<Record<string, unknown>> ?? [],
+          trip.region ?? null,
+          context.dates,
+          restrictionWarnings,
+        );
+        weatherAssessment = weatherResult.content;
+        weatherTokensUsed = weatherResult.tokensUsed;
+        await this.stateManager.logAgentCall({
+          tripId: context.tripId,
+          agent: 'logistics',
+          round: 1,
+          action: 'weather-assessment',
+          latencyMs: Date.now() - weatherStart,
+          tokensUsed: weatherTokensUsed,
+        });
+      } catch (weatherErr) {
+        this.logger.warn('Weather assessment failed — continuing without weather data', {
+          tripId: context.tripId, error: String(weatherErr),
+        });
+      }
+
+      const finalItinerary = { ...withTransport, restrictionWarnings, weatherAssessment };
 
       await this.stateManager.logAgentCall({
         tripId: context.tripId,
@@ -397,7 +429,7 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
       return {
         ...context,
         mergedItinerary: finalItinerary,
-        totalTokensUsed: context.totalTokensUsed + result.tokensUsed,
+        totalTokensUsed: context.totalTokensUsed + result.tokensUsed + weatherTokensUsed,
       };
     } catch (err) {
       this.logger.error('Merge failed', { tripId: context.tripId, error: String(err) });
