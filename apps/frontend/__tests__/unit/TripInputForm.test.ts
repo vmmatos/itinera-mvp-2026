@@ -478,6 +478,79 @@ describe('TripInputForm — Refine trip (step 4)', () => {
   })
 })
 
+// ── wizardRootStyle: step 3 v2 needs a bounded flex column so its 3
+// negotiate columns scroll internally instead of growing the whole page ──
+
+describe('TripInputForm — wizardRootStyle (step 3 v2 layout)', () => {
+  const goToStep3V2 = async () => {
+    ;(globalThis.useRuntimeConfig as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      public: { apiBase: 'http://localhost', negotiateV2: true },
+    })
+    mockCreateTrip.mockResolvedValueOnce('trip-v2')
+    mockApiGet
+      .mockResolvedValueOnce({ data: { data: { status: 'negotiating' } } })
+      .mockResolvedValueOnce({ data: { data: [] } })
+
+    const wrapper = mountForm()
+    await goToStep2(wrapper)
+    await wrapper.find('[data-testid="trip-name"]').setValue('Porto trip')
+    await wrapper.find('[data-testid="region"]').setValue('Portugal')
+    await wrapper.find('[data-testid="start-date"]').setValue('2026-09-01')
+    await wrapper.find('[data-testid="end-date"]').setValue('2026-09-08')
+    await wrapper.find('[data-testid="submit-btn"]').trigger('click')
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+    return wrapper
+  }
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    tripStoreMock.loading = false
+    tripStoreMock.error = null
+    agentStreamMock.events.value = []
+    agentStreamMock.connected.value = false
+  })
+
+  it('happy path: bounds the root to viewport height on step 3 with negotiateV2 enabled', async () => {
+    const wrapper = await goToStep3V2()
+    const style = wrapper.find('.fade-in').attributes('style')
+    expect(style).toContain('height: 100vh')
+    expect(style).toContain('overflow: hidden')
+    expect(style).toContain('display: flex')
+  })
+
+  it('does not bound the root on step 1 even when negotiateV2 is enabled', async () => {
+    ;(globalThis.useRuntimeConfig as ReturnType<typeof vi.fn>).mockReturnValueOnce({
+      public: { apiBase: 'http://localhost', negotiateV2: true },
+    })
+    const wrapper = mountForm()
+    const style = wrapper.find('.fade-in').attributes('style')
+    expect(style).not.toContain('height: 100vh')
+    expect(style).not.toContain('overflow: hidden')
+  })
+
+  it('does not bound the root on step 3 when negotiateV2 is disabled (default)', async () => {
+    mockCreateTrip.mockResolvedValueOnce('trip-v1')
+    mockApiGet
+      .mockResolvedValueOnce({ data: { data: { status: 'negotiating' } } })
+      .mockResolvedValueOnce({ data: { data: [] } })
+    const wrapper = mountForm()
+    await goToStep2(wrapper)
+    await wrapper.find('[data-testid="trip-name"]').setValue('Porto trip')
+    await wrapper.find('[data-testid="region"]').setValue('Portugal')
+    await wrapper.find('[data-testid="start-date"]').setValue('2026-09-01')
+    await wrapper.find('[data-testid="end-date"]').setValue('2026-09-08')
+    await wrapper.find('[data-testid="submit-btn"]').trigger('click')
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    const style = wrapper.find('.fade-in').attributes('style')
+    expect(style).not.toContain('height: 100vh')
+    expect(style).not.toContain('overflow: hidden')
+  })
+})
+
 describe('TripInputForm — Step 4 weather forecast (not-show-meteo)', () => {
   const VALID_TRIP_UUID = '11111111-1111-1111-1111-111111111111'
 
