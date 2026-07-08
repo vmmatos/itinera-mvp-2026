@@ -304,9 +304,12 @@ export interface TripDebugData extends Trip {
 }
 
 // ── SSE event (from ws-relay) ─────────────────────────────────
+// `type` is a free string in practice (e.g. 'agent.propose', 'workflow.merge_and_score',
+// 'negotiation_complete') — not constrained to AgentAction, which only describes the
+// fixed RabbitMQ routing-key segment, not the real event semantics.
 export interface AgentStreamEvent {
   tripId:    string
-  type:      AgentAction
+  type:      string
   agent:     AgentName
   round:     number
   timestamp: string
@@ -316,6 +319,103 @@ export interface AgentStreamEvent {
     latencyMs:  number
     tokensUsed: number
   }
+}
+
+// ── Negotiate v2 — orchestrator pipeline + live decision stream ────────────
+// Real WorkflowEngine states relevant to the negotiate step (excludes
+// INTAKE_COMPLETE/ASK_REFINEMENT/FINISH, which aren't pipeline stages).
+export type WorkflowState =
+  | 'LOGISTICS_PLANNING'
+  | 'FINANCE_ENVELOPE_CHECK'
+  | 'PARALLEL_TURISTIC_PLANNING'
+  | 'MERGE_AND_SCORE'
+  | 'FINANCE_VALIDATE'
+  | 'FINAL_VALIDATION'
+
+export interface SlotProposal {
+  city:      string
+  date:      string
+  slot:      'morning' | 'afternoon' | 'evening'
+  activity:  string
+  venue?:    string
+  category?: string
+  description?: string
+  estimatedCostPerPerson: number
+  durationMinutes?: number
+  satisfies?: string[]
+}
+
+export type ProposalDecisionStatus = 'accepted' | 'merged' | 'rejected'
+
+export interface ProposalDecision {
+  agent:     string
+  city:      string
+  date:      string
+  slot:      'morning' | 'afternoon' | 'evening'
+  activity:  string
+  status:    ProposalDecisionStatus
+  reason:    string
+  estimatedCostPerPerson?: number
+}
+
+export interface StageInfo {
+  id:     WorkflowState
+  label:  string
+  status: 'queued' | 'running' | 'done'
+}
+
+export interface AgentCardState {
+  id:         string
+  color:      string
+  role:       'traveller' | 'service'
+  state:      'idle' | 'thinking' | 'proposing'
+  lastAction: string | null
+  proposalCount: number
+}
+
+export type DecisionStreamChip = 'pending' | 'accepted' | 'merged' | 'rejected' | 'applied'
+
+export interface DecisionStreamEvent {
+  id:       string
+  who:      string
+  color:    string
+  kind:     string
+  body:     string
+  facts:    Array<[string, string]>
+  chip:     DecisionStreamChip
+  decisionReason?: string
+  slotPayload?: { day: number; slot: 'morning' | 'afternoon' | 'evening'; name: string; by: string; cost: number } | null
+  timestamp: string
+}
+
+export interface DraftSlot {
+  status: 'empty' | 'filled'
+  name?:  string
+  by?:    string
+  color?: string
+  cost?:  number
+}
+
+export interface DraftDay {
+  day:   number
+  date:  string
+  city:  string
+  slots: Record<'morning' | 'afternoon' | 'evening', DraftSlot>
+}
+
+export interface NegotiationSession {
+  status:      'negotiating' | 'complete'
+  startedAt:   number | null
+  lastEventAt: number | null
+}
+
+export interface NegotiationState {
+  session:     NegotiationSession
+  stages:      StageInfo[]
+  agents:      AgentCardState[]
+  events:      DecisionStreamEvent[]
+  slots:       DraftDay[]
+  budgetTotal: number
 }
 
 // ── API responses ─────────────────────────────────────────────

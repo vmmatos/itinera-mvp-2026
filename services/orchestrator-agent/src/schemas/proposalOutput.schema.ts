@@ -35,10 +35,24 @@ const AccommodationSchema = z.object({
   country: z.string().optional(),
 });
 
+const DecisionSchema = z.object({
+  agent: z.string(),
+  city: z.string(),
+  date: z.string(),
+  slot: z.enum(['morning', 'afternoon', 'evening']),
+  activity: z.string(),
+  status: z.enum(['accepted', 'merged', 'rejected']),
+  reason: z.string(),
+  estimatedCostPerPerson: z.number().min(0).optional(),
+});
+
 export const ProposalOutputSchema = z.object({
   accommodation: z.array(AccommodationSchema).min(1),
   itinerary: z.array(DaySchema).min(1),
   satisfactionEstimates: z.record(z.number().min(0).max(1)),
+  // Supplementary — a malformed/missing decision log must never fail the
+  // whole merge (the itinerary is critical path, decisions are not).
+  decisions: z.array(DecisionSchema).catch([]),
 });
 
 export type ProposalOutput = z.infer<typeof ProposalOutputSchema>;

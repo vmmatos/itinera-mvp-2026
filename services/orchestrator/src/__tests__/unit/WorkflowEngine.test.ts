@@ -132,6 +132,7 @@ function setupCommonMocks(sm: StateManager, ep: EventPublisher): void {
   vi.mocked(sm.saveWorkflowContext).mockResolvedValue();
   vi.mocked(sm.logAgentCall).mockResolvedValue();
   vi.mocked(sm.saveProposal).mockResolvedValue({} as never);
+  vi.mocked(sm.updateProposalStatus).mockResolvedValue();
   vi.mocked(sm.saveFinalMetric).mockResolvedValue();
   vi.mocked(sm.transitionStatus).mockResolvedValue();
   vi.mocked(ep.publish).mockResolvedValue();
@@ -804,6 +805,125 @@ describe('WorkflowEngine — weather assessment (not-show-meteo)', () => {
     await engine.run(TRIP_ID);
 
     expect(mergedProposalContent()['weatherAssessment']).toEqual({});
+    expect(stateManager.transitionStatus).toHaveBeenCalledWith(TRIP_ID, 'confirmed');
+  });
+});
+
+describe('WorkflowEngine — per-proposal decision events', () => {
+  const DECISIONS = [
+    { agent: 'alice', city: 'Barcelona', date: '2026-08-10', slot: 'morning', activity: 'Mercat de Sta Caterina', status: 'accepted', reason: 'top group weight', estimatedCostPerPerson: 14 },
+    { agent: 'bob', city: 'Barcelona', date: '2026-08-10', slot: 'evening', activity: 'Razzmatazz', status: 'rejected', reason: 'group nightlife weight low' },
+    { agent: 'carlos', city: 'Barcelona', date: '2026-08-10', slot: 'morning', activity: 'Collserola trail run', status: 'merged', reason: 'slot conflict, moved to D2 morning' },
+  ] as const;
+
+  function setupWithDecisions(): void {
+    setupCommonMocks(stateManager, eventPublisher);
+    vi.mocked(agentCaller.callLogisticsPlan).mockResolvedValue(ROUTE_GRAPH);
+    vi.mocked(agentCaller.callFinanceEstimate).mockResolvedValue(BUDGET_PLAN);
+    vi.mocked(agentCaller.callPreferenceAgentSlots).mockResolvedValue([
+      { content: { slotProposals: [] }, latencyMs: 100, tokensUsed: 50 },
+      { content: { slotProposals: [] }, latencyMs: 100, tokensUsed: 50 },
+      { content: { slotProposals: [] }, latencyMs: 100, tokensUsed: 50 },
+      { content: { slotProposals: [] }, latencyMs: 100, tokensUsed: 50 },
+    ]);
+    vi.mocked(agentCaller.callOrchestratorMerge).mockResolvedValue({
+      content: { ...JSON.parse(JSON.stringify(MERGED_ITINERARY)), decisions: DECISIONS } as Record<string, unknown>,
+      latencyMs: 200,
+      tokensUsed: 200,
+    });
+    vi.mocked(agentCaller.callFinanceAgent).mockResolvedValue({
+      content: { verdict: { approved: true, budgetFeasible: true, issues: [] } },
+      latencyMs: 100,
+      tokensUsed: 100,
+    });
+    vi.mocked(agentCaller.callValidatorAgent).mockResolvedValue({
+      content: { scoring: { overallScore: 80 } },
+      latencyMs: 50,
+      tokensUsed: 50,
+    });
+    vi.mocked(agentCaller.callLogisticsRestrictions).mockResolvedValue([]);
+    vi.mocked(agentCaller.callLogisticsWeatherAssessment).mockResolvedValue({ content: {}, latencyMs: 0, tokensUsed: 0 });
+  }
+
+  it('saves a proposal row for each of the 4 tourist agents during PARALLEL_TURISTIC_PLANNING', async () => {
+    setupWithDecisions();
+    driveHappyPath();
+
+    await engine.run(TRIP_ID);
+
+    const touristAgents = ['alice', 'bob', 'carlos', 'diana'];
+    for (const agent of touristAgents) {
+      expect(stateManager.saveProposal).toHaveBeenCalledWith(
+        expect.objectContaining({ tripId: TRIP_ID, agent, round: 1, action: 'propose' }),
+      );
+    }
+  });
+
+  it('publishes one agent.decision event per decision returned by the merge', async () => {
+    setupWithDecisions();
+    driveHappyPath();
+
+    await engine.run(TRIP_ID);
+
+    const decisionCalls = vi.mocked(eventPublisher.publish).mock.calls.filter(
+      (c) => (c[2] as { type: string }).type === 'agent.decision',
+    );
+    expect(decisionCalls).toHaveLength(DECISIONS.length);
+    expect(decisionCalls.map((c) => (c[2] as { agent: string }).agent)).toEqual(
+      DECISIONS.map((d) => d.agent),
+    );
+    expect(decisionCalls[0]![2]).toMatchObject({ content: DECISIONS[0] });
+  });
+
+  it('rolls per-decision status up into one updateProposalStatus call per agent', async () => {
+    setupWithDecisions();
+    driveHappyPath();
+
+    await engine.run(TRIP_ID);
+
+    expect(stateManager.updateProposalStatus).toHaveBeenCalledWith(TRIP_ID, 'alice', 1, 'accepted');
+    expect(stateManager.updateProposalStatus).toHaveBeenCalledWith(TRIP_ID, 'bob', 1, 'rejected');
+    expect(stateManager.updateProposalStatus).toHaveBeenCalledWith(TRIP_ID, 'carlos', 1, 'merged');
+    expect(stateManager.updateProposalStatus).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not crash and still publishes the aggregate merge event when the merge response has no decisions', async () => {
+    setupCommonMocks(stateManager, eventPublisher);
+    vi.mocked(agentCaller.callLogisticsPlan).mockResolvedValue(ROUTE_GRAPH);
+    vi.mocked(agentCaller.callFinanceEstimate).mockResolvedValue(BUDGET_PLAN);
+    vi.mocked(agentCaller.callPreferenceAgentSlots).mockResolvedValue([
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+    ]);
+    // No `decisions` key at all — simulates an older backend / a merge response predating this feature.
+    vi.mocked(agentCaller.callOrchestratorMerge).mockResolvedValue({
+      content: JSON.parse(JSON.stringify(MERGED_ITINERARY)) as Record<string, unknown>,
+      latencyMs: 200,
+      tokensUsed: 200,
+    });
+    vi.mocked(agentCaller.callFinanceAgent).mockResolvedValue({
+      content: { verdict: { approved: true, budgetFeasible: true, issues: [] } },
+      latencyMs: 100,
+      tokensUsed: 100,
+    });
+    vi.mocked(agentCaller.callValidatorAgent).mockResolvedValue({
+      content: { scoring: { overallScore: 80 } },
+      latencyMs: 50,
+      tokensUsed: 50,
+    });
+    vi.mocked(agentCaller.callLogisticsRestrictions).mockResolvedValue([]);
+    vi.mocked(agentCaller.callLogisticsWeatherAssessment).mockResolvedValue({ content: {}, latencyMs: 0, tokensUsed: 0 });
+    driveHappyPath();
+
+    await expect(engine.run(TRIP_ID)).resolves.not.toThrow();
+
+    const mergeCalls = vi.mocked(eventPublisher.publish).mock.calls.filter(
+      (c) => (c[2] as { type: string }).type === 'agent.merge',
+    );
+    expect(mergeCalls).toHaveLength(1);
+    expect(stateManager.updateProposalStatus).not.toHaveBeenCalled();
     expect(stateManager.transitionStatus).toHaveBeenCalledWith(TRIP_ID, 'confirmed');
   });
 });

@@ -36,6 +36,7 @@ vi.mock('@/services/StateManager', () => ({
     saveWorkflowContext: vi.fn().mockResolvedValue(undefined),
     logAgentCall: vi.fn().mockResolvedValue(undefined),
     saveProposal: vi.fn().mockResolvedValue({}),
+    updateProposalStatus: vi.fn().mockResolvedValue(undefined),
     saveFinalMetric: vi.fn().mockResolvedValue(undefined),
     transitionStatus: vi.fn().mockResolvedValue(undefined),
     rejectTrip: vi.fn().mockResolvedValue(undefined),
@@ -69,7 +70,7 @@ import type { WorkflowContext } from '@itinera/shared';
 import {
   TRIP_ID, MOCK_TRIP, ROUTE_GRAPH_NO_LEGS, ROUTE_GRAPH_WITH_TRAIN_LEG,
   BUDGET_PLAN_FEASIBLE, TOURIST_SLOT_RESULTS, MERGED_ITINERARY_CONTENT,
-  FINANCE_APPROVED_RESULT, VALIDATION_PASS_RESULT,
+  MERGED_ITINERARY_WITH_DECISIONS, FINANCE_APPROVED_RESULT, VALIDATION_PASS_RESULT,
 } from './integration-fixtures';
 
 // ── Shared setup helpers ──────────────────────────────────────────────────────
@@ -257,5 +258,40 @@ describe('WorkflowEngine integration — transport priority persisted in context
     expect(contextWithPriority!.transportPriority!.wasPreferenceHonored).toBe(false);
     expect(contextWithPriority!.transportPriority!.selectedMode).toBe('train');
     expect(contextWithPriority!.transportPriority!.downgradeReason).toBeTruthy();
+  });
+});
+
+// ── Test 5: per-proposal decision events, end to end through the real state machine ──
+
+describe('WorkflowEngine integration — per-proposal decision events', () => {
+  it('publishes the aggregate merge event and one agent.decision event per decision, then rolls status up per agent', async () => {
+    const sm = new StateManager();
+    const ac = new AgentCaller();
+    vi.clearAllMocks();
+
+    vi.mocked(sm.getTrip).mockResolvedValue(MOCK_TRIP as never);
+    vi.mocked(sm.saveWorkflowContext).mockResolvedValue(undefined);
+    vi.mocked(ac.callLogisticsPlan).mockResolvedValue(ROUTE_GRAPH_NO_LEGS);
+    vi.mocked(ac.callFinanceEstimate).mockResolvedValue(BUDGET_PLAN_FEASIBLE);
+    vi.mocked(ac.callPreferenceAgentSlots).mockResolvedValue(TOURIST_SLOT_RESULTS);
+    vi.mocked(ac.callOrchestratorMerge).mockResolvedValue({
+      content: MERGED_ITINERARY_WITH_DECISIONS, latencyMs: 300, tokensUsed: 600,
+    });
+    vi.mocked(ac.callFinanceAgent).mockResolvedValue(FINANCE_APPROVED_RESULT);
+    vi.mocked(ac.callValidatorAgent).mockResolvedValue(VALIDATION_PASS_RESULT);
+
+    const eventPublisher = new EventPublisher();
+    const engine = buildEngine(sm, ac, eventPublisher);
+    await engine.run(TRIP_ID);
+
+    const published = vi.mocked(eventPublisher.publish).mock.calls.map((c) => c[2] as { type: string; agent: string });
+    expect(published.filter((e) => e.type === 'agent.merge')).toHaveLength(1);
+    const decisionEvents = published.filter((e) => e.type === 'agent.decision');
+    expect(decisionEvents).toHaveLength(2);
+    expect(decisionEvents.map((e) => e.agent)).toEqual(['alice', 'bob']);
+
+    expect(sm.updateProposalStatus).toHaveBeenCalledWith(TRIP_ID, 'alice', 1, 'accepted');
+    expect(sm.updateProposalStatus).toHaveBeenCalledWith(TRIP_ID, 'bob', 1, 'rejected');
+    expect(sm.transitionStatus).toHaveBeenCalledWith(TRIP_ID, 'confirmed');
   });
 });

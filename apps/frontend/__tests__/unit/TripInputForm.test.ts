@@ -20,7 +20,7 @@ const mountForm = () =>
   mount(TripInputForm, {
     global: {
       plugins: [createPinia()],
-      stubs: { transition: true, TripTimeline: true, TripActivityCard: true, TripBudgetBreakdown: true, AppLogo: true },
+      stubs: { transition: true, TripTimeline: true, TripActivityCard: true, TripBudgetBreakdown: true, AppLogo: true, TripNegotiateStepV2: true },
     },
   })
 
@@ -427,7 +427,7 @@ describe('TripInputForm — Refine trip (step 4)', () => {
       props: { viewTripId: VALID_TRIP_UUID },
       global: {
         plugins: [createPinia()],
-        stubs: { transition: true, TripTimeline: true, TripActivityCard: true, TripBudgetBreakdown: true, AppLogo: true },
+        stubs: { transition: true, TripTimeline: true, TripActivityCard: true, TripBudgetBreakdown: true, AppLogo: true, TripNegotiateStepV2: true },
       },
     })
 
@@ -486,7 +486,7 @@ describe('TripInputForm — Step 4 weather forecast (not-show-meteo)', () => {
       props: { viewTripId: VALID_TRIP_UUID },
       global: {
         plugins: [createPinia()],
-        stubs: { transition: true, TripTimeline: true, TripActivityCard: true, TripBudgetBreakdown: true, AppLogo: true },
+        stubs: { transition: true, TripTimeline: true, TripActivityCard: true, TripBudgetBreakdown: true, AppLogo: true, TripNegotiateStepV2: true },
       },
     })
 

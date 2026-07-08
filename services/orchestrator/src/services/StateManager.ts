@@ -17,6 +17,7 @@ interface SaveProposalParams {
   score?: number;
   action?: ProposalAction;
   reasoning?: string;
+  status?: string;
 }
 
 interface SaveFinalMetricParams {
@@ -97,11 +98,24 @@ export class StateManager extends BaseService {
       round: params.round,
       content: params.content,
       score: params.score ?? null,
-      status: 'pending',
+      status: params.status ?? 'pending',
       action: params.action ?? null,
       reasoning: params.reasoning ?? null,
     });
     return repo.save(proposal);
+  }
+
+  // Rolls a proposal row's status up once the merge stage has decided
+  // accept/merge/reject for that agent's slot proposals (see WorkflowEngine.
+  // executeMerge). Agent+round granularity — per-slot detail lives only in
+  // the live agent.decision events, not replicated here.
+  async updateProposalStatus(
+    tripId: string,
+    agent: string,
+    round: number,
+    status: string,
+  ): Promise<void> {
+    await AppDataSource.getRepository(Proposal).update({ tripId, agent, round }, { status });
   }
 
   async logAgentCall(params: LogAgentCallParams): Promise<void> {

@@ -192,6 +192,11 @@ const fetchDestinationPreview = async (regionText: string, days: number): Promis
 
 const activeTripId = ref<string | null>(null)
 
+// Feature toggle — Step 3 "Negotiate" redesign (orchestrator pipeline + live
+// decision stream). Set NUXT_PUBLIC_NEGOTIATE_V2=true to enable; defaults to
+// the existing round/workflow-state UI below when unset.
+const negotiateV2Enabled = useRuntimeConfig().public.negotiateV2 as boolean
+
 // Reopen existing confirmed trip directly at step 4, or pre-fill from lastInput
 onMounted(() => {
   if (isValidUUID(props.viewTripId)) {
@@ -1540,8 +1545,8 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
       </div>
     </div>
 
-    <!-- ── Step 3: Negotiate ───────────────────────────────── -->
-    <div v-if="step === 3" class="user-grid">
+    <!-- ── Step 3: Negotiate (legacy — round/workflow-state UI) ── -->
+    <div v-if="step === 3 && !negotiateV2Enabled" class="user-grid">
 
       <!-- Left: activity feed -->
       <div class="user-left">
@@ -1902,6 +1907,18 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
         </div>
       </div>
     </div>
+
+    <!-- ── Step 3: Negotiate (v2 — orchestrator pipeline) ──────── -->
+    <TripNegotiateStepV2
+      v-if="step === 3 && negotiateV2Enabled"
+      :trip-id="activeTripId"
+      :budget-total="budgetTotal"
+      :negotiation-status="negotiationStatus"
+      :rejection-reason="rejectionReason"
+      style="flex:1;min-height:0;display:flex;flex-direction:column"
+      @cancel="emit('cancel')"
+      @adjust="step = 2"
+    />
 
     <!-- ── Step 4: Itinerary ───────────────────────────────── -->
     <div v-if="step === 4" class="user-grid">
