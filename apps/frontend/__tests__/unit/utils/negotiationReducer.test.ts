@@ -5,6 +5,7 @@ import {
   sweepPendingEvents,
   filledSlotCount,
   runningTotal,
+  colorFor,
   WORKFLOW_STAGE_ORDER,
 } from '~/utils/negotiationReducer'
 import type { AgentStreamEvent, AgentName } from '~/types/index'
@@ -22,6 +23,40 @@ function planEvent(t = 1): AgentStreamEvent {
       cityStays: [
         { city: 'Barcelona', arrivalDate: '2026-08-10', departureDate: '2026-08-12' },
         { city: 'Mértola', arrivalDate: '2026-08-12', departureDate: '2026-08-13' },
+      ],
+    },
+  }
+}
+
+function planEventWithWindows(t = 1): AgentStreamEvent {
+  return {
+    tripId: TRIP_ID, type: 'agent.plan', agent: 'logistics', round: 1, timestamp: `t${t}`,
+    content: {
+      cityStays: [
+        {
+          city: 'Barcelona', arrivalDate: '2026-08-10', departureDate: '2026-08-12',
+          timeWindows: [
+            { date: '2026-08-10', slot: 'morning', isTransitDay: true, blockedReason: 'inbound-transit' },
+            { date: '2026-08-10', slot: 'afternoon' },
+            { date: '2026-08-10', slot: 'evening' },
+            { date: '2026-08-11', slot: 'morning' },
+            { date: '2026-08-11', slot: 'afternoon' },
+            { date: '2026-08-11', slot: 'evening' },
+            // Outbound-transit day owned by Barcelona, on its own departureDate —
+            // excluded by the old nights-loop, must still get a day-card.
+            { date: '2026-08-12', slot: 'morning' },
+            { date: '2026-08-12', slot: 'afternoon', isTransitDay: true, blockedReason: 'outbound-transit' },
+            { date: '2026-08-12', slot: 'evening', isTransitDay: true, blockedReason: 'outbound-transit' },
+          ],
+        },
+        {
+          city: 'Mértola', arrivalDate: '2026-08-12', departureDate: '2026-08-13',
+          timeWindows: [
+            { date: '2026-08-13', slot: 'morning' },
+            { date: '2026-08-13', slot: 'afternoon' },
+            { date: '2026-08-13', slot: 'evening' },
+          ],
+        },
       ],
     },
   }
@@ -76,6 +111,50 @@ describe('negotiationReducer.reconcile — happy path', () => {
     expect(state.slots[0]!.city).toBe('Barcelona')
     expect(state.slots[0]!.day).toBe(1)
     expect(state.slots[2]!.city).toBe('Mértola')
+  })
+
+  it('builds reserved transit slots from agent.plan timeWindows, including the outbound-transit day the nights-loop would exclude', () => {
+    const state = createInitialNegotiationState()
+    reconcile(state, planEventWithWindows())
+
+    expect(state.slots).toHaveLength(4) // 3 Barcelona days (incl. departureDate) + 1 Mértola day
+    const arrivalDay = state.slots.find((d) => d.date === '2026-08-10')!
+    expect(arrivalDay.slots.morning).toEqual({
+      status: 'reserved', name: 'Arrival travel', by: 'logistics', color: colorFor('logistics'),
+    })
+    expect(arrivalDay.slots.afternoon.status).toBe('empty')
+
+    const departureDay = state.slots.find((d) => d.date === '2026-08-12')!
+    expect(departureDay.city).toBe('Barcelona')
+    expect(departureDay.slots.morning.status).toBe('empty')
+    expect(departureDay.slots.afternoon).toEqual({
+      status: 'reserved', name: 'Departure travel', by: 'logistics', color: colorFor('logistics'),
+    })
+    expect(departureDay.slots.evening.name).toBe('Departure travel')
+  })
+
+  it('filledSlotCount counts reserved transit slots as resolved, alongside filled ones', () => {
+    const state = createInitialNegotiationState()
+    reconcile(state, planEventWithWindows())
+    // From the fixture: 3 reserved slots (arrival morning, departure afternoon+evening).
+    expect(filledSlotCount(state)).toBe(3)
+
+    // Accept a proposal on a still-empty slot (2026-08-11 is untouched by the fixture's windows).
+    reconcile(state, {
+      tripId: TRIP_ID, type: 'agent.decision', agent: 'diana', round: 1, timestamp: 't2',
+      content: {
+        agent: 'diana', city: 'Barcelona', date: '2026-08-11', slot: 'morning', activity: 'Mercat de Sta Caterina',
+        status: 'accepted', reason: 'test reason', estimatedCostPerPerson: 14,
+      },
+    })
+    expect(filledSlotCount(state)).toBe(4)
+  })
+
+  it('falls back to plain empty slots when agent.plan has no timeWindows (legacy payload)', () => {
+    const state = createInitialNegotiationState()
+    reconcile(state, planEvent())
+    expect(state.slots).toHaveLength(3)
+    expect(state.slots.every((d) => Object.values(d.slots).every((s) => s.status === 'empty'))).toBe(true)
   })
 
   it('agent.propose creates a pending decision-stream event keyed by agent:city:date:slot', () => {
@@ -136,6 +215,55 @@ describe('negotiationReducer.reconcile — happy path', () => {
 })
 
 describe('negotiationReducer.reconcile — error / edge scenarios', () => {
+  it('unrecognised blockedReason does not throw and falls back to a generic label', () => {
+    const state = createInitialNegotiationState()
+    expect(() => reconcile(state, {
+      tripId: TRIP_ID, type: 'agent.plan', agent: 'logistics', round: 1, timestamp: 't1',
+      content: {
+        cityStays: [{
+          city: 'Barcelona', arrivalDate: '2026-08-10', departureDate: '2026-08-11',
+          timeWindows: [
+            { date: '2026-08-10', slot: 'morning', isTransitDay: true, blockedReason: 'something-new' },
+            { date: '2026-08-10', slot: 'afternoon' },
+            { date: '2026-08-10', slot: 'evening' },
+          ],
+        }],
+      },
+    })).not.toThrow()
+    expect(state.slots[0]!.slots.morning).toEqual({
+      status: 'reserved', name: 'Reserved by logistics', by: 'logistics', color: colorFor('logistics'),
+    })
+  })
+
+  it('a reserved transit slot is never overwritten by a later agent.decision', () => {
+    const state = createInitialNegotiationState()
+    reconcile(state, planEventWithWindows())
+    reconcile(state, {
+      tripId: TRIP_ID, type: 'agent.decision', agent: 'diana', round: 1, timestamp: 't2',
+      content: {
+        agent: 'diana', city: 'Barcelona', date: '2026-08-10', slot: 'morning', activity: 'Sneaky brunch',
+        status: 'accepted', reason: 'squeezed in', estimatedCostPerPerson: 20,
+      },
+    })
+    expect(state.slots[0]!.slots.morning.status).toBe('reserved')
+    expect(state.slots[0]!.slots.morning.name).toBe('Arrival travel')
+  })
+
+  it('a reserved transit slot is never overwritten by the agent.merge fallback', () => {
+    const state = createInitialNegotiationState()
+    reconcile(state, planEventWithWindows())
+    reconcile(state, {
+      tripId: TRIP_ID, type: 'agent.merge', agent: 'orchestrator', round: 1, timestamp: 't2',
+      content: {
+        itinerary: [{
+          day: 1,
+          activities: [{ ownerAgent: 'diana', activity: 'Sneaky brunch', time: 'morning', estimatedCostPerPerson: 20 }],
+        }],
+      },
+    })
+    expect(state.slots[0]!.slots.morning.status).toBe('reserved')
+  })
+
   it('rejected proposal never fills a slot', () => {
     const state = createInitialNegotiationState()
     reconcile(state, planEvent())

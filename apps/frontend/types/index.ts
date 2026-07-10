@@ -389,7 +389,7 @@ export interface DecisionStreamEvent {
 }
 
 export interface DraftSlot {
-  status: 'empty' | 'filled'
+  status: 'empty' | 'filled' | 'reserved'
   name?:  string
   by?:    string
   color?: string
