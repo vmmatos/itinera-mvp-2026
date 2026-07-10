@@ -197,6 +197,16 @@ const activeTripId = ref<string | null>(null)
 // the existing round/workflow-state UI below when unset.
 const negotiateV2Enabled = useRuntimeConfig().public.negotiateV2 as boolean
 
+// Step 3 v2 needs a viewport-bound flex column so its 3 negotiate columns can
+// scroll internally instead of growing the whole page. Other steps keep the
+// plain block layout (natural page scroll) untouched.
+const wizardRootStyle = computed(() => {
+  const base = 'border: var(--hair); background: var(--bg-2);'
+  return step.value === 3 && negotiateV2Enabled
+    ? `${base}height:100vh;display:flex;flex-direction:column;overflow:hidden;`
+    : base
+})
+
 // Reopen existing confirmed trip directly at step 4, or pre-fill from lastInput
 onMounted(() => {
   if (isValidUUID(props.viewTripId)) {
@@ -1019,10 +1029,10 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
 </script>
 
 <template>
-  <div class="fade-in" style="border: var(--hair); background: var(--bg-2);">
+  <div class="fade-in" :style="wizardRootStyle">
 
     <!-- App bar -->
-    <div class="app-bar">
+    <div class="app-bar" style="flex-shrink:0">
       <div class="crumb">
         <AppLogo />
         <span class="sep">/</span>
@@ -1037,7 +1047,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
     </div>
 
     <!-- Wizard steps -->
-    <div class="usteps">
+    <div class="usteps" style="flex-shrink:0">
       <div class="ustep" :class="{ cur: step === 1, done: step > 1 }">
         <span class="n">01</span> Group
       </div>
