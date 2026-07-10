@@ -43,6 +43,12 @@ const totalLabel = computed(() => `€${props.runningTotal.toLocaleString()}`)
           <div v-if="day.slots[key].status === 'empty'" style="display:flex;align-items:center">
             <div class="skel skel-line" style="width:70%" />
           </div>
+          <div v-else-if="day.slots[key].status === 'reserved'" data-testid="reserved-slot" style="opacity:.75">
+            <div style="font-size:13px;color:var(--fg-1)">{{ day.slots[key].name }}</div>
+            <div class="mono" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--fg-3);margin-top:1px">
+              reserved by <span :style="`color:${agentColorToken('logistics')}`">logistics</span>
+            </div>
+          </div>
           <div v-else data-testid="filled-slot">
             <div style="font-size:13px;color:var(--fg-0)">{{ day.slots[key].name }}</div>
             <div class="mono" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--fg-3);margin-top:1px">

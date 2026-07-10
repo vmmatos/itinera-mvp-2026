@@ -54,6 +54,22 @@ const AGENT_COLOR: Record<string, string> = {
 
 const SLOT_KEYS = ['morning', 'afternoon', 'evening'] as const
 
+// Matches RouteGraph.TimeWindow['blockedReason'] in
+// services/shared/src/types/workflow.ts — kept as a local string union rather
+// than importing the backend package (this file mirrors backend types, same
+// pattern as the rest of ~/types/index.ts).
+type BlockedReason = 'inbound-transit' | 'inbound-recovery' | 'outbound-transit'
+
+const TRANSIT_LABELS: Record<BlockedReason, string> = {
+  'inbound-transit': 'Arrival travel',
+  'inbound-recovery': 'Arrival recovery',
+  'outbound-transit': 'Departure travel',
+}
+
+function transitLabel(reason: string): string {
+  return TRANSIT_LABELS[reason as BlockedReason] ?? 'Reserved by logistics'
+}
+
 export function colorFor(agent: string): string {
   return AGENT_COLOR[agent] ?? 'neutral'
 }
@@ -99,8 +115,62 @@ function setAgentState(
   if (agentState === 'proposing') agent.proposalCount += 1
 }
 
-function buildDraftDays(cityStays: Array<{ city: string; arrivalDate: string; departureDate: string }>): DraftDay[] {
-  if (cityStays.length === 0) return []
+interface PlanTimeWindow {
+  date: string
+  slot: 'morning' | 'afternoon' | 'evening'
+  isTransitDay?: boolean
+  blockedReason?: string
+}
+
+interface PlanCityStay {
+  city: string
+  arrivalDate: string
+  departureDate: string
+  timeWindows?: PlanTimeWindow[]
+}
+
+function emptySlots(): DraftDay['slots'] {
+  return {
+    morning: { status: 'empty' },
+    afternoon: { status: 'empty' },
+    evening: { status: 'empty' },
+  }
+}
+
+// Preferred path: derive days straight from the logistics agent's own
+// timeWindows, which already carry correct day-ownership (a late-departure
+// transit day belongs to the origin city, not the destination — see
+// WorkflowEngine.buildDayOwnership) and mark exactly which slots are
+// unusable for tourist activities. This also naturally produces a day-card
+// for a transit day even when it falls on a stay's departureDate, which the
+// nights-loop fallback below excludes.
+function buildDraftDaysFromWindows(cityStays: PlanCityStay[]): DraftDay[] {
+  const baseTime = Math.min(...cityStays.map((cs) => new Date(cs.arrivalDate).getTime()))
+  const byDate = new Map<string, DraftDay>()
+  for (const stay of cityStays) {
+    for (const w of stay.timeWindows ?? []) {
+      let day = byDate.get(w.date)
+      if (!day) {
+        const dayNumber = Math.round((new Date(w.date).getTime() - baseTime) / 86400000) + 1
+        day = { day: dayNumber, date: w.date, city: stay.city, slots: emptySlots() }
+        byDate.set(w.date, day)
+      }
+      if (w.isTransitDay && w.blockedReason) {
+        day.slots[w.slot] = {
+          status: 'reserved',
+          name: transitLabel(w.blockedReason),
+          by: 'logistics',
+          color: colorFor('logistics'),
+        }
+      }
+    }
+  }
+  return Array.from(byDate.values()).sort((a, b) => a.day - b.day)
+}
+
+// Fallback for older/minimal agent.plan payloads with no timeWindows —
+// reconstructs day-cards from the arrival/departure night span only.
+function buildDraftDaysFromNights(cityStays: PlanCityStay[]): DraftDay[] {
   const baseTime = Math.min(...cityStays.map((cs) => new Date(cs.arrivalDate).getTime()))
   const days: DraftDay[] = []
   for (const stay of cityStays) {
@@ -109,19 +179,16 @@ function buildDraftDays(cityStays: Array<{ city: string; arrivalDate: string; de
     for (let t = start; t < end; t += 86400000) {
       const dayNumber = Math.round((t - baseTime) / 86400000) + 1
       const date = new Date(t).toISOString().slice(0, 10)
-      days.push({
-        day: dayNumber,
-        date,
-        city: stay.city,
-        slots: {
-          morning: { status: 'empty' },
-          afternoon: { status: 'empty' },
-          evening: { status: 'empty' },
-        },
-      })
+      days.push({ day: dayNumber, date, city: stay.city, slots: emptySlots() })
     }
   }
   return days
+}
+
+function buildDraftDays(cityStays: PlanCityStay[]): DraftDay[] {
+  if (cityStays.length === 0) return []
+  const hasWindows = cityStays.some((cs) => (cs.timeWindows?.length ?? 0) > 0)
+  return hasWindows ? buildDraftDaysFromWindows(cityStays) : buildDraftDaysFromNights(cityStays)
 }
 
 function handleWorkflowEvent(state: NegotiationState, event: AgentStreamEvent): void {
@@ -163,7 +230,7 @@ function handleWorkflowEvent(state: NegotiationState, event: AgentStreamEvent): 
 
 function handlePlanEvent(state: NegotiationState, event: AgentStreamEvent): void {
   setAgentState(state, 'logistics', 'idle', 'sent route plan')
-  const content = event.content as { cityStays?: Array<{ city: string; arrivalDate: string; departureDate: string }> } | null | undefined
+  const content = event.content as { cityStays?: PlanCityStay[] } | null | undefined
   if (content?.cityStays?.length) {
     state.slots = buildDraftDays(content.cityStays)
   }
@@ -241,7 +308,9 @@ function handleDecisionEvent(state: NegotiationState, event: AgentStreamEvent): 
   if (d.status === 'rejected') return
   const day = state.slots.find((sd) => sd.city === d.city && sd.date === d.date)
   const slot = day?.slots[d.slot]
-  if (day && slot) {
+  // A slot logistics already reserved for transit is authoritative — mirrors
+  // WorkflowEngine.stripBlockedSlotActivities on the backend.
+  if (day && slot && slot.status !== 'reserved') {
     slot.status = 'filled'
     slot.name = d.activity
     slot.by = d.agent
@@ -270,7 +339,7 @@ function handleMergeEvent(state: NegotiationState, event: AgentStreamEvent): voi
       const slotKey = act.time as (typeof SLOT_KEYS)[number] | undefined
       if (!draftDay || !slotKey || !SLOT_KEYS.includes(slotKey)) continue
       const slot = draftDay.slots[slotKey]
-      if (slot.status === 'filled' || !owner) continue
+      if (slot.status !== 'empty' || !owner) continue
       slot.status = 'filled'
       slot.name = act.activity ?? 'Activity'
       slot.by = owner

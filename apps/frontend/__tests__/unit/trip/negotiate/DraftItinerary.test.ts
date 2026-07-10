@@ -35,6 +35,21 @@ describe('DraftItinerary', () => {
     expect(filled.text()).toContain('orchestrator accepted')
   })
 
+  it('renders a reserved-by-logistics slot distinctly from empty and filled', () => {
+    const day = emptyDay(1, 'Barcelona', '2026-08-10')
+    day.slots.morning = { status: 'reserved', name: 'Arrival travel', by: 'logistics', color: 'blue' }
+    const wrapper = mount(DraftItinerary, {
+      props: { days: [day], budgetTotal: 1400, runningTotal: 0, filledCount: 0, totalSlots: 3 },
+    })
+    const reserved = wrapper.find('[data-testid="reserved-slot"]')
+    expect(reserved.exists()).toBe(true)
+    expect(reserved.text()).toContain('Arrival travel')
+    expect(reserved.text()).toContain('logistics')
+    expect(wrapper.find('[data-testid="filled-slot"]').exists()).toBe(false)
+    const reservedRow = wrapper.find('[data-testid="draft-slot"][data-status="reserved"]')
+    expect(reservedRow.find('.skel-line').exists()).toBe(false)
+  })
+
   it('shows filled/total slot count and per-day counters', () => {
     const wrapper = mount(DraftItinerary, {
       props: { days: [emptyDay(1, 'Barcelona', '2026-08-10')], budgetTotal: 1400, runningTotal: 0, filledCount: 2, totalSlots: 9 },
