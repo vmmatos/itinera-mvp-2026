@@ -407,9 +407,11 @@ export function sweepPendingEvents(state: NegotiationState): void {
   }
 }
 
+// Counts both agent-filled and logistics-reserved slots — both are
+// "resolved", i.e. no longer available for a tourist proposal.
 export function filledSlotCount(state: NegotiationState): number {
   return state.slots.reduce(
-    (sum, day) => sum + SLOT_KEYS.filter((k) => day.slots[k].status === 'filled').length,
+    (sum, day) => sum + SLOT_KEYS.filter((k) => day.slots[k].status !== 'empty').length,
     0,
   )
 }

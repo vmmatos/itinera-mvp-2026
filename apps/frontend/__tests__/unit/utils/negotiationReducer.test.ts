@@ -133,6 +133,23 @@ describe('negotiationReducer.reconcile — happy path', () => {
     expect(departureDay.slots.evening.name).toBe('Departure travel')
   })
 
+  it('filledSlotCount counts reserved transit slots as resolved, alongside filled ones', () => {
+    const state = createInitialNegotiationState()
+    reconcile(state, planEventWithWindows())
+    // From the fixture: 3 reserved slots (arrival morning, departure afternoon+evening).
+    expect(filledSlotCount(state)).toBe(3)
+
+    // Accept a proposal on a still-empty slot (2026-08-11 is untouched by the fixture's windows).
+    reconcile(state, {
+      tripId: TRIP_ID, type: 'agent.decision', agent: 'diana', round: 1, timestamp: 't2',
+      content: {
+        agent: 'diana', city: 'Barcelona', date: '2026-08-11', slot: 'morning', activity: 'Mercat de Sta Caterina',
+        status: 'accepted', reason: 'test reason', estimatedCostPerPerson: 14,
+      },
+    })
+    expect(filledSlotCount(state)).toBe(4)
+  })
+
   it('falls back to plain empty slots when agent.plan has no timeWindows (legacy payload)', () => {
     const state = createInitialNegotiationState()
     reconcile(state, planEvent())

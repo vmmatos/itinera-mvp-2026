@@ -14,7 +14,7 @@ const props = defineProps<{
 const SLOT_KEYS = ['morning', 'afternoon', 'evening'] as const
 
 function dayFilledCount(day: DraftDay): number {
-  return SLOT_KEYS.filter((k) => day.slots[k].status === 'filled').length
+  return SLOT_KEYS.filter((k) => day.slots[k].status !== 'empty').length
 }
 
 const totalLabel = computed(() => `€${props.runningTotal.toLocaleString()}`)
