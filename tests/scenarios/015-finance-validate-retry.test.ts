@@ -22,6 +22,7 @@ vi.mock('@/services/StateManager', () => ({
     saveWorkflowContext: vi.fn().mockResolvedValue(undefined),
     logAgentCall: vi.fn().mockResolvedValue(undefined),
     saveProposal: vi.fn().mockResolvedValue({}),
+    updateProposalStatus: vi.fn().mockResolvedValue(undefined),
     saveFinalMetric: vi.fn().mockResolvedValue(undefined),
     transitionStatus: vi.fn().mockResolvedValue(undefined),
     rejectTrip: vi.fn().mockResolvedValue(undefined),
@@ -111,9 +112,9 @@ describe('Scenario 015 — WorkflowEngine v2: finance validate retry', () => {
     expect(agentCaller.callPreferenceAgentSlots).toHaveBeenCalledOnce();
   });
 
-  it('merge NOT re-called during finance validate retry', async () => {
+  it('merge NOT re-called during finance validate retry (still exactly one call per city stay from the single merge attempt)', async () => {
     await engine.run(TRIP_ID);
-    expect(agentCaller.callOrchestratorMerge).toHaveBeenCalledOnce();
+    expect(agentCaller.callOrchestratorMerge).toHaveBeenCalledTimes(2);
   });
 
   it('flow completes to FINISH after finance validate retry', async () => {

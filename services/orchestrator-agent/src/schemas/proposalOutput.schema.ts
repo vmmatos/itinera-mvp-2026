@@ -15,6 +15,10 @@ const ActivitySchema = z.object({
   satisfies: z.array(z.string()).optional(),
   ownerAgent: z.string().optional(),
   description: z.string().optional(),
+  // Ids of the input slot proposal(s) this activity was built from — the
+  // authoritative link back to the originating proposal, copied verbatim
+  // rather than reconstructed from free-text city/date/slot values.
+  proposalIds: z.array(z.string()).optional(),
 });
 
 const DaySchema = z.object({
@@ -36,6 +40,11 @@ const AccommodationSchema = z.object({
 });
 
 const DecisionSchema = z.object({
+  // Optional: this log is enrichment-only (reason text) — WorkflowEngine
+  // derives the authoritative accept/merge/reject status from `proposalIds`
+  // on the itinerary's own activities, not from this array. When present,
+  // it should be the input proposal's id copied verbatim.
+  proposalId: z.string().optional(),
   agent: z.string(),
   city: z.string(),
   date: z.string(),
@@ -49,7 +58,10 @@ const DecisionSchema = z.object({
 export const ProposalOutputSchema = z.object({
   accommodation: z.array(AccommodationSchema).min(1),
   itinerary: z.array(DaySchema).min(1),
-  satisfactionEstimates: z.record(z.number().min(0).max(1)),
+  // No downstream consumer reads this (verified: only the prompt/schema/test
+  // fixtures reference it) — WorkflowEngine now computes it deterministically
+  // from proposal-decision outcomes instead of asking the LLM to estimate it.
+  satisfactionEstimates: z.record(z.number().min(0).max(1)).optional(),
   // Supplementary — a malformed/missing decision log must never fail the
   // whole merge (the itinerary is critical path, decisions are not).
   decisions: z.array(DecisionSchema).catch([]),

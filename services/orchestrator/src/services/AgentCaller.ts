@@ -191,13 +191,14 @@ export class AgentCaller extends BaseService {
     routeGraph: RouteGraph,
     touristOutputs: Record<string, unknown>,
     budgetPlan: BudgetPlan,
-    context = '',
+    context: string,
+    targetCity: string,
   ): Promise<AgentCallResult> {
     const start = Date.now();
     const resp = await this.post<{ merged: AgentEventLike }>(
       'orchestrator-agent',
       '/merge',
-      { tripId, round, routeGraph, touristOutputs, budgetPlan, context },
+      { tripId, round, routeGraph, touristOutputs, budgetPlan, context, targetCity },
     );
     return toAgentCallResult(resp.merged, Date.now() - start);
   }

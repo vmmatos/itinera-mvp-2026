@@ -41,6 +41,10 @@ export interface NegotiationCompleteEvent {
 
 /** One tourist agent's proposed activity for a single route-graph slot. */
 export interface SlotProposal {
+  /** Stable id assigned by preference-agent code (not the LLM) after the
+   * proposal is parsed, so it survives round-tripping through the merge
+   * LLM call unchanged and can be matched back reliably. */
+  id: string;
   city: string;
   date: string;
   slot: 'morning' | 'afternoon' | 'evening';
@@ -61,6 +65,10 @@ export type ProposalDecisionStatus = 'accepted' | 'merged' | 'rejected';
  * status instead of only the aggregate merged itinerary.
  */
 export interface ProposalDecision {
+  /** Matches SlotProposal.id — the authoritative key for the frontend to
+   * resolve the originating proposal card. City/date/slot below are kept
+   * for slot-grid addressing, not for identity matching. */
+  proposalId: string;
   agent: string;
   city: string;
   date: string;
@@ -72,6 +80,7 @@ export interface ProposalDecision {
 }
 
 export const ProposalDecisionSchema = z.object({
+  proposalId: z.string(),
   agent: z.string(),
   city: z.string(),
   date: z.string(),

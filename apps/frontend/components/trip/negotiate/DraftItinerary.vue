@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { DraftDay } from '~/types/index'
 import { agentColorToken } from '~/utils/agentColorTokens'
 
@@ -12,12 +12,31 @@ const props = defineProps<{
 }>()
 
 const SLOT_KEYS = ['morning', 'afternoon', 'evening'] as const
+const FALLBACK_REASON = 'No detailed reasoning available for this decision.'
 
 function dayFilledCount(day: DraftDay): number {
   return SLOT_KEYS.filter((k) => day.slots[k].status !== 'empty').length
 }
 
 const totalLabel = computed(() => `€${props.runningTotal.toLocaleString()}`)
+
+const expanded = ref(new Set<string>())
+
+function slotKey(day: DraftDay, key: string): string {
+  return `${day.day}:${key}`
+}
+
+function isExpanded(day: DraftDay, key: string): boolean {
+  return expanded.value.has(slotKey(day, key))
+}
+
+function toggleReason(day: DraftDay, key: string): void {
+  const k = slotKey(day, key)
+  const next = new Set(expanded.value)
+  if (next.has(k)) next.delete(k)
+  else next.add(k)
+  expanded.value = next
+}
 </script>
 
 <template>
@@ -49,10 +68,26 @@ const totalLabel = computed(() => `€${props.runningTotal.toLocaleString()}`)
               reserved by <span :style="`color:${agentColorToken('logistics')}`">logistics</span>
             </div>
           </div>
-          <div v-else data-testid="filled-slot">
+          <div
+            v-else
+            data-testid="filled-slot"
+            role="button"
+            tabindex="0"
+            style="cursor:pointer"
+            @click="toggleReason(day, key)"
+            @keydown.enter="toggleReason(day, key)"
+            @keydown.space.prevent="toggleReason(day, key)"
+          >
             <div style="font-size:13px;color:var(--fg-0)">{{ day.slots[key].name }}</div>
             <div class="mono" style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--fg-3);margin-top:1px">
-              by <span :style="`color:${agentColorToken(day.slots[key].color ?? 'neutral')}`">{{ day.slots[key].by }}</span> · orchestrator accepted
+              by <span :style="`color:${agentColorToken(day.slots[key].color ?? 'neutral')}`">{{ day.slots[key].by }}</span> · orchestrator {{ day.slots[key].decisionStatus ?? 'accepted' }}
+            </div>
+            <div
+              v-if="isExpanded(day, key)"
+              data-testid="slot-reason"
+              style="margin-top:6px;font-size:12px;color:var(--fg-3);border-top:1px dashed var(--line-1);padding-top:6px"
+            >
+              {{ day.slots[key].reason ?? FALLBACK_REASON }}
             </div>
           </div>
         </div>

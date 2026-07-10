@@ -1,6 +1,6 @@
 import { BaseService } from '@itinera/shared';
 import type { TransportMode, AgentEvent, NegotiationCompleteEvent, TransportOption, RouteGraph, RestrictionWarning } from '@itinera/shared';
-import type { WorkflowContext, WorkflowState, TouristSlotInput, TransportPriorityResult, ProposalDecision } from '@itinera/shared';
+import type { WorkflowContext, WorkflowState, TouristSlotInput, TransportPriorityResult, ProposalDecision, ProposalDecisionStatus, SlotProposal, AgentName, AgentAction } from '@itinera/shared';
 import { WorkflowStateMachine } from '@/services/WorkflowStateMachine';
 import { evaluateTransportPriority } from '@/services/TransportPriorityEngine';
 import { StateManager } from '@/services/StateManager';
@@ -285,12 +285,12 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
 
       const results = await this.agentCaller.callPreferenceAgentSlots(context.tripId, 1, slots);
       const agentNames = ['alice', 'bob', 'carlos', 'diana'];
-      const touristAgentOutputs: Record<string, unknown> = {};
+      const touristAgentOutputs: Record<string, { slotProposals?: SlotProposal[] }> = {};
       let tokensUsed = 0;
 
       results.forEach((result, i) => {
         const name = agentNames[i] ?? `agent-${i}`;
-        touristAgentOutputs[name] = result.content;
+        touristAgentOutputs[name] = result.content as { slotProposals?: SlotProposal[] };
         tokensUsed += result.tokensUsed;
 
         void this.stateManager.logAgentCall({
@@ -336,33 +336,146 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
     if (!context.routeGraph || !context.touristAgentOutputs || !context.budgetPlan) return context;
     const start = Date.now();
     try {
+      const routeGraph = context.routeGraph;
+      const budgetPlan = context.budgetPlan;
       const tripContext = `Trip: ${trip.name}. Budget: ${context.budgetTotal} ${context.budgetCurrency}. Group size: ${context.groupSize}.`;
-      const result = await this.agentCaller.callOrchestratorMerge(
-        context.tripId,
-        1,
-        context.routeGraph,
-        context.touristAgentOutputs,
-        context.budgetPlan,
-        tripContext,
+      const touristAgentOutputs = context.touristAgentOutputs as Record<string, { slotProposals?: SlotProposal[] }>;
+
+      // One merge call per city stay, run concurrently. LLM output-token
+      // generation (not input size) dominates wall time, so scoping each
+      // call's OUTPUT to a single city's days/decisions/accommodation turns
+      // one huge blocking completion (up to ITINERARY_MAX_TOKENS) into N
+      // smaller ones running in parallel — verified safe because
+      // RouteGraph.cityStays[].timeWindows already partitions every calendar
+      // date into exactly one city (no gaps/overlaps at transit boundaries),
+      // and merge.txt's budget/fairness rules are already per-city-scoped.
+      const cityResults = await Promise.all(
+        routeGraph.cityStays.map((stay) =>
+          this.agentCaller.callOrchestratorMerge(
+            context.tripId,
+            1,
+            routeGraph,
+            touristAgentOutputs,
+            budgetPlan,
+            tripContext,
+            stay.city,
+          ),
+        ),
       );
 
-      // Extract the per-proposal decision log before enforceCanonicalDestinations/
-      // stripBlockedSlotActivities/injectRouteGraphTransport run — those only
-      // operate on itinerary/accommodation and would silently drop unknown keys.
-      const decisions = Array.isArray(result.content['decisions'])
-        ? (result.content['decisions'] as ProposalDecision[])
-        : [];
+      let tokensUsed = 0;
+      const combinedItinerary: unknown[] = [];
+      const combinedAccommodation: unknown[] = [];
+      const combinedDecisions: Array<Record<string, unknown>> = [];
+      const reasoningParts: string[] = [];
+      for (const [i, result] of cityResults.entries()) {
+        tokensUsed += result.tokensUsed;
+        const city = routeGraph.cityStays[i]?.city ?? `city-${i}`;
+        if (Array.isArray(result.content['itinerary'])) combinedItinerary.push(...(result.content['itinerary'] as unknown[]));
+        if (Array.isArray(result.content['accommodation'])) combinedAccommodation.push(...(result.content['accommodation'] as unknown[]));
+        if (Array.isArray(result.content['decisions'])) combinedDecisions.push(...(result.content['decisions'] as Array<Record<string, unknown>>));
+        if (result.reasoning) reasoningParts.push(`[${city}] ${result.reasoning}`);
+        void this.stateManager.logAgentCall({
+          tripId: context.tripId,
+          agent: 'orchestrator',
+          round: 1,
+          action: 'merge-city',
+          latencyMs: result.latencyMs,
+          tokensUsed: result.tokensUsed,
+          reasoning: `city=${city}`,
+        });
+      }
+      combinedItinerary.sort((a, b) => ((a as { day: number }).day ?? 0) - ((b as { day: number }).day ?? 0));
+      const combinedContent: Record<string, unknown> = {
+        itinerary: combinedItinerary,
+        accommodation: combinedAccommodation,
+        decisions: combinedDecisions,
+      };
 
       // Enforce canonical destinations, strip LLM activities from blocked
       // transit slots (merge.txt is prompt-level only — this is the hard
       // guarantee), then inject real transport legs from routeGraph.
-      const enforced = this.enforceCanonicalDestinations(result.content, context.destinations, context.routeGraph);
-      const stripped = context.routeGraph
-        ? this.stripBlockedSlotActivities(enforced, context.routeGraph)
-        : enforced;
-      const withTransport = context.routeGraph
-        ? this.injectRouteGraphTransport(stripped, context.routeGraph, context.destinations)
-        : stripped;
+      const enforced = this.enforceCanonicalDestinations(combinedContent, context.destinations, routeGraph);
+      const stripped = this.stripBlockedSlotActivities(enforced, routeGraph);
+      const withTransport = this.injectRouteGraphTransport(stripped, routeGraph, context.destinations);
+
+      // Derive accept/merge/reject per input proposal from which proposalIds
+      // actually ended up in the final itinerary's activities — not from the
+      // merge LLM's separately-generated `decisions` log, which can silently
+      // be empty (schema `.catch([])`) or drift from the input proposals'
+      // own city/date/slot text. The `decisions` log is now enrichment-only
+      // (reason text), keyed by the same id, never load-bearing for status.
+      const inputProposals: Array<{ id: string; agent: string; city: string; date: string; slot: 'morning' | 'afternoon' | 'evening'; activity: string; estimatedCostPerPerson: number }> = [];
+      for (const [agentName, output] of Object.entries(touristAgentOutputs)) {
+        for (const p of output.slotProposals ?? []) {
+          inputProposals.push({
+            id: p.id, agent: agentName, city: p.city, date: p.date, slot: p.slot,
+            activity: p.activity, estimatedCostPerPerson: p.estimatedCostPerPerson,
+          });
+        }
+      }
+
+      const usedIds = new Set<string>();
+      const withTransportItinerary = (withTransport as { itinerary?: Array<{ activities?: Array<{ proposalIds?: string[] }> }> }).itinerary ?? [];
+      for (const day of withTransportItinerary) {
+        for (const act of day.activities ?? []) {
+          for (const pid of act.proposalIds ?? []) usedIds.add(pid);
+        }
+      }
+
+      if (usedIds.size === 0 && inputProposals.length > 0) {
+        this.logger.warn('Merge produced no proposalIds on any activity — all proposals will resolve to rejected', {
+          tripId: context.tripId, inputProposalCount: inputProposals.length,
+        });
+      }
+
+      const decisionEnrichmentById = new Map<string, { status: string; reason: string }>();
+      for (const raw of combinedDecisions) {
+        const pid = raw['proposalId'];
+        const status = raw['status'];
+        const reason = raw['reason'];
+        if (typeof pid === 'string' && typeof status === 'string' && typeof reason === 'string') {
+          decisionEnrichmentById.set(pid, { status, reason });
+        }
+      }
+
+      const decisions: ProposalDecision[] = inputProposals.map((p) => {
+        const enrichment = decisionEnrichmentById.get(p.id);
+        const accepted = usedIds.has(p.id);
+        const status: ProposalDecisionStatus = !accepted
+          ? 'rejected'
+          : enrichment?.status === 'merged' ? 'merged' : 'accepted';
+        const reason = enrichment?.reason ?? (accepted
+          ? 'Included in the final itinerary.'
+          : 'Not included in the final itinerary — budget, duplicate, or a competing proposal was preferred for that slot.');
+        return {
+          proposalId: p.id,
+          agent: p.agent,
+          city: p.city,
+          date: p.date,
+          slot: p.slot,
+          activity: p.activity,
+          status,
+          reason,
+          estimatedCostPerPerson: p.estimatedCostPerPerson,
+        };
+      });
+
+      // Computed deterministically from the decisions above rather than asked
+      // of the LLM — no downstream consumer reads this field, so accuracy
+      // (real acceptance ratio) is strictly better than an LLM guess at zero
+      // extra cost.
+      const satisfactionEstimates: Record<string, number> = {};
+      const countsByAgent = new Map<string, { total: number; won: number }>();
+      for (const d of decisions) {
+        const c = countsByAgent.get(d.agent) ?? { total: 0, won: 0 };
+        c.total += 1;
+        if (d.status !== 'rejected') c.won += 1;
+        countsByAgent.set(d.agent, c);
+      }
+      for (const [agent, c] of countsByAgent) {
+        satisfactionEstimates[agent] = c.total > 0 ? c.won / c.total : 0;
+      }
 
       // Public holiday / Sunday-Monday closure checks — real activities + dates only
       // exist from this point on, so this can't run any earlier in the workflow.
@@ -421,7 +534,7 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
         });
       }
 
-      const finalItinerary = { ...withTransport, restrictionWarnings, weatherAssessment };
+      const finalItinerary = { ...withTransport, restrictionWarnings, weatherAssessment, satisfactionEstimates };
 
       await this.stateManager.logAgentCall({
         tripId: context.tripId,
@@ -429,7 +542,7 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
         round: 1,
         action: 'merge',
         latencyMs: Date.now() - start,
-        tokensUsed: result.tokensUsed,
+        tokensUsed,
       });
 
       await this.stateManager.saveProposal({
@@ -438,16 +551,18 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
         round: 1,
         content: finalItinerary,
         action: 'propose',
-        reasoning: result.reasoning,
+        reasoning: reasoningParts.join('\n'),
       });
 
       await this.publishAgentEvent(context.tripId, 1, 'orchestrator', 'merge', finalItinerary);
 
-      // Publish one decision event per input tourist-agent slot proposal, and
-      // roll each agent's decisions up into a single aggregate proposal-status
-      // update (fine-grained per-slot detail lives only in the live events —
-      // the DB row stays at agent+round granularity, see saveProposal above).
-      const statusByAgent = new Map<string, ProposalDecision['status']>();
+      // Publish one decision event per input tourist-agent slot proposal
+      // (guaranteed full coverage — derived above, not read off the LLM's
+      // own decisions log), and roll each agent's decisions up into a single
+      // aggregate proposal-status update (fine-grained per-slot detail lives
+      // only in the live events — the DB row stays at agent+round
+      // granularity, see saveProposal above).
+      const statusByAgent = new Map<string, ProposalDecisionStatus>();
       for (const decision of decisions) {
         await this.publishAgentEvent(
           context.tripId,
@@ -474,7 +589,7 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
       return {
         ...context,
         mergedItinerary: finalItinerary,
-        totalTokensUsed: context.totalTokensUsed + result.tokensUsed + weatherTokensUsed,
+        totalTokensUsed: context.totalTokensUsed + tokensUsed + weatherTokensUsed,
       };
     } catch (err) {
       this.logger.error('Merge failed', { tripId: context.tripId, error: String(err) });
@@ -661,7 +776,7 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
         timestamp: new Date().toISOString(),
         content,
       };
-      await this.eventPublisher.publish('orchestrator', 'propose', event);
+      await this.eventPublisher.publish(agent as AgentName, action as AgentAction, event);
     } catch {
       // Non-critical — monitoring only
     }

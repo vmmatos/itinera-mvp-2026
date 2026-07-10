@@ -22,6 +22,7 @@ vi.mock('@/services/StateManager', () => ({
     saveWorkflowContext: vi.fn().mockResolvedValue(undefined),
     logAgentCall: vi.fn().mockResolvedValue(undefined),
     saveProposal: vi.fn().mockResolvedValue({}),
+    updateProposalStatus: vi.fn().mockResolvedValue(undefined),
     saveFinalMetric: vi.fn().mockResolvedValue(undefined),
     transitionStatus: vi.fn().mockResolvedValue(undefined),
     rejectTrip: vi.fn().mockResolvedValue(undefined),

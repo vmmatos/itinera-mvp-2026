@@ -22,6 +22,7 @@ vi.mock('@/services/StateManager', () => ({
     saveWorkflowContext: vi.fn().mockResolvedValue(undefined),
     logAgentCall: vi.fn().mockResolvedValue(undefined),
     saveProposal: vi.fn().mockResolvedValue({}),
+    updateProposalStatus: vi.fn().mockResolvedValue(undefined),
     saveFinalMetric: vi.fn().mockResolvedValue(undefined),
     transitionStatus: vi.fn().mockResolvedValue(undefined),
     rejectTrip: vi.fn().mockResolvedValue(undefined),
@@ -88,9 +89,9 @@ describe('Scenario 014 — WorkflowEngine v2: merge local retry', () => {
     vi.mocked(agentCaller.callValidatorAgent).mockResolvedValue(VALIDATION_PASS_RESULT);
   });
 
-  it('merge called twice: once on failure, once on retry', async () => {
+  it('merge called 4 times: one call per city stay (Porto+Lisbon) per attempt, once on the failed attempt and once on the retry', async () => {
     await engine.run(TRIP_ID);
-    expect(agentCaller.callOrchestratorMerge).toHaveBeenCalledTimes(2);
+    expect(agentCaller.callOrchestratorMerge).toHaveBeenCalledTimes(4);
   });
 
   it('logistics NOT re-called during merge retry', async () => {

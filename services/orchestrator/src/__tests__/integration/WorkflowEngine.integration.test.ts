@@ -264,7 +264,7 @@ describe('WorkflowEngine integration — transport priority persisted in context
 // ── Test 5: per-proposal decision events, end to end through the real state machine ──
 
 describe('WorkflowEngine integration — per-proposal decision events', () => {
-  it('publishes the aggregate merge event and one agent.decision event per decision, then rolls status up per agent', async () => {
+  it('publishes one agent.decision event per INPUT proposal (not per raw decision-log entry) — full coverage even though the merge only logged 2 of the 4', async () => {
     const sm = new StateManager();
     const ac = new AgentCaller();
     vi.clearAllMocks();
@@ -284,14 +284,21 @@ describe('WorkflowEngine integration — per-proposal decision events', () => {
     const engine = buildEngine(sm, ac, eventPublisher);
     await engine.run(TRIP_ID);
 
-    const published = vi.mocked(eventPublisher.publish).mock.calls.map((c) => c[2] as { type: string; agent: string });
+    const published = vi.mocked(eventPublisher.publish).mock.calls.map((c) => c[2] as { type: string; agent: string; content: { status: string; proposalId: string } });
     expect(published.filter((e) => e.type === 'agent.merge')).toHaveLength(1);
     const decisionEvents = published.filter((e) => e.type === 'agent.decision');
-    expect(decisionEvents).toHaveLength(2);
-    expect(decisionEvents.map((e) => e.agent)).toEqual(['alice', 'bob']);
+    // 4 events — one per tourist agent's input proposal — not just the 2 the
+    // merge's own decisions[] happened to mention. Ground truth is
+    // `proposalIds` on the merged activities (only alice-1 is referenced),
+    // so bob/carlos/diana all resolve to rejected regardless of decisions[].
+    expect(decisionEvents).toHaveLength(4);
+    expect(decisionEvents.map((e) => e.agent)).toEqual(['alice', 'bob', 'carlos', 'diana']);
+    expect(decisionEvents.map((e) => e.content.status)).toEqual(['accepted', 'rejected', 'rejected', 'rejected']);
 
     expect(sm.updateProposalStatus).toHaveBeenCalledWith(TRIP_ID, 'alice', 1, 'accepted');
     expect(sm.updateProposalStatus).toHaveBeenCalledWith(TRIP_ID, 'bob', 1, 'rejected');
+    expect(sm.updateProposalStatus).toHaveBeenCalledWith(TRIP_ID, 'carlos', 1, 'rejected');
+    expect(sm.updateProposalStatus).toHaveBeenCalledWith(TRIP_ID, 'diana', 1, 'rejected');
     expect(sm.transitionStatus).toHaveBeenCalledWith(TRIP_ID, 'confirmed');
   });
 });

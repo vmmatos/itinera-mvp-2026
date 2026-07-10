@@ -432,11 +432,24 @@ function twoCityRouteGraph(): RouteGraph {
   };
 }
 
-const TWO_CITY_MERGED = {
+// Per-city merge responses (Part B: one call per city stay, keyed by
+// targetCity — see mockOrchestratorMergeByCity below). Split along the same
+// city-ownership boundary the route graph already encodes: Madrid owns days
+// 1-2, Dublin owns days 3-4.
+const MADRID_CITY_MERGED = {
   accommodation: [],
   itinerary: [
     { day: 1, city: 'Madrid', country: 'Spain', activities: [{ time: 'morning', activity: 'Prado Museum' }] },
     { day: 2, city: 'Madrid', country: 'Spain', activities: [] },
+  ],
+  decisions: [],
+  _financeApproved: true,
+  _budgetFeasible: true,
+};
+
+const DUBLIN_CITY_MERGED = {
+  accommodation: [],
+  itinerary: [
     {
       day: 3, city: 'Dublin', country: 'Ireland',
       activities: [
@@ -447,9 +460,31 @@ const TWO_CITY_MERGED = {
     },
     { day: 4, city: 'Dublin', country: 'Ireland', activities: [] },
   ],
+  decisions: [],
   _financeApproved: true,
   _budgetFeasible: true,
 };
+
+// Combined shape, kept for any assertion that still wants "the whole trip" —
+// equivalent to what WorkflowEngine now assembles from the two per-city calls.
+const TWO_CITY_MERGED = {
+  accommodation: [...MADRID_CITY_MERGED.accommodation, ...DUBLIN_CITY_MERGED.accommodation],
+  itinerary: [...MADRID_CITY_MERGED.itinerary, ...DUBLIN_CITY_MERGED.itinerary],
+  _financeApproved: true,
+  _budgetFeasible: true,
+};
+
+/** Mocks callOrchestratorMerge to return a different per-city fixture keyed
+ * by the real `targetCity` argument (7th param) — mirrors the real Part-B
+ * call pattern (one call per city stay) instead of one call returning the
+ * whole trip regardless of which city was asked for. */
+function mockOrchestratorMergeByCity(byCity: Record<string, Record<string, unknown>>): void {
+  vi.mocked(agentCaller.callOrchestratorMerge).mockImplementation(async (..._args) => {
+    const targetCity = _args[6] as string;
+    const content = byCity[targetCity];
+    return { content: JSON.parse(JSON.stringify(content ?? {})), latencyMs: 200, tokensUsed: 200 };
+  });
+}
 
 function driveHappyPath(): void {
   driveStateMachine(stateMachine, [
@@ -474,11 +509,7 @@ function setupTwoCityMocks(): void {
     { content: {}, latencyMs: 100, tokensUsed: 50 },
     { content: {}, latencyMs: 100, tokensUsed: 50 },
   ]);
-  vi.mocked(agentCaller.callOrchestratorMerge).mockResolvedValue({
-    content: JSON.parse(JSON.stringify(TWO_CITY_MERGED)) as Record<string, unknown>,
-    latencyMs: 200,
-    tokensUsed: 200,
-  });
+  mockOrchestratorMergeByCity({ Madrid: MADRID_CITY_MERGED, Dublin: DUBLIN_CITY_MERGED });
   vi.mocked(agentCaller.callFinanceAgent).mockResolvedValue({
     content: { verdict: { approved: true, budgetFeasible: true, issues: [] } },
     latencyMs: 100,
@@ -556,7 +587,10 @@ describe('WorkflowEngine — late-departure travel day belongs to the origin cit
     };
   }
 
-  const LATE_DEP_MERGED = {
+  // Madrid owns the travel day (day 3) per its own timeWindows even though
+  // the LLM drift-mislabels it 'Dublin' — this is exactly what the Madrid-
+  // targeted per-city call returns; Dublin's own call only covers day 4.
+  const LATE_DEP_MADRID = {
     accommodation: [],
     itinerary: [
       { day: 1, city: 'Madrid', country: 'Spain', activities: [] },
@@ -571,10 +605,20 @@ describe('WorkflowEngine — late-departure travel day belongs to the origin cit
           { time: 'evening', activity: 'Guinness Storehouse tour' },
         ],
       },
+    ],
+    decisions: [],
+    _financeApproved: true,
+    _budgetFeasible: true,
+  };
+
+  const LATE_DEP_DUBLIN = {
+    accommodation: [],
+    itinerary: [
       { day: 4, city: 'Dublin', country: 'Ireland', activities: [
         { time: 'morning', activity: 'Check in and rest' },
       ] },
     ],
+    decisions: [],
     _financeApproved: true,
     _budgetFeasible: true,
   };
@@ -582,11 +626,7 @@ describe('WorkflowEngine — late-departure travel day belongs to the origin cit
   it('labels the travel day with the ORIGIN city, keeps its daytime activities, strips the evening slip, stamps transport there', async () => {
     setupTwoCityMocks();
     vi.mocked(agentCaller.callLogisticsPlan).mockResolvedValue(lateDepartureRouteGraph());
-    vi.mocked(agentCaller.callOrchestratorMerge).mockResolvedValue({
-      content: JSON.parse(JSON.stringify(LATE_DEP_MERGED)) as Record<string, unknown>,
-      latencyMs: 200,
-      tokensUsed: 200,
-    });
+    mockOrchestratorMergeByCity({ Madrid: LATE_DEP_MADRID, Dublin: LATE_DEP_DUBLIN });
     driveHappyPath();
 
     await engine.run(TRIP_ID);
@@ -809,25 +849,48 @@ describe('WorkflowEngine — weather assessment (not-show-meteo)', () => {
   });
 });
 
-describe('WorkflowEngine — per-proposal decision events', () => {
-  const DECISIONS = [
-    { agent: 'alice', city: 'Barcelona', date: '2026-08-10', slot: 'morning', activity: 'Mercat de Sta Caterina', status: 'accepted', reason: 'top group weight', estimatedCostPerPerson: 14 },
-    { agent: 'bob', city: 'Barcelona', date: '2026-08-10', slot: 'evening', activity: 'Razzmatazz', status: 'rejected', reason: 'group nightlife weight low' },
-    { agent: 'carlos', city: 'Barcelona', date: '2026-08-10', slot: 'morning', activity: 'Collserola trail run', status: 'merged', reason: 'slot conflict, moved to D2 morning' },
-  ] as const;
+describe('WorkflowEngine — per-proposal decision events (derived from proposalIds)', () => {
+  // Real proposal ids (assigned by preference-agent code, not the LLM) — the
+  // authoritative key. Diana proposes nothing this round, on purpose, to
+  // prove an agent with zero proposals is simply skipped, not an error.
+  const ALICE_PROPOSAL = { id: 'alice-1', city: 'Barcelona', date: '2026-08-10', slot: 'morning', activity: 'Mercat de Sta Caterina', venue: 'Mercat de Sta Caterina', estimatedCostPerPerson: 14 };
+  const BOB_PROPOSAL = { id: 'bob-1', city: 'Barcelona', date: '2026-08-10', slot: 'evening', activity: 'Razzmatazz', venue: 'Razzmatazz', estimatedCostPerPerson: 30 };
+  const CARLOS_PROPOSAL = { id: 'carlos-1', city: 'Barcelona', date: '2026-08-10', slot: 'morning', activity: 'Collserola trail run', venue: 'Collserola', estimatedCostPerPerson: 0 };
 
-  function setupWithDecisions(): void {
+  // The merge response: alice's activity used as-is (accepted), carlos's idea
+  // reshaped into a different activity (merged — decisions[] supplies the
+  // reason text), bob's never referenced anywhere (rejected). Ground truth
+  // for status comes from `proposalIds` on the activities, NOT from
+  // `decisions[]` — decisions[] here only supplies carlos's reason text, and
+  // deliberately omits alice/bob to prove the default reason text kicks in.
+  const MERGED_WITH_PROPOSAL_IDS = {
+    accommodation: [],
+    itinerary: [{
+      day: 1, city: 'Barcelona', country: 'Spain',
+      activities: [
+        { time: 'morning', activity: 'Mercat de Sta Caterina', proposalIds: ['alice-1'] },
+        { time: 'afternoon', activity: 'Collserola guided hike', proposalIds: ['carlos-1'] },
+      ],
+    }],
+    decisions: [
+      { proposalId: 'carlos-1', agent: 'carlos', city: 'Barcelona', date: '2026-08-10', slot: 'morning', activity: 'Collserola trail run', status: 'merged', reason: 'combined with a local guide add-on' },
+    ],
+    _financeApproved: true,
+    _budgetFeasible: true,
+  };
+
+  function setupWithProposals(mergedContent: Record<string, unknown>): void {
     setupCommonMocks(stateManager, eventPublisher);
     vi.mocked(agentCaller.callLogisticsPlan).mockResolvedValue(ROUTE_GRAPH);
     vi.mocked(agentCaller.callFinanceEstimate).mockResolvedValue(BUDGET_PLAN);
     vi.mocked(agentCaller.callPreferenceAgentSlots).mockResolvedValue([
-      { content: { slotProposals: [] }, latencyMs: 100, tokensUsed: 50 },
-      { content: { slotProposals: [] }, latencyMs: 100, tokensUsed: 50 },
-      { content: { slotProposals: [] }, latencyMs: 100, tokensUsed: 50 },
+      { content: { slotProposals: [ALICE_PROPOSAL] }, latencyMs: 100, tokensUsed: 50 },
+      { content: { slotProposals: [BOB_PROPOSAL] }, latencyMs: 100, tokensUsed: 50 },
+      { content: { slotProposals: [CARLOS_PROPOSAL] }, latencyMs: 100, tokensUsed: 50 },
       { content: { slotProposals: [] }, latencyMs: 100, tokensUsed: 50 },
     ]);
     vi.mocked(agentCaller.callOrchestratorMerge).mockResolvedValue({
-      content: { ...JSON.parse(JSON.stringify(MERGED_ITINERARY)), decisions: DECISIONS } as Record<string, unknown>,
+      content: JSON.parse(JSON.stringify(mergedContent)) as Record<string, unknown>,
       latencyMs: 200,
       tokensUsed: 200,
     });
@@ -846,7 +909,7 @@ describe('WorkflowEngine — per-proposal decision events', () => {
   }
 
   it('saves a proposal row for each of the 4 tourist agents during PARALLEL_TURISTIC_PLANNING', async () => {
-    setupWithDecisions();
+    setupWithProposals(MERGED_WITH_PROPOSAL_IDS);
     driveHappyPath();
 
     await engine.run(TRIP_ID);
@@ -859,8 +922,8 @@ describe('WorkflowEngine — per-proposal decision events', () => {
     }
   });
 
-  it('publishes one agent.decision event per decision returned by the merge', async () => {
-    setupWithDecisions();
+  it('happy path: derives accepted/merged/rejected from which proposalIds ended up in the final itinerary, not from the merge LLM\'s own decisions log', async () => {
+    setupWithProposals(MERGED_WITH_PROPOSAL_IDS);
     driveHappyPath();
 
     await engine.run(TRIP_ID);
@@ -868,15 +931,23 @@ describe('WorkflowEngine — per-proposal decision events', () => {
     const decisionCalls = vi.mocked(eventPublisher.publish).mock.calls.filter(
       (c) => (c[2] as { type: string }).type === 'agent.decision',
     );
-    expect(decisionCalls).toHaveLength(DECISIONS.length);
-    expect(decisionCalls.map((c) => (c[2] as { agent: string }).agent)).toEqual(
-      DECISIONS.map((d) => d.agent),
-    );
-    expect(decisionCalls[0]![2]).toMatchObject({ content: DECISIONS[0] });
+    expect(decisionCalls).toHaveLength(3);
+    const byAgent = new Map(decisionCalls.map((c) => {
+      const content = (c[2] as { content: Record<string, unknown> }).content;
+      return [content['agent'] as string, content];
+    }));
+
+    expect(byAgent.get('alice')).toMatchObject({ proposalId: 'alice-1', status: 'accepted', reason: 'Included in the final itinerary.' });
+    expect(byAgent.get('carlos')).toMatchObject({ proposalId: 'carlos-1', status: 'merged', reason: 'combined with a local guide add-on' });
+    expect(byAgent.get('bob')).toMatchObject({
+      proposalId: 'bob-1',
+      status: 'rejected',
+      reason: 'Not included in the final itinerary — budget, duplicate, or a competing proposal was preferred for that slot.',
+    });
   });
 
   it('rolls per-decision status up into one updateProposalStatus call per agent', async () => {
-    setupWithDecisions();
+    setupWithProposals(MERGED_WITH_PROPOSAL_IDS);
     driveHappyPath();
 
     await engine.run(TRIP_ID);
@@ -887,34 +958,93 @@ describe('WorkflowEngine — per-proposal decision events', () => {
     expect(stateManager.updateProposalStatus).toHaveBeenCalledTimes(3);
   });
 
-  it('does not crash and still publishes the aggregate merge event when the merge response has no decisions', async () => {
-    setupCommonMocks(stateManager, eventPublisher);
-    vi.mocked(agentCaller.callLogisticsPlan).mockResolvedValue(ROUTE_GRAPH);
-    vi.mocked(agentCaller.callFinanceEstimate).mockResolvedValue(BUDGET_PLAN);
-    vi.mocked(agentCaller.callPreferenceAgentSlots).mockResolvedValue([
-      { content: {}, latencyMs: 100, tokensUsed: 50 },
-      { content: {}, latencyMs: 100, tokensUsed: 50 },
-      { content: {}, latencyMs: 100, tokensUsed: 50 },
-      { content: {}, latencyMs: 100, tokensUsed: 50 },
-    ]);
-    // No `decisions` key at all — simulates an older backend / a merge response predating this feature.
-    vi.mocked(agentCaller.callOrchestratorMerge).mockResolvedValue({
-      content: JSON.parse(JSON.stringify(MERGED_ITINERARY)) as Record<string, unknown>,
-      latencyMs: 200,
-      tokensUsed: 200,
+  it('error: a malformed/missing decisions log never silently drops proposals — every one still resolves (safe default: rejected)', async () => {
+    // No `proposalIds` on any activity and no `decisions` at all — simulates
+    // the merge LLM's decision log failing schema validation (the old
+    // `.catch([])` case) or simply never tagging activities. The bug this
+    // fix targets: this used to mean zero agent.decision events published,
+    // leaving every proposal card stuck "awaiting orchestrator" forever.
+    setupWithProposals(MERGED_ITINERARY);
+    driveHappyPath();
+
+    await expect(engine.run(TRIP_ID)).resolves.not.toThrow();
+
+    const decisionCalls = vi.mocked(eventPublisher.publish).mock.calls.filter(
+      (c) => (c[2] as { type: string }).type === 'agent.decision',
+    );
+    expect(decisionCalls).toHaveLength(3);
+    expect(decisionCalls.every((c) => (c[2] as { content: { status: string } }).content.status === 'rejected')).toBe(true);
+
+    expect(stateManager.updateProposalStatus).toHaveBeenCalledTimes(3);
+    expect(stateManager.updateProposalStatus).toHaveBeenCalledWith(TRIP_ID, 'alice', 1, 'rejected');
+    expect(stateManager.updateProposalStatus).toHaveBeenCalledWith(TRIP_ID, 'bob', 1, 'rejected');
+    expect(stateManager.updateProposalStatus).toHaveBeenCalledWith(TRIP_ID, 'carlos', 1, 'rejected');
+
+    const mergeCalls = vi.mocked(eventPublisher.publish).mock.calls.filter(
+      (c) => (c[2] as { type: string }).type === 'agent.merge',
+    );
+    expect(mergeCalls).toHaveLength(1);
+    expect(stateManager.transitionStatus).toHaveBeenCalledWith(TRIP_ID, 'confirmed');
+  });
+
+  it('routing key: agent.decision, agent.merge, and workflow.* events publish under the real agent/action — not a hardcoded agent.orchestrator.propose', async () => {
+    setupWithProposals(MERGED_WITH_PROPOSAL_IDS);
+    driveHappyPath();
+
+    await engine.run(TRIP_ID);
+
+    const calls = vi.mocked(eventPublisher.publish).mock.calls;
+    const decisionCall = calls.find((c) => (c[2] as { type: string }).type === 'agent.decision' && (c[2] as { agent: string }).agent === 'alice');
+    expect(decisionCall).toBeDefined();
+    expect(decisionCall![0]).toBe('alice');
+    expect(decisionCall![1]).toBe('decision');
+
+    const mergeCall = calls.find((c) => (c[2] as { type: string }).type === 'agent.merge');
+    expect(mergeCall).toBeDefined();
+    expect(mergeCall![0]).toBe('orchestrator');
+    expect(mergeCall![1]).toBe('merge');
+
+    const workflowCalls = calls.filter((c) => (c[2] as { type: string }).type?.startsWith('workflow.'));
+    expect(workflowCalls.length).toBeGreaterThan(0);
+    for (const wc of workflowCalls) {
+      expect(wc[0]).toBe('orchestrator');
+      expect(wc[1]).toBe('score');
+    }
+  });
+});
+
+describe('WorkflowEngine — parallel per-city merge calls (Part B)', () => {
+  it('happy path: one callOrchestratorMerge call per city stay, run concurrently, combined into one itinerary sorted by day', async () => {
+    setupTwoCityMocks();
+    driveHappyPath();
+
+    await engine.run(TRIP_ID);
+
+    expect(agentCaller.callOrchestratorMerge).toHaveBeenCalledTimes(2);
+    const targetCities = vi.mocked(agentCaller.callOrchestratorMerge).mock.calls.map((c) => c[6]);
+    expect(targetCities).toEqual(['Madrid', 'Dublin']);
+
+    const itinerary = mergedProposalContent()['itinerary'] as Array<Record<string, unknown>>;
+    expect(itinerary.map((d) => d['day'])).toEqual([1, 2, 3, 4]);
+    expect(itinerary.find((d) => d['day'] === 1)!['city']).toBe('Madrid');
+    expect(itinerary.find((d) => d['day'] === 3)!['city']).toBe('Dublin');
+
+    // satisfactionEstimates is computed deterministically in code now, not
+    // read off either per-city LLM response (both fixtures carry none).
+    expect(mergedProposalContent()['satisfactionEstimates']).toBeDefined();
+  });
+
+  it('error: one of the two per-city merge calls rejecting fails the whole stage, same all-or-nothing semantics as a single-call failure', async () => {
+    setupTwoCityMocks();
+    vi.mocked(agentCaller.callOrchestratorMerge).mockImplementation(async (..._args) => {
+      const targetCity = _args[6] as string;
+      if (targetCity === 'Dublin') throw new Error('orchestrator-agent unreachable for Dublin');
+      return { content: JSON.parse(JSON.stringify(MADRID_CITY_MERGED)), latencyMs: 200, tokensUsed: 200 };
     });
-    vi.mocked(agentCaller.callFinanceAgent).mockResolvedValue({
-      content: { verdict: { approved: true, budgetFeasible: true, issues: [] } },
-      latencyMs: 100,
-      tokensUsed: 100,
-    });
-    vi.mocked(agentCaller.callValidatorAgent).mockResolvedValue({
-      content: { scoring: { overallScore: 80 } },
-      latencyMs: 50,
-      tokensUsed: 50,
-    });
-    vi.mocked(agentCaller.callLogisticsRestrictions).mockResolvedValue([]);
-    vi.mocked(agentCaller.callLogisticsWeatherAssessment).mockResolvedValue({ content: {}, latencyMs: 0, tokensUsed: 0 });
+    // No merge event ever published when the stage fails — matches today's
+    // single-call failure path, not a retry/refinement transition (the state
+    // machine mock here only drives the happy path; this asserts executeMerge
+    // itself never partially saves/publishes on failure).
     driveHappyPath();
 
     await expect(engine.run(TRIP_ID)).resolves.not.toThrow();
@@ -922,8 +1052,9 @@ describe('WorkflowEngine — per-proposal decision events', () => {
     const mergeCalls = vi.mocked(eventPublisher.publish).mock.calls.filter(
       (c) => (c[2] as { type: string }).type === 'agent.merge',
     );
-    expect(mergeCalls).toHaveLength(1);
-    expect(stateManager.updateProposalStatus).not.toHaveBeenCalled();
-    expect(stateManager.transitionStatus).toHaveBeenCalledWith(TRIP_ID, 'confirmed');
+    expect(mergeCalls).toHaveLength(0);
+    expect(vi.mocked(stateManager.saveProposal)).not.toHaveBeenCalledWith(
+      expect.objectContaining({ agent: 'orchestrator' }),
+    );
   });
 });

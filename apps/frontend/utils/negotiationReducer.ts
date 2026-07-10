@@ -215,6 +215,13 @@ function handleWorkflowEvent(state: NegotiationState, event: AgentStreamEvent): 
     if (rawState === 'FINISH') {
       state.agents.forEach((a) => { a.state = 'idle' })
       state.stages.forEach((s) => { s.status = 'done' })
+    } else {
+      // Any other terminal state (e.g. ASK_REFINEMENT) means the workflow
+      // stopped without ever reaching MERGE_AND_SCORE=done — the store's
+      // post-merge sweep timer (armed only on that transition) would never
+      // fire, leaving pending cards stuck forever. Resolve them immediately
+      // instead of waiting for a stage transition that will never come.
+      sweepPendingEvents(state)
     }
     return
   }
@@ -268,7 +275,10 @@ function handleProposeEvent(state: NegotiationState, event: AgentStreamEvent): v
   setAgentState(state, agentId, 'proposing', 'proposing activities')
   for (const p of proposals) {
     pushOrUpdateEvent(state, {
-      id: proposalKey(agentId, p.city, p.date, p.slot),
+      // p.id is the authoritative key (assigned by preference-agent code,
+      // survives round-tripping through the merge LLM unchanged) — the
+      // derived string key is only a fallback for a stray legacy-shaped event.
+      id: p.id ?? proposalKey(agentId, p.city, p.date, p.slot),
       who: agentId,
       color: colorFor(agentId),
       kind: 'agent · propose',
@@ -287,7 +297,10 @@ function handleProposeEvent(state: NegotiationState, event: AgentStreamEvent): v
 function handleDecisionEvent(state: NegotiationState, event: AgentStreamEvent): void {
   const d = event.content as ProposalDecision | null | undefined
   if (!d || !d.agent || !d.status) return
-  const key = proposalKey(d.agent, d.city, d.date, d.slot)
+  // proposalId is the authoritative key (matches the id the propose event
+  // created the card with) — the derived key is only a fallback for a stray
+  // legacy-shaped event with no proposalId.
+  const key = d.proposalId ?? proposalKey(d.agent, d.city, d.date, d.slot)
   const existing = state.events.find((e) => e.id === key)
   if (existing) {
     existing.chip = d.status
@@ -316,6 +329,8 @@ function handleDecisionEvent(state: NegotiationState, event: AgentStreamEvent): 
     slot.by = d.agent
     slot.color = colorFor(d.agent)
     slot.cost = d.estimatedCostPerPerson ?? 0
+    slot.decisionStatus = d.status
+    slot.reason = d.reason
   }
 }
 
@@ -345,6 +360,9 @@ function handleMergeEvent(state: NegotiationState, event: AgentStreamEvent): voi
       slot.by = owner
       slot.color = colorFor(owner)
       slot.cost = act.estimatedCostPerPerson ?? 0
+      // Best-effort guess — this fallback path has no per-slot LLM-authored
+      // reason to attach, unlike the precise agent.decision path above.
+      slot.decisionStatus = 'accepted'
     }
   }
 

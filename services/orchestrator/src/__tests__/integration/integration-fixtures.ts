@@ -81,15 +81,15 @@ export const BUDGET_PLAN_FEASIBLE: BudgetPlan = {
 };
 
 export const TOURIST_SLOT_RESULTS = [
-  { content: { slotProposals: [{ city: 'Porto', slot: 'morning', activity: 'Ribeira Market', cost: 0 }] }, latencyMs: 120, tokensUsed: 150 },
-  { content: { slotProposals: [{ city: 'Porto', slot: 'afternoon', activity: 'Wine tasting', cost: 25 }] }, latencyMs: 130, tokensUsed: 145 },
-  { content: { slotProposals: [{ city: 'Porto', slot: 'morning', activity: 'Douro hike', cost: 0 }] }, latencyMs: 110, tokensUsed: 155 },
-  { content: { slotProposals: [{ city: 'Porto', slot: 'evening', activity: 'Francesinha dinner', cost: 18 }] }, latencyMs: 125, tokensUsed: 148 },
+  { content: { slotProposals: [{ id: 'alice-1', city: 'Porto', slot: 'morning', activity: 'Ribeira Market', cost: 0 }] }, latencyMs: 120, tokensUsed: 150 },
+  { content: { slotProposals: [{ id: 'bob-1', city: 'Porto', slot: 'afternoon', activity: 'Wine tasting', cost: 25 }] }, latencyMs: 130, tokensUsed: 145 },
+  { content: { slotProposals: [{ id: 'carlos-1', city: 'Porto', slot: 'morning', activity: 'Douro hike', cost: 0 }] }, latencyMs: 110, tokensUsed: 155 },
+  { content: { slotProposals: [{ id: 'diana-1', city: 'Porto', slot: 'evening', activity: 'Francesinha dinner', cost: 18 }] }, latencyMs: 125, tokensUsed: 148 },
 ];
 
 export const MERGED_ITINERARY_CONTENT = {
   itinerary: [
-    { day: 1, city: 'Porto', date: '2026-09-10', activities: [{ name: 'Ribeira Market', time: 'morning', city: 'Porto', ownerAgent: 'alice' }] },
+    { day: 1, city: 'Porto', date: '2026-09-10', activities: [{ name: 'Ribeira Market', time: 'morning', city: 'Porto', ownerAgent: 'alice', proposalIds: ['alice-1'] }] },
     { day: 4, city: 'Lisbon', date: '2026-09-13', activities: [{ name: 'Alfama tour', time: 'afternoon', city: 'Lisbon', ownerAgent: 'alice' }] },
   ],
   accommodation: [
@@ -99,11 +99,15 @@ export const MERGED_ITINERARY_CONTENT = {
   satisfactionEstimates: { alice: 0.82, bob: 0.79, carlos: 0.77, diana: 0.83 },
 };
 
+// alice's proposal (alice-1) is referenced by an activity's proposalIds above
+// — the authoritative signal for accept/reject. bob/carlos/diana are not
+// referenced anywhere, so they resolve to rejected regardless of what (or
+// whether) `decisions` below says — that log is enrichment-only (reason text).
 export const MERGED_ITINERARY_WITH_DECISIONS = {
   ...MERGED_ITINERARY_CONTENT,
   decisions: [
-    { agent: 'alice', city: 'Porto', date: '2026-09-10', slot: 'morning', activity: 'Ribeira Market', status: 'accepted', reason: 'no conflicts', estimatedCostPerPerson: 0 },
-    { agent: 'bob', city: 'Porto', date: '2026-09-10', slot: 'afternoon', activity: 'Wine tasting', status: 'rejected', reason: 'over per-block budget' },
+    { proposalId: 'alice-1', agent: 'alice', city: 'Porto', date: '2026-09-10', slot: 'morning', activity: 'Ribeira Market', status: 'accepted', reason: 'no conflicts', estimatedCostPerPerson: 0 },
+    { proposalId: 'bob-1', agent: 'bob', city: 'Porto', date: '2026-09-10', slot: 'afternoon', activity: 'Wine tasting', status: 'rejected', reason: 'over per-block budget' },
   ],
 };
 

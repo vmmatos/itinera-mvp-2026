@@ -345,6 +345,104 @@ describe('negotiationReducer.reconcile — error / edge scenarios', () => {
   })
 })
 
+describe('negotiationReducer.reconcile — proposalId-based matching', () => {
+  function proposeEventWithId(agent: AgentName, id: string, t = 1): AgentStreamEvent {
+    return {
+      tripId: TRIP_ID, type: 'agent.propose', agent, round: 1, timestamp: `t${t}`,
+      content: {
+        slotProposals: [
+          { id, city: 'Barcelona', date: '2026-08-10', slot: 'morning', activity: 'Mercat de Sta Caterina', venue: 'Mercat', estimatedCostPerPerson: 14 },
+        ],
+      },
+    }
+  }
+
+  function decisionEventWithId(agent: AgentName, proposalId: string, status: 'accepted' | 'merged' | 'rejected', t = 1): AgentStreamEvent {
+    return {
+      tripId: TRIP_ID, type: 'agent.decision', agent, round: 1, timestamp: `t${t}`,
+      content: {
+        proposalId, agent, city: 'Barcelona', date: '2026-08-10', slot: 'morning', activity: 'Mercat de Sta Caterina',
+        status, reason: 'test reason', estimatedCostPerPerson: 14,
+      },
+    }
+  }
+
+  it('happy path: card is keyed by proposalId (not the derived city/date/slot string) and the matching decision resolves it', () => {
+    const state = createInitialNegotiationState()
+    reconcile(state, proposeEventWithId('diana', 'diana-abc123'))
+    expect(state.events[0]!.id).toBe('diana-abc123')
+
+    reconcile(state, decisionEventWithId('diana', 'diana-abc123', 'accepted'))
+
+    const proposalEvent = state.events.find((e) => e.id === 'diana-abc123')!
+    expect(proposalEvent.chip).toBe('accepted')
+  })
+
+  it('error/edge: a decision referencing an unknown proposalId does not crash and still resolves via the ghost-card fallback', () => {
+    const state = createInitialNegotiationState()
+    reconcile(state, proposeEventWithId('diana', 'diana-abc123'))
+
+    expect(() => reconcile(state, decisionEventWithId('diana', 'diana-does-not-exist', 'accepted'))).not.toThrow()
+
+    // Original card is untouched (no matching id)...
+    expect(state.events.find((e) => e.id === 'diana-abc123')!.chip).toBe('pending')
+    // ...but a resolved ghost card for the unmatched id was still pushed, so
+    // the decision is never silently lost.
+    expect(state.events.find((e) => e.id === 'diana-does-not-exist')!.chip).toBe('accepted')
+  })
+
+  it('Part C: an accepted/merged decision copies decisionStatus and reason onto the filled slot', () => {
+    const state = createInitialNegotiationState()
+    reconcile(state, planEvent())
+    reconcile(state, proposeEventWithId('carlos', 'carlos-1'))
+    reconcile(state, decisionEventWithId('carlos', 'carlos-1', 'merged'))
+
+    const slot = state.slots[0]!.slots.morning
+    expect(slot.status).toBe('filled')
+    expect(slot.decisionStatus).toBe('merged')
+    expect(slot.reason).toBe('test reason')
+  })
+
+  it('Part C error/edge: the agent.merge fallback fills the slot but leaves reason unset (no per-slot reason available there)', () => {
+    const state = createInitialNegotiationState()
+    reconcile(state, planEvent())
+    reconcile(state, proposeEventWithId('diana', 'diana-1'))
+    reconcile(state, {
+      tripId: TRIP_ID, type: 'agent.merge', agent: 'orchestrator', round: 1, timestamp: 't2',
+      content: {
+        itinerary: [
+          { day: 1, activities: [{ ownerAgent: 'diana', activity: 'Mercat de Sta Caterina', time: 'morning', estimatedCostPerPerson: 14 }] },
+        ],
+      },
+    })
+
+    const slot = state.slots[0]!.slots.morning
+    expect(slot.status).toBe('filled')
+    expect(slot.decisionStatus).toBe('accepted')
+    expect(slot.reason).toBeUndefined()
+  })
+})
+
+describe('negotiationReducer.reconcile — terminal workflow states', () => {
+  it('a non-FINISH terminal state (e.g. ASK_REFINEMENT) immediately sweeps any pending cards, not waiting on a stage transition that will never come', () => {
+    const state = createInitialNegotiationState()
+    reconcile(state, workflowEvent('PARALLEL_TURISTIC_PLANNING'))
+    reconcile(state, proposeEvent('diana'))
+    expect(state.events.find((e) => e.kind === 'agent · propose')!.chip).toBe('pending')
+
+    reconcile(state, workflowEvent('ASK_REFINEMENT'))
+
+    expect(state.events.find((e) => e.kind === 'agent · propose')!.chip).toBe('rejected')
+  })
+
+  it('FINISH still marks every stage done, unaffected by the ASK_REFINEMENT branch', () => {
+    const state = createInitialNegotiationState()
+    reconcile(state, workflowEvent('FINAL_VALIDATION'))
+    reconcile(state, workflowEvent('FINISH'))
+    expect(state.stages.every((s) => s.status === 'done')).toBe(true)
+  })
+})
+
 describe('sweepPendingEvents', () => {
   it('force-resolves any event still pending to rejected', () => {
     const state = createInitialNegotiationState()

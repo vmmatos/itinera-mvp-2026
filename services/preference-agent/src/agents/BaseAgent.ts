@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import type { ZodTypeAny } from 'zod';
 import { BaseService, buildRoutingKey } from '@itinera/shared';
 import type { AgentEvent, AgentName, AgentAction, AIMessage, IAIProvider, TouristSlotInput } from '@itinera/shared';
@@ -185,6 +186,16 @@ export abstract class BaseAgent extends BaseService {
           agent: this.agentName, tripId, round, wasTruncated,
         });
         throw new Error(`${this.agentName} agent failed to produce valid slot proposals after retry (truncated=${wasTruncated})`);
+      }
+
+      // Assign a stable id per slot proposal (the LLM never generates one) so
+      // the merge stage can reference it verbatim instead of reconstructing a
+      // city/date/slot string key from two independently-generated LLM outputs.
+      const slotProposals = (parsedContent as { slotProposals?: Array<Record<string, unknown>> }).slotProposals;
+      if (Array.isArray(slotProposals)) {
+        for (const proposal of slotProposals) {
+          if (typeof proposal.id !== 'string') proposal.id = randomUUID();
+        }
       }
     }
 
