@@ -77,7 +77,7 @@ describe('ItineraryMerger', () => {
       truncated: false,
     });
 
-    const event = await merger.merge(VALID_TRIP_ID, 1, ROUTE_GRAPH, TOURIST_OUTPUTS, BUDGET_PLAN, 'Paris trip');
+    const event = await merger.merge(VALID_TRIP_ID, 1, ROUTE_GRAPH, TOURIST_OUTPUTS, BUDGET_PLAN, 'Paris trip', 'Paris');
 
     expect(anthropic.complete).toHaveBeenCalledOnce();
     expect(event.content).toMatchObject({ itinerary: expect.any(Array) });
@@ -99,7 +99,7 @@ describe('ItineraryMerger', () => {
       truncated: false,
     });
 
-    const event = await merger.merge(VALID_TRIP_ID, 1, ROUTE_GRAPH, TOURIST_OUTPUTS, BUDGET_PLAN, '');
+    const event = await merger.merge(VALID_TRIP_ID, 1, ROUTE_GRAPH, TOURIST_OUTPUTS, BUDGET_PLAN, '', 'Paris');
 
     expect(anthropic.complete).toHaveBeenCalledOnce();
     expect(event.content).toMatchObject({ itinerary: expect.any(Array) });
@@ -114,7 +114,7 @@ describe('ItineraryMerger', () => {
       truncated: false,
     });
 
-    await merger.merge(VALID_TRIP_ID, 1, ROUTE_GRAPH, TOURIST_OUTPUTS, BUDGET_PLAN, '');
+    await merger.merge(VALID_TRIP_ID, 1, ROUTE_GRAPH, TOURIST_OUTPUTS, BUDGET_PLAN, '', 'Paris');
 
     expect(anthropic.complete).toHaveBeenCalledWith(
       expect.any(String), expect.any(Array), expect.objectContaining({ maxTokens: 32000 }),
@@ -136,7 +136,7 @@ describe('ItineraryMerger', () => {
         truncated: false,
       });
 
-    const event = await merger.merge(VALID_TRIP_ID, 1, ROUTE_GRAPH, TOURIST_OUTPUTS, BUDGET_PLAN, '');
+    const event = await merger.merge(VALID_TRIP_ID, 1, ROUTE_GRAPH, TOURIST_OUTPUTS, BUDGET_PLAN, '', 'Paris');
 
     expect(anthropic.complete).toHaveBeenCalledTimes(2);
     expect(event.content).toMatchObject({ itinerary: expect.any(Array) });
@@ -155,7 +155,7 @@ describe('ItineraryMerger', () => {
     });
 
     await expect(
-      merger.merge(VALID_TRIP_ID, 1, ROUTE_GRAPH, TOURIST_OUTPUTS, BUDGET_PLAN, ''),
+      merger.merge(VALID_TRIP_ID, 1, ROUTE_GRAPH, TOURIST_OUTPUTS, BUDGET_PLAN, '', 'Paris'),
     ).rejects.toThrow(/failed to produce a valid itinerary/);
 
     expect(anthropic.complete).toHaveBeenCalledTimes(2);
@@ -173,7 +173,7 @@ describe('ItineraryMerger', () => {
     });
 
     await expect(
-      merger.merge(VALID_TRIP_ID, 1, ROUTE_GRAPH, TOURIST_OUTPUTS, BUDGET_PLAN, ''),
+      merger.merge(VALID_TRIP_ID, 1, ROUTE_GRAPH, TOURIST_OUTPUTS, BUDGET_PLAN, '', 'Paris'),
     ).rejects.toThrow(/failed to produce a valid itinerary/);
 
     expect(publisher.publish).not.toHaveBeenCalled();

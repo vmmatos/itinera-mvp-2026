@@ -76,4 +76,41 @@ describe('DraftItinerary', () => {
     expect(total.text()).toContain('€69')
     expect(total.text()).toContain('budget €1,400')
   })
+
+  it('shows the real decision status (e.g. "merged") instead of always saying "accepted"', () => {
+    const day = emptyDay(1, 'Barcelona', '2026-08-10')
+    day.slots.morning = { status: 'filled', name: 'Collserola guided hike', by: 'carlos', color: 'blue', cost: 0, decisionStatus: 'merged', reason: 'combined with a local guide add-on' }
+    const wrapper = mount(DraftItinerary, {
+      props: { days: [day], budgetTotal: 1400, runningTotal: 0, filledCount: 1, totalSlots: 3 },
+    })
+    expect(wrapper.find('[data-testid="filled-slot"]').text()).toContain('orchestrator merged')
+  })
+
+  it('clicking a filled slot toggles the reason panel open, then closed again', async () => {
+    const day = emptyDay(1, 'Barcelona', '2026-08-10')
+    day.slots.morning = { status: 'filled', name: 'Mercat de Sta Caterina', by: 'diana', color: 'magenta', cost: 14, decisionStatus: 'accepted', reason: 'best fit for the morning budget block' }
+    const wrapper = mount(DraftItinerary, {
+      props: { days: [day], budgetTotal: 1400, runningTotal: 14, filledCount: 1, totalSlots: 3 },
+    })
+
+    expect(wrapper.find('[data-testid="slot-reason"]').exists()).toBe(false)
+
+    await wrapper.find('[data-testid="filled-slot"]').trigger('click')
+    expect(wrapper.find('[data-testid="slot-reason"]').text()).toBe('best fit for the morning budget block')
+
+    await wrapper.find('[data-testid="filled-slot"]').trigger('click')
+    expect(wrapper.find('[data-testid="slot-reason"]').exists()).toBe(false)
+  })
+
+  it('keyboard Enter toggles the reason panel, falling back to a generic message when no reason is available', async () => {
+    const day = emptyDay(1, 'Barcelona', '2026-08-10')
+    // No `reason` — e.g. the agent.merge fallback path, which has no per-slot reason to attach.
+    day.slots.morning = { status: 'filled', name: 'Mercat de Sta Caterina', by: 'diana', color: 'magenta', cost: 14, decisionStatus: 'accepted' }
+    const wrapper = mount(DraftItinerary, {
+      props: { days: [day], budgetTotal: 1400, runningTotal: 14, filledCount: 1, totalSlots: 3 },
+    })
+
+    await wrapper.find('[data-testid="filled-slot"]').trigger('keydown.enter')
+    expect(wrapper.find('[data-testid="slot-reason"]').text()).toBe('No detailed reasoning available for this decision.')
+  })
 })

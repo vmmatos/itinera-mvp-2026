@@ -242,6 +242,7 @@ describe('POST /merge', () => {
     routeGraph: { orderedLegs: [], cityStays: [] },
     touristOutputs: { alice: {} },
     budgetPlan: { perBlock: [], totalEurPerPerson: 0, grandTotal: 0, feasible: true, bufferPct: 10, currency: 'EUR' },
+    targetCity: 'Barcelona',
   };
 
   it('501-equivalent (400 via ValidationError) when merger is not configured', async () => {

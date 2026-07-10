@@ -31,12 +31,13 @@ export class ItineraryMerger extends BaseOrchestratorAgent {
     touristOutputs: Record<string, unknown>,
     budgetPlan: BudgetPlan,
     context: string,
+    targetCity: string,
   ): Promise<AgentEvent> {
     return this.handleAsync(async () => {
-      const cacheKey = `orch:${tripId}:merger:${round}:merge`;
+      const cacheKey = `orch:${tripId}:merger:${round}:merge:${targetCity}`;
       const cached = await this.redis.get<AgentEvent>(cacheKey);
       if (cached) {
-        this.logger.info('Cache hit', { agent: this.agentName, tripId, round, action: 'merge' });
+        this.logger.info('Cache hit', { agent: this.agentName, tripId, round, action: 'merge', targetCity });
         return cached;
       }
 
@@ -46,6 +47,7 @@ export class ItineraryMerger extends BaseOrchestratorAgent {
           content: [
             `Trip context: ${context}`,
             `Round: ${round}`,
+            `Target city for this call: ${targetCity}. Only output itinerary days, decisions, and accommodation for this city — see SCOPE OF THIS CALL in the system prompt.`,
             '',
             'ROUTE GRAPH (structural skeleton — city order, dates, and time windows are FIXED):',
             JSON.stringify(routeGraph, null, 2),
@@ -53,10 +55,10 @@ export class ItineraryMerger extends BaseOrchestratorAgent {
             'BUDGET PLAN (per-block allocations — stay within these limits):',
             JSON.stringify(budgetPlan, null, 2),
             '',
-            'TOURIST AGENT PROPOSALS (slot-based experiences to merge):',
+            'TOURIST AGENT PROPOSALS (slot-based experiences to merge; only use the ones whose city matches the target city):',
             JSON.stringify(touristOutputs, null, 2),
             '',
-            'Merge the tourist proposals into a single unified itinerary. Respect the route graph exactly. Respond with valid JSON only.',
+            `Merge the tourist proposals for ${targetCity} into that city's itinerary days. Respect the route graph exactly. Respond with valid JSON only.`,
           ].join('\n'),
         },
       ];

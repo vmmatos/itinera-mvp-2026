@@ -85,6 +85,7 @@ const MINIMAL_MERGE_PAYLOAD = {
   },
   budgetPlan: MINIMAL_BUDGET_PLAN,
   tripContext: 'Smoke test trip. Budget: €1200 EUR. Group size: 2.',
+  targetCity: 'Porto',
 };
 
 async function post(url: string, body: unknown, authToken?: string): Promise<{ status: number; data: unknown }> {

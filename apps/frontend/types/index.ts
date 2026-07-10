@@ -333,6 +333,7 @@ export type WorkflowState =
   | 'FINAL_VALIDATION'
 
 export interface SlotProposal {
+  id:        string
   city:      string
   date:      string
   slot:      'morning' | 'afternoon' | 'evening'
@@ -348,6 +349,7 @@ export interface SlotProposal {
 export type ProposalDecisionStatus = 'accepted' | 'merged' | 'rejected'
 
 export interface ProposalDecision {
+  proposalId: string
   agent:     string
   city:      string
   date:      string
@@ -394,6 +396,8 @@ export interface DraftSlot {
   by?:    string
   color?: string
   cost?:  number
+  decisionStatus?: ProposalDecisionStatus
+  reason?: string
 }
 
 export interface DraftDay {

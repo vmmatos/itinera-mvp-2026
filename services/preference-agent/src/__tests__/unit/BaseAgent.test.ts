@@ -149,6 +149,14 @@ const VALID_SLOT_PROPOSALS_JSON = JSON.stringify({
   reasoning: 'Picked a free morning activity',
 });
 
+const MULTI_SLOT_PROPOSALS_JSON = JSON.stringify({
+  slotProposals: [
+    { city: 'Porto', date: '2026-09-10', slot: 'morning', activity: 'Ribeira Market Walk', venue: 'Ribeira', estimatedCostPerPerson: 0 },
+    { city: 'Porto', date: '2026-09-10', slot: 'afternoon', activity: 'Livraria Lello', venue: 'Livraria Lello', estimatedCostPerPerson: 8 },
+  ],
+  reasoning: 'Morning and afternoon covered',
+});
+
 describe('BaseAgent.proposeForSlot', () => {
   let anthropic: AnthropicService;
   let publisher: RabbitMQPublisher;
@@ -179,6 +187,22 @@ describe('BaseAgent.proposeForSlot', () => {
 
     expect(anthropic.complete).toHaveBeenCalledOnce();
     expect(event.content).toMatchObject({ slotProposals: expect.any(Array) });
+  });
+
+  it('happy path: assigns a unique id to each slot proposal (the LLM never generates one)', async () => {
+    vi.mocked(anthropic.complete).mockResolvedValue({
+      content: MULTI_SLOT_PROPOSALS_JSON, latencyMs: 500, tokensUsed: 800, truncated: false,
+    });
+
+    const event = await agent.proposeForSlot('trip-123', 1, [SLOT]);
+
+    const proposals = (event.content as { slotProposals: Array<{ id: string }> }).slotProposals;
+    expect(proposals).toHaveLength(2);
+    for (const p of proposals) {
+      expect(typeof p.id).toBe('string');
+      expect(p.id.length).toBeGreaterThan(0);
+    }
+    expect(proposals[0]!.id).not.toBe(proposals[1]!.id);
   });
 
   it('uses a 16000 output-token budget for the completion call', async () => {

@@ -40,7 +40,17 @@ export type AgentName =
   | 'logistics'
   | 'validator';
 
-export type AgentAction = 'propose' | 'refine' | 'accept' | 'reject' | 'score' | 'notification';
+export type AgentAction =
+  | 'propose'
+  | 'refine'
+  | 'accept'
+  | 'reject'
+  | 'score'
+  | 'notification'
+  | 'plan'
+  | 'estimate'
+  | 'merge'
+  | 'decision';
 
 export function buildRoutingKey(agent: AgentName, action: AgentAction): string {
   return `agent.${agent}.${action}`;

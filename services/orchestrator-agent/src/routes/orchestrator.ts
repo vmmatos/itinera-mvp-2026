@@ -35,6 +35,7 @@ const MergeSchema = z.object({
   touristOutputs: z.record(z.unknown()),
   budgetPlan:    z.record(z.unknown()),
   context:       z.string().optional().default(''),
+  targetCity:    z.string().min(1),
 });
 
 export function createOrchestratorRouter(
@@ -105,7 +106,7 @@ export function createOrchestratorRouter(
       return;
     }
 
-    const { tripId, round, routeGraph, touristOutputs, budgetPlan, context } = parsed.data;
+    const { tripId, round, routeGraph, touristOutputs, budgetPlan, context, targetCity } = parsed.data;
     try {
       const merged = await merger.merge(
         tripId,
@@ -114,6 +115,7 @@ export function createOrchestratorRouter(
         touristOutputs,
         budgetPlan as unknown as Parameters<ItineraryMerger['merge']>[4],
         context,
+        targetCity,
       );
       res.json({ merged });
     } catch (err) {
