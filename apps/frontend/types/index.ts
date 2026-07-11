@@ -129,6 +129,40 @@ export interface TransportActivityData {
   alternatives:   TransportOption[]
 }
 
+// ── Itinerary day (Step 4) ───────────────────────────────────────
+// Structurally matches the ItineraryDay/ItineraryActivity shape TripInputForm.vue's
+// timelineDays computed already produces (see buildDays()) — kept here so both
+// v1 (structurally, unexported) and the new v2 component tree can share one
+// type without v1 needing to import from v2 code.
+export interface ItineraryActivityV2 {
+  name:           string
+  time?:          string
+  location?:      string
+  venue?:         string
+  city?:          string
+  country?:       string
+  ownerAgent?:    string
+  notes?:         string
+  cost?:          number
+  weatherAlert?:  string
+  satisfies?:     string[]
+  transportData?: TransportActivityData
+}
+
+export interface ItineraryCityTransitionV2 {
+  to:         string
+  travelTime: string
+}
+
+export interface ItineraryDayV2 {
+  day:             number
+  date?:           string
+  city?:           string
+  country?:        string
+  cityTransition?: ItineraryCityTransitionV2
+  activities:      ItineraryActivityV2[]
+}
+
 // ── Trip input ────────────────────────────────────────────────
 export interface Destination {
   country: string
@@ -244,6 +278,38 @@ export interface SatisfactionScore {
   preScore:    number
   postScore:   number
   breakdown:   Record<string, number>
+}
+
+// ── Weather assessment (Step 4 v2) ──────────────────────────────
+// Typed mirror of the shared backend WeatherAssessment/WeatherDayAssessment
+// (services/shared/src/types/workflow.ts), narrowed defensively at the
+// boundary from the loose Record<string,unknown> the legacy v1 code still
+// uses. tempHigh/tempLow/condition/precipitationProbability are absent when
+// no real forecast matched a day (flexible dates with no month, or a date
+// OpenWeatherMap had no data for) — never fabricate them client-side.
+export interface WeatherDayAssessmentV2 {
+  day:         number
+  date:        string | null
+  weatherRisk: 'low' | 'medium' | 'high'
+  tempHigh?:   number
+  tempLow?:    number
+  condition?:  string
+  precipitationProbability?: number
+}
+
+export interface WeatherTimingIssueV2 {
+  day:        number
+  activity1:  string
+  activity2:  string
+  issue:      string
+  suggestion: string
+}
+
+export interface WeatherAssessmentV2 {
+  overallRisk:    'low' | 'medium' | 'high'
+  dayAssessments: WeatherDayAssessmentV2[]
+  timingIssues:   WeatherTimingIssueV2[]
+  summary:        string
 }
 
 export interface TripMetrics {
