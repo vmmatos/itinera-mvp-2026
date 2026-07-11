@@ -1034,17 +1034,75 @@ describe('WorkflowEngine — parallel per-city merge calls (Part B)', () => {
     expect(mergedProposalContent()['satisfactionEstimates']).toBeDefined();
   });
 
-  it('error: one of the two per-city merge calls rejecting fails the whole stage, same all-or-nothing semantics as a single-call failure', async () => {
+  it('happy path: streams per city — a fast city is processed/logged without waiting for a slower sibling still in flight', async () => {
+    setupTwoCityMocks();
+    let resolveDublin!: (v: { content: Record<string, unknown>; latencyMs: number; tokensUsed: number }) => void;
+    const dublinPromise = new Promise<{ content: Record<string, unknown>; latencyMs: number; tokensUsed: number }>((resolve) => {
+      resolveDublin = resolve;
+    });
+    vi.mocked(agentCaller.callOrchestratorMerge).mockImplementation(async (..._args) => {
+      const targetCity = _args[6] as string;
+      if (targetCity === 'Dublin') return dublinPromise;
+      return { content: JSON.parse(JSON.stringify(MADRID_CITY_MERGED)), latencyMs: 200, tokensUsed: 200 };
+    });
+    driveHappyPath();
+
+    const runPromise = engine.run(TRIP_ID);
+
+    // Madrid resolves immediately — its per-city processing (enforcement +
+    // decision publish + merge-city log) should complete while Dublin is
+    // still pending, proving it isn't gated on Promise.all resolving for
+    // every city.
+    await vi.waitFor(() => {
+      expect(
+        vi.mocked(stateManager.logAgentCall).mock.calls.some(
+          (c) => (c[0] as { reasoning?: string }).reasoning === 'city=Madrid',
+        ),
+      ).toBe(true);
+    });
+    expect(
+      vi.mocked(stateManager.logAgentCall).mock.calls.some(
+        (c) => (c[0] as { reasoning?: string }).reasoning === 'city=Dublin',
+      ),
+    ).toBe(false);
+
+    resolveDublin({ content: JSON.parse(JSON.stringify(DUBLIN_CITY_MERGED)), latencyMs: 200, tokensUsed: 200 });
+    await expect(runPromise).resolves.not.toThrow();
+
+    expect(
+      vi.mocked(stateManager.logAgentCall).mock.calls.some(
+        (c) => (c[0] as { reasoning?: string }).reasoning === 'city=Dublin',
+      ),
+    ).toBe(true);
+  });
+
+  it('error: one of two per-city merge calls rejecting is isolated to that city — the other city\'s itinerary still publishes and saves', async () => {
     setupTwoCityMocks();
     vi.mocked(agentCaller.callOrchestratorMerge).mockImplementation(async (..._args) => {
       const targetCity = _args[6] as string;
       if (targetCity === 'Dublin') throw new Error('orchestrator-agent unreachable for Dublin');
       return { content: JSON.parse(JSON.stringify(MADRID_CITY_MERGED)), latencyMs: 200, tokensUsed: 200 };
     });
-    // No merge event ever published when the stage fails — matches today's
-    // single-call failure path, not a retry/refinement transition (the state
-    // machine mock here only drives the happy path; this asserts executeMerge
-    // itself never partially saves/publishes on failure).
+    driveHappyPath();
+
+    await expect(engine.run(TRIP_ID)).resolves.not.toThrow();
+
+    // Dublin's failure no longer aborts the whole merge stage — Madrid's
+    // days still make it into the saved/published itinerary.
+    const mergeCalls = vi.mocked(eventPublisher.publish).mock.calls.filter(
+      (c) => (c[2] as { type: string }).type === 'agent.merge',
+    );
+    expect(mergeCalls).toHaveLength(1);
+
+    const content = mergedProposalContent();
+    const itinerary = content['itinerary'] as Array<Record<string, unknown>>;
+    expect(itinerary.map((d) => d['day'])).toEqual([1, 2]);
+    expect(itinerary.every((d) => d['city'] === 'Madrid')).toBe(true);
+  });
+
+  it('error: both per-city merge calls rejecting degrades to an empty itinerary without throwing', async () => {
+    setupTwoCityMocks();
+    vi.mocked(agentCaller.callOrchestratorMerge).mockRejectedValue(new Error('orchestrator-agent unreachable'));
     driveHappyPath();
 
     await expect(engine.run(TRIP_ID)).resolves.not.toThrow();
@@ -1052,9 +1110,9 @@ describe('WorkflowEngine — parallel per-city merge calls (Part B)', () => {
     const mergeCalls = vi.mocked(eventPublisher.publish).mock.calls.filter(
       (c) => (c[2] as { type: string }).type === 'agent.merge',
     );
-    expect(mergeCalls).toHaveLength(0);
-    expect(vi.mocked(stateManager.saveProposal)).not.toHaveBeenCalledWith(
-      expect.objectContaining({ agent: 'orchestrator' }),
-    );
+    expect(mergeCalls).toHaveLength(1);
+
+    const content = mergedProposalContent();
+    expect(content['itinerary']).toEqual([]);
   });
 });
