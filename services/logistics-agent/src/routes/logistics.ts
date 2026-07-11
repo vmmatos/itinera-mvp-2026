@@ -2,8 +2,8 @@ import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
 import { ValidationError, createLogger } from '@itinera/shared';
-import type { TransportMode, TransportOption, RouteGraph, CityStay, TimeWindow, TransportLeg, RestrictionWarning } from '@itinera/shared';
-import type { WeatherService } from '@/services/WeatherService';
+import type { TransportMode, TransportOption, RouteGraph, CityStay, TimeWindow, TransportLeg, RestrictionWarning, AgentEvent } from '@itinera/shared';
+import type { WeatherService, WeatherForecast } from '@/services/WeatherService';
 import type { AttractionDB } from '@/services/AttractionDB';
 import type { RedisService } from '@/services/RedisService';
 import type { TimingValidator, ScheduledActivity, ScheduledTransport } from '@/validators/TimingValidator';
@@ -288,7 +288,44 @@ async function computeWeatherAssessment(
   const timingResult = timing.validate(activities, transportLegs);
   const forecasts = await fetchWeatherForecasts(region, dateInput, rawItinerary.length, redis, weather);
 
-  return analyzer.analyze(tripId, round, rawItinerary, forecasts, timingResult, dateInput ?? null, restrictionWarnings);
+  const event = await analyzer.analyze(tripId, round, rawItinerary, forecasts, timingResult, dateInput ?? null, restrictionWarnings);
+  return mergeRealForecastIntoAssessment(event, forecasts);
+}
+
+/**
+ * Stamps real per-day forecast numbers (hi/lo temp, condition, rain%) onto the
+ * LLM-derived risk assessment, matched by date. The LLM never sees these back
+ * out cleanly on its own, so this is done in code after the fact rather than
+ * asked of the model. Never throws — the risk assessment itself (the load-bearing
+ * part of this response) must survive any shape mismatch (LLM omitted
+ * dayAssessments, a date has no forecast match, flexible-dates trip with no
+ * forecast at all) with the event returned unmodified.
+ */
+function mergeRealForecastIntoAssessment(event: AgentEvent, forecasts: WeatherForecast[]): AgentEvent {
+  try {
+    const content = event.content as Record<string, unknown> | null;
+    const dayAssessments = content?.['dayAssessments'];
+    if (!content || !Array.isArray(dayAssessments)) return event;
+
+    const byDate = new Map(forecasts.map((f) => [f.date, f]));
+    const merged = dayAssessments.map((entry) => {
+      if (!entry || typeof entry !== 'object') return entry;
+      const e = entry as Record<string, unknown>;
+      const match = typeof e['date'] === 'string' ? byDate.get(e['date']) : undefined;
+      if (!match) return entry;
+      return {
+        ...e,
+        tempHigh: match.temperature.max,
+        tempLow: match.temperature.min,
+        condition: match.conditions,
+        precipitationProbability: match.precipitationProbability,
+      };
+    });
+
+    return { ...event, content: { ...content, dayAssessments: merged } };
+  } catch {
+    return event;
+  }
 }
 
 export function createLogisticsRouter(

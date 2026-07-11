@@ -9,6 +9,8 @@ export interface WeatherForecast {
   humidity: number;
   windSpeed: number;
   description: string;
+  /** Probability of precipitation, 0-100, averaged across the day's forecast items. */
+  precipitationProbability: number;
 }
 
 interface OWMGeoResult {
@@ -22,6 +24,8 @@ interface OWMForecastItem {
   main: { temp_min: number; temp_max: number; humidity: number };
   weather: Array<{ main: string; description: string }>;
   wind: { speed: number };
+  /** Probability of precipitation, 0-1. Absent on some OWM plans/mocks. */
+  pop?: number;
 }
 
 interface OWMForecastResponse {
@@ -123,6 +127,7 @@ export class WeatherService extends BaseService {
       const temps = dayItems.map((i) => ({ min: i.main.temp_min, max: i.main.temp_max }));
       const humidities = dayItems.map((i) => i.main.humidity);
       const winds = dayItems.map((i) => i.wind.speed);
+      const pops = dayItems.map((i) => i.pop ?? 0);
       const midday = dayItems.find((i) => i.dt_txt.includes('12:00')) ?? dayItems[0];
 
       if (!midday) continue;
@@ -139,6 +144,7 @@ export class WeatherService extends BaseService {
         humidity: Math.round(humidities.reduce((a, b) => a + b, 0) / humidities.length),
         windSpeed: Math.round((winds.reduce((a, b) => a + b, 0) / winds.length) * 3.6),
         description: midday.weather[0]?.description ?? '',
+        precipitationProbability: Math.round((pops.reduce((a, b) => a + b, 0) / pops.length) * 100),
       });
     }
 

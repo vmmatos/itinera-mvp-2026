@@ -45,6 +45,7 @@ const MOCK_FORECASTS: WeatherForecast[] = [
     humidity: 50,
     windSpeed: 15,
     description: 'clear sky',
+    precipitationProbability: 20,
   },
 ];
 

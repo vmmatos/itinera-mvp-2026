@@ -105,6 +105,11 @@ export interface WeatherDayAssessment {
   date: string | null;
   weatherRisk: 'low' | 'medium' | 'high';
   affectedActivities: WeatherAffectedActivity[];
+  /** Real forecast passthrough (OpenWeatherMap) — absent when no forecast matched this date. */
+  tempHigh?: number;
+  tempLow?: number;
+  condition?: string;
+  precipitationProbability?: number;
 }
 
 export interface WeatherTimingIssue {
