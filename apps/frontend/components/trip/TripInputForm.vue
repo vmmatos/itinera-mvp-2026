@@ -165,6 +165,11 @@ const goToStep2 = (): void => {
 const store = useTripPlannerStore()
 const api   = useApi()
 
+// Feature toggle — Step 4 "Itinerary review" redesign (timeline rail + focused
+// day panel). Set NUXT_PUBLIC_ITINERARY_V2=true to enable; defaults to the
+// existing stacked-days UI below when unset.
+const itineraryV2Enabled = useRuntimeConfig().public.itineraryV2 as boolean
+
 // ── Destination preview (option-1 hybrid): echo what the system understood ──
 interface ParsedDestination { city: string; country: string; nights: number }
 const parsedDestinations = ref<ParsedDestination[]>([])
@@ -664,6 +669,22 @@ const budgetBreakdown = computed<BudgetBreakdown | null>(() => {
   const p = latestByAgent.value['finance']
   const bd = p?.content?.['budgetBreakdown'] as BudgetBreakdown | undefined
   return bd ?? null
+})
+
+// Real per-city nightly accommodation cost from the merged proposal — used by
+// Step 4 v2 to apportion lodging cost across each day of a city stay (not
+// otherwise present in timelineDays/buildDays, which only parses activities).
+interface AccommodationBlock { city: string; pricePerNightPerPerson: number; nights: number }
+const accommodationBlocks = computed<AccommodationBlock[]>(() => {
+  const acc = latestOrchestratorContent.value?.['accommodation']
+  if (!Array.isArray(acc)) return []
+  return (acc as Array<Record<string, unknown>>)
+    .map((a) => ({
+      city: typeof a['city'] === 'string' ? a['city'] : '',
+      pricePerNightPerPerson: typeof a['pricePerNightPerPerson'] === 'number' ? a['pricePerNightPerPerson'] : 0,
+      nights: typeof a['nights'] === 'number' ? a['nights'] : 0,
+    }))
+    .filter((a) => a.city && a.pricePerNightPerPerson > 0)
 })
 
 // ── Step 4: Scores, cost breakdown, weather ───────────────────
@@ -1451,8 +1472,8 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
       @adjust="step = 2"
     />
 
-    <!-- ── Step 4: Itinerary ───────────────────────────────── -->
-    <div v-if="step === 4" class="user-grid">
+    <!-- ── Step 4: Itinerary (v1 — legacy stacked-days UI) ───── -->
+    <div v-if="step === 4 && !itineraryV2Enabled" class="user-grid">
       <!-- Left: timeline -->
       <div class="user-left">
 
@@ -1700,6 +1721,37 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
         </div>
       </div>
     </div>
+
+    <!-- ── Step 4: Itinerary (v2 — timeline rail + focused day) ── -->
+    <TripItineraryStepV2
+      v-if="step === 4 && itineraryV2Enabled"
+      :trip-name="tripName"
+      :region="region"
+      :start-date="startDate"
+      :end-date="endDate"
+      :date-mode="dateMode"
+      :preferred-month="preferredMonth"
+      :travellers="travellers.length"
+      :timeline-days="timelineDays"
+      :budget-breakdown="budgetBreakdown"
+      :accommodation="accommodationBlocks"
+      :weather-assessment="weatherAssessment"
+      :show-weather="showWeather"
+      :validator-summary="validatorSummary"
+      :traveller-scores="travellerScores"
+      :agent-names="Object.keys(latestByAgent)"
+      :export-loading="exportLoading"
+      :share-loading="shareLoading"
+      :share-copied="shareCopied"
+      :export-error="exportError"
+      :share-error="shareError"
+      style="flex:1;min-height:0;display:flex;flex-direction:column"
+      @accept="handleAccept"
+      @reject="handleReject"
+      @refine="handleRefine"
+      @share="handleShare"
+      @export="downloadPdf"
+    />
 
     <!-- ── Step 5: Export ──────────────────────────────────── -->
     <div v-if="step === 5" class="user-grid">

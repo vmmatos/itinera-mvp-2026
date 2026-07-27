@@ -121,6 +121,29 @@ describe('WeatherService', () => {
     });
   });
 
+  describe('precipitationProbability', () => {
+    it('averages pop across the day\'s items and scales to 0-100', async () => {
+      mockFetch(GEO_OK, {
+        list: [
+          { ...FORECAST_OK.list[0], pop: 0.2 },
+          { ...FORECAST_OK.list[1], pop: 0.4 },
+        ],
+      });
+
+      const [first] = await service.getMultiDayForecast('Paris', 1);
+
+      expect(first?.precipitationProbability).toBe(30);
+    });
+
+    it('defaults to 0 when OWM omits pop entirely, without throwing', async () => {
+      mockFetch(GEO_OK, FORECAST_OK);
+
+      const [first] = await service.getMultiDayForecast('Paris', 1);
+
+      expect(first?.precipitationProbability).toBe(0);
+    });
+  });
+
   describe('error handling', () => {
     it('returns null when geocoding API returns non-ok status', async () => {
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue({

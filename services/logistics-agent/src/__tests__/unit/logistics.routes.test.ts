@@ -66,6 +66,7 @@ const MOCK_FORECAST: WeatherForecast = {
   humidity: 50,
   windSpeed: 15,
   description: 'clear sky',
+  precipitationProbability: 20,
 };
 
 const MOCK_PLACES: Place[] = [
@@ -1013,5 +1014,104 @@ describe('POST /weather-assessment', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error.message).toContain('Claude API unreachable');
+  });
+
+  it('merges real forecast (hi/lo temp, condition, rain%) into a matching dayAssessments entry by date', async () => {
+    vi.mocked(mockAnalyzer.analyze).mockResolvedValue({
+      ...MOCK_AGENT_EVENT,
+      content: {
+        overallRisk: 'low',
+        dayAssessments: [{ day: 1, date: '2026-06-01', weatherRisk: 'low', affectedActivities: [] }],
+        timingIssues: [],
+        summary: 'Good weather.',
+      },
+    });
+
+    const app = buildApp();
+    const res = await request(app).post('/weather-assessment').send({
+      tripId: VALID_UUID,
+      round: 1,
+      itinerary: [V2_ITINERARY_DAY],
+      region: 'Paris',
+    });
+
+    expect(res.status).toBe(200);
+    const [day] = res.body.assessment.content.dayAssessments;
+    expect(day.tempHigh).toBe(25);
+    expect(day.tempLow).toBe(15);
+    expect(day.condition).toBe('Clear');
+    expect(day.precipitationProbability).toBe(20);
+    // original fields survive the merge
+    expect(day.weatherRisk).toBe('low');
+  });
+
+  it('leaves a dayAssessments entry unmodified when its date has no matching forecast', async () => {
+    vi.mocked(mockAnalyzer.analyze).mockResolvedValue({
+      ...MOCK_AGENT_EVENT,
+      content: {
+        overallRisk: 'low',
+        dayAssessments: [{ day: 2, date: '2026-06-02', weatherRisk: 'low', affectedActivities: [] }],
+        timingIssues: [],
+        summary: 'Good weather.',
+      },
+    });
+
+    const app = buildApp();
+    const res = await request(app).post('/weather-assessment').send({
+      tripId: VALID_UUID,
+      round: 1,
+      itinerary: [V2_ITINERARY_DAY],
+      region: 'Paris',
+    });
+
+    expect(res.status).toBe(200);
+    const [day] = res.body.assessment.content.dayAssessments;
+    expect(day.tempHigh).toBeUndefined();
+    expect(day.weatherRisk).toBe('low');
+  });
+
+  it('returns the event unmodified (still 200) when the LLM response has no dayAssessments key', async () => {
+    vi.mocked(mockAnalyzer.analyze).mockResolvedValue({
+      ...MOCK_AGENT_EVENT,
+      content: { overallRisk: 'low', summary: 'Good weather.' },
+    });
+
+    const app = buildApp();
+    const res = await request(app).post('/weather-assessment').send({
+      tripId: VALID_UUID,
+      round: 1,
+      itinerary: [V2_ITINERARY_DAY],
+      region: 'Paris',
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.assessment.content.dayAssessments).toBeUndefined();
+    expect(res.body.assessment.content.overallRisk).toBe('low');
+  });
+
+  it('flexible dates with no preferred month: no forecast fetched, no temps merged anywhere', async () => {
+    vi.mocked(mockAnalyzer.analyze).mockResolvedValue({
+      ...MOCK_AGENT_EVENT,
+      content: {
+        overallRisk: 'low',
+        dayAssessments: [{ day: 1, date: null, weatherRisk: 'low', affectedActivities: [] }],
+        timingIssues: [],
+        summary: 'Good weather.',
+      },
+    });
+
+    const app = buildApp();
+    const res = await request(app).post('/weather-assessment').send({
+      tripId: VALID_UUID,
+      round: 1,
+      itinerary: [V2_ITINERARY_DAY],
+      region: 'Paris',
+      dateInput: { mode: 'flexible', days: 5, window: 'open' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockWeather.getMultiDayForecast).not.toHaveBeenCalled();
+    const [day] = res.body.assessment.content.dayAssessments;
+    expect(day.tempHigh).toBeUndefined();
   });
 });
