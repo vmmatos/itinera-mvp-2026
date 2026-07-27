@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
-import type { DayVM, Phase } from '~/utils/itineraryV2'
+import type { DayVM, Phase } from '~/utils/itineraryViewModel'
 import TripItineraryDaySlot from './DaySlot.vue'
 
 const props = defineProps<{

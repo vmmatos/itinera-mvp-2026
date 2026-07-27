@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onUnmounted, onMounted } from 'vue'
 import { PERSONA_LABELS, PERSONA_AGENT, AGENT_COLOURS } from '~/types/index'
-import type { Persona, Flexibility, Currency, DateWindow, DateInput, CreateTripInput, TravellerInput, SatisfactionScore, TransportMode, TransportOption, TransportActivityData, BudgetBreakdown } from '~/types/index'
+import type { Persona, Flexibility, Currency, DateWindow, DateInput, CreateTripInput, TravellerInput, SatisfactionScore, TransportMode, TransportOption, TransportActivityData, BudgetBreakdown, ItineraryDay, ItineraryActivity, ItineraryCityTransition } from '~/types/index'
 import { formatTransportLabel } from '~/utils/itinerary'
 
 const props = withDefaults(defineProps<{ viewTripId?: string }>(), { viewTripId: undefined })
@@ -165,11 +165,6 @@ const goToStep2 = (): void => {
 const store = useTripPlannerStore()
 const api   = useApi()
 
-// Feature toggle — Step 4 "Itinerary review" redesign (timeline rail + focused
-// day panel). Set NUXT_PUBLIC_ITINERARY_V2=true to enable; defaults to the
-// existing stacked-days UI below when unset.
-const itineraryV2Enabled = useRuntimeConfig().public.itineraryV2 as boolean
-
 // ── Destination preview (option-1 hybrid): echo what the system understood ──
 interface ParsedDestination { city: string; country: string; nights: number }
 const parsedDestinations = ref<ParsedDestination[]>([])
@@ -317,17 +312,6 @@ const negotiationStatus = ref<string>('negotiating')
 const rejectionReason  = ref<string>('')
 let pollInterval: ReturnType<typeof setInterval> | null = null
 
-const AGENT_COLOUR: Record<string, string> = {
-  alice:        'var(--green)',
-  bob:          'var(--amber)',
-  carlos:       'var(--blue)',
-  diana:        'var(--magenta)',
-  orchestrator: 'var(--fg-0)',
-  finance:      'var(--amber)',
-  logistics:    'var(--blue)',
-  validator:    'var(--magenta)',
-}
-
 const startNegotiationPolling = (tripId: string): void => {
   const poll = async (): Promise<void> => {
     try {
@@ -389,44 +373,6 @@ function getTimeSlot(time?: string): TimeSlot {
     if (h >= 18 || h < 6) return 'evening'
   }
   return 'unscheduled'
-}
-
-function weatherEmoji(risk: string): string {
-  if (risk === 'high') return '🌧️'
-  if (risk === 'medium') return '🌤️'
-  return '☀️'
-}
-
-interface ItineraryActivity {
-  name:           string
-  time?:          string
-  location?:      string
-  venue?:         string
-  city?:          string
-  country?:       string
-  ownerAgent?:    string
-  notes?:         string
-  cost?:          number
-  weatherAlert?:  string
-  satisfies?:     string[]
-  transportData?: TransportActivityData
-}
-
-interface ItineraryCityTransition {
-  to:        string
-  travelTime: string
-}
-
-interface ItineraryDay {
-  day:             number
-  date?:           string
-  city?:           string
-  country?:        string
-  cityTransition?: ItineraryCityTransition
-  activities:      ItineraryActivity[]
-  meals?:          Array<{ type: string; name: string }>
-  // Per-day transport legs from the merged itinerary; preferred over logistics options.
-  rawTransport?:   Array<Record<string, unknown>>
 }
 
 const latestByAgent = computed((): Record<string, ProposalEntry> => {
@@ -631,12 +577,6 @@ const timelineDays = computed((): ItineraryDay[] => {
   })
 })
 
-const transportCostEur = computed<number | null>(() => {
-  const c = latestByAgent.value['logistics']?.content as Record<string, unknown> | undefined
-  const v = c?.['transportCostEur']
-  return typeof v === 'number' && v > 0 ? v : null
-})
-
 const validatorSummary = computed(() => {
   const p = latestByAgent.value['validator']
   if (!p) return null
@@ -651,15 +591,6 @@ const validatorSummary = computed(() => {
     constraintsPassed: constr?.['passed'] === true ? true : constr?.['passed'] === false ? false : null as boolean | null,
     rounds:            typeof metrics?.['convergenceRounds'] === 'number' ? metrics['convergenceRounds'] as number : null,
   }
-})
-
-const financeSummary = computed(() => {
-  const p = latestByAgent.value['finance']
-  if (!p) return null
-  const c = p.content
-  const bd = c['costBreakdown'] as Record<string, unknown> | undefined
-  const bv = c['budgetValidation'] as Record<string, unknown> | undefined
-  return { grandTotal: bd?.['grandTotal'], currency: bd?.['currency'], status: bv?.['status'] }
 })
 
 // Itemised per-category, per-person budget breakdown (issue #73). Older
@@ -695,26 +626,6 @@ const travellerScores = computed<SatisfactionScore[]>(() => {
   return Array.isArray(c?.['scores']) ? (c['scores'] as SatisfactionScore[]) : []
 })
 
-const costCategories = computed<Array<{ label: string; amount: number }>>(() => {
-  const fp = liveProposals.value.find((p) => p.agent === 'finance')
-  const c = fp?.content
-  const bd = c?.['costBreakdown'] as Record<string, unknown> | undefined
-  if (!bd) return []
-
-  const byCat = bd['byCategory'] as Record<string, number> | undefined
-  if (byCat && typeof byCat === 'object') {
-    return Object.entries(byCat)
-      .map(([label, amount]) => ({ label, amount }))
-      .filter((x) => x.amount > 0)
-      .sort((a, b) => b.amount - a.amount)
-  }
-
-  const cats = bd['categories']
-  return Array.isArray(cats)
-    ? [...(cats as Array<{ label: string; amount: number }>)].sort((a, b) => b.amount - a.amount)
-    : []
-})
-
 // WorkflowEngine.executeMerge attaches weatherAssessment to the merged
 // itinerary (agent 'orchestrator') post-merge — the earlier 'logistics'
 // proposal is just the /plan route-graph and never carries it.
@@ -733,44 +644,6 @@ const weatherAssessment = computed<Record<string, unknown> | null>(() => {
 const weatherAlerts = computed<string[]>(() => {
   const c = weatherAssessment.value
   return Array.isArray(c?.['weatherAlerts']) ? (c['weatherAlerts'] as string[]) : []
-})
-
-const logisticsWeatherSummary = computed<string | null>(() => {
-  const c = weatherAssessment.value
-  if (!c) return null
-  const summary = c['weatherSummary'] ?? c['summary'] ?? c['overview']
-  return typeof summary === 'string' ? summary.slice(0, 200) : null
-})
-
-// Per-day weather cards — structured when dayAssessments present, fallback to overallRisk per itinerary day
-interface WeatherCard { day: number; date?: string; risk: string; label: string }
-
-const dayWeatherCards = computed<WeatherCard[]>(() => {
-  const c = weatherAssessment.value
-  if (!c) return []
-
-  const assessments = c['dayAssessments']
-  if (Array.isArray(assessments) && assessments.length > 0) {
-    return (assessments as Array<Record<string, unknown>>).map((d) => {
-      const risk = typeof d['weatherRisk'] === 'string' ? d['weatherRisk'] as string : 'low'
-      return {
-        day:   typeof d['day'] === 'number' ? d['day'] as number : 0,
-        date:  typeof d['date'] === 'string' ? d['date'] as string : undefined,
-        risk,
-        label: risk === 'high' ? 'stormy' : risk === 'medium' ? 'cloudy' : 'clear',
-      }
-    })
-  }
-
-  // Fallback: use overallRisk for each day in the parsed itinerary
-  const overallRisk = typeof c['overallRisk'] === 'string' ? c['overallRisk'] as string : null
-  if (!overallRisk || parsedItinerary.value.length === 0) return []
-  return parsedItinerary.value.map((d) => ({
-    day:   d.day,
-    date:  d.date,
-    risk:  overallRisk,
-    label: overallRisk === 'high' ? 'stormy' : overallRisk === 'medium' ? 'cloudy' : 'clear',
-  }))
 })
 
 const showWeather = computed(() => !(dateMode.value === 'flexible' && !preferredMonth.value))
@@ -1472,259 +1345,9 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
       @adjust="step = 2"
     />
 
-    <!-- ── Step 4: Itinerary (v1 — legacy stacked-days UI) ───── -->
-    <div v-if="step === 4 && !itineraryV2Enabled" class="user-grid">
-      <!-- Left: timeline -->
-      <div class="user-left">
-
-        <div style="margin-bottom:var(--s-6)">
-          <div class="sec-eyebrow" style="margin-bottom:6px">Proposed itinerary</div>
-          <h2 style="margin:0;font-size:var(--t-28);font-weight:400;letter-spacing:-0.02em">
-            Review what the agents proposed
-          </h2>
-        </div>
-
-        <!-- Structured itinerary timeline -->
-        <div v-if="timelineDays.length > 0" style="margin-bottom:var(--s-6)">
-          <TripTimeline
-            :days="timelineDays"
-            :currency-symbol="financeSummary?.currency ?? currencySymbol"
-          />
-        </div>
-
-        <div v-else class="helper" style="margin-bottom:var(--s-6)">Proposal data is processing.</div>
-
-        <!-- Actions -->
-        <div class="user-form-foot">
-          <button class="btn" style="color:var(--red);border-color:rgba(255,93,93,0.32)" @click="handleReject">
-            Reject
-          </button>
-          <button
-            class="btn"
-            data-testid="refine-trip-btn"
-            @click="handleRefine"
-          >
-            ← Refine trip
-          </button>
-          <button class="btn btn-primary" @click="handleAccept">
-            Accept &amp; Export →
-          </button>
-        </div>
-      </div>
-
-      <!-- Right: results panel -->
-      <div class="user-right">
-        <div class="preview-head">
-          <span class="ttl">Negotiation results</span>
-        </div>
-
-        <!-- Weather forecast — per-day icon grid (hidden when flexible with no preferred month) -->
-        <div v-if="showWeather && (dayWeatherCards.length > 0 || logisticsWeatherSummary)" class="summary-card" style="margin-bottom:var(--s-4)">
-          <div class="sub" style="margin-bottom:var(--s-3)">Weather forecast</div>
-
-          <!-- Day-by-day icon grid -->
-          <div
-            v-if="dayWeatherCards.length > 0"
-            style="display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:var(--s-2);margin-bottom:var(--s-3)"
-          >
-            <div
-              v-for="card in dayWeatherCards"
-              :key="card.day"
-              style="display:flex;flex-direction:column;align-items:center;padding:var(--s-3) var(--s-2);background:var(--bg-2);border:var(--hair);border-radius:var(--r-2);gap:2px"
-            >
-              <span style="font-size:20px;line-height:1.2">{{ weatherEmoji(card.risk) }}</span>
-              <span style="font-family:var(--mono);font-size:10px;color:var(--fg-0);font-weight:600">Day {{ card.day }}</span>
-              <span v-if="card.date" style="font-family:var(--mono);font-size:9px;color:var(--fg-3)">{{ card.date.slice(5) }}</span>
-              <span
-                style="font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:.04em"
-                :style="card.risk === 'high' ? 'color:var(--red)' : card.risk === 'medium' ? 'color:var(--amber)' : 'color:var(--green)'"
-              >{{ card.label }}</span>
-            </div>
-          </div>
-
-          <!-- Summary text (truncated) -->
-          <p
-            v-if="logisticsWeatherSummary"
-            style="margin:0;font-size:var(--t-12);color:var(--fg-3);line-height:1.5"
-          >{{ logisticsWeatherSummary }}</p>
-
-          <!-- High-risk alerts -->
-          <div v-if="weatherAlerts.length > 0" style="display:flex;flex-direction:column;gap:var(--s-2);margin-top:var(--s-3)">
-            <div
-              v-for="(alert, i) in weatherAlerts"
-              :key="i"
-              style="padding:var(--s-2) var(--s-3);background:var(--amber-bg);border:1px solid var(--amber-line);border-radius:var(--r-2);display:flex;align-items:flex-start;gap:var(--s-2)"
-            >
-              <span style="color:var(--amber);flex-shrink:0;font-size:var(--t-12)">⚠</span>
-              <p style="margin:0;font-size:var(--t-12);color:var(--fg-1)">{{ alert }}</p>
-            </div>
-          </div>
-        </div>
-
-        <!-- ScoresCard: per-traveller satisfaction -->
-        <div v-if="travellerScores.length > 0" class="summary-card" style="margin-bottom:var(--s-4)">
-          <div class="sub">Traveller satisfaction</div>
-          <div style="display:flex;flex-direction:column;gap:var(--s-3);padding-top:var(--s-3)">
-            <div v-for="score in travellerScores" :key="score.travellerId" style="display:flex;flex-direction:column;gap:var(--s-2)">
-              <div style="display:flex;align-items:center;justify-content:space-between">
-                <div style="display:flex;align-items:center;gap:var(--s-2)">
-                  <span style="font-size:var(--t-13);color:var(--fg-0)">{{ score.name }}</span>
-                  <span
-                    class="chip on"
-                    style="font-size:10px;height:20px;padding:0 6px"
-                    :style="`color:${AGENT_COLOUR[PERSONA_AGENT[score.persona]] ?? 'var(--fg-2)'};border-color:${AGENT_COLOUR[PERSONA_AGENT[score.persona]] ?? 'var(--fg-3)'}44`"
-                  >{{ PERSONA_LABELS[score.persona] }}</span>
-                </div>
-                <span style="font-family:var(--mono);font-size:var(--t-12);color:var(--green)">{{ Math.round(score.postScore * 100) }}%</span>
-              </div>
-              <!-- Score bar -->
-              <div style="height:4px;background:var(--bg-3);border-radius:2px;overflow:hidden">
-                <div
-                  style="height:100%;background:var(--green);border-radius:2px;transition:width 0.5s"
-                  :style="`width:${Math.round(score.postScore * 100)}%`"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Validator results: fairness + satisfaction + constraints -->
-        <div v-else-if="validatorSummary" class="summary-card" style="margin-bottom:var(--s-4)">
-          <div class="sub" style="margin-bottom:var(--s-3)">Negotiation quality</div>
-
-          <!-- Fairness score bar -->
-          <div v-if="validatorSummary.fairnessScore !== null" style="margin-bottom:var(--s-3)">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
-              <span style="font-size:var(--t-12);color:var(--fg-2)">Fairness</span>
-              <span
-                style="font-family:var(--mono);font-size:var(--t-12);font-weight:600"
-                :style="validatorSummary.fairnessScore >= 70 ? 'color:var(--green)' : 'color:var(--amber)'"
-              >{{ validatorSummary.fairnessScore }}%</span>
-            </div>
-            <div style="height:5px;background:var(--bg-3);border-radius:3px;overflow:hidden">
-              <div
-                style="height:100%;border-radius:3px;transition:width .5s"
-                :style="`width:${validatorSummary.fairnessScore}%;background:${validatorSummary.fairnessScore >= 70 ? 'var(--green)' : 'var(--amber)'}`"
-              />
-            </div>
-          </div>
-
-          <!-- Overall satisfaction bar -->
-          <div v-if="validatorSummary.overallScore !== null" style="margin-bottom:var(--s-3)">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
-              <span style="font-size:var(--t-12);color:var(--fg-2)">Satisfaction</span>
-              <span
-                style="font-family:var(--mono);font-size:var(--t-12);font-weight:600"
-                :style="validatorSummary.overallScore >= 70 ? 'color:var(--green)' : 'color:var(--amber)'"
-              >{{ validatorSummary.overallScore }}%</span>
-            </div>
-            <div style="height:5px;background:var(--bg-3);border-radius:3px;overflow:hidden">
-              <div
-                style="height:100%;border-radius:3px;transition:width .5s"
-                :style="`width:${validatorSummary.overallScore}%;background:${validatorSummary.overallScore >= 70 ? 'var(--green)' : 'var(--amber)'}`"
-              />
-            </div>
-          </div>
-
-          <!-- Constraints + rounds -->
-          <div class="kv" style="margin-top:var(--s-2)">
-            <template v-if="validatorSummary.constraintsPassed !== null">
-              <div class="k">Constraints</div>
-              <div class="v mono" :style="validatorSummary.constraintsPassed ? 'color:var(--green)' : 'color:var(--red)'">
-                {{ validatorSummary.constraintsPassed ? '✓ passed' : '✗ issues' }}
-              </div>
-            </template>
-            <template v-if="validatorSummary.rounds !== null">
-              <div class="k">Rounds</div>
-              <div class="v mono">{{ validatorSummary.rounds }}</div>
-            </template>
-          </div>
-        </div>
-
-        <!-- BudgetBreakdown (issue #73) -->
-        <TripBudgetBreakdown v-if="budgetBreakdown" :breakdown="budgetBreakdown" />
-
-        <!-- CostBreakdown (fallback for proposals without budgetBreakdown) -->
-        <div v-else-if="costCategories.length > 0" class="summary-card" style="margin-bottom:var(--s-4)">
-          <div class="sub">Cost breakdown</div>
-          <div class="kv" style="padding-top:var(--s-3)">
-            <template v-for="cat in costCategories" :key="cat.label">
-              <div class="k">{{ cat.label }}</div>
-              <div class="v mono">{{ financeSummary?.currency ?? '€' }}{{ cat.amount.toLocaleString() }}</div>
-            </template>
-            <template v-if="transportCostEur">
-              <div class="k">transport</div>
-              <div class="v mono">{{ financeSummary?.currency ?? '€' }}{{ transportCostEur.toLocaleString() }}</div>
-            </template>
-          </div>
-          <div v-if="financeSummary?.grandTotal" style="display:flex;justify-content:space-between;align-items:center;padding-top:var(--s-3);margin-top:var(--s-3);border-top:var(--hair)">
-            <span style="font-family:var(--mono);font-size:var(--t-12);color:var(--fg-2);text-transform:uppercase;letter-spacing:.06em">Total</span>
-            <span style="font-family:var(--mono);font-size:var(--t-14);color:var(--fg-0);font-weight:600">{{ financeSummary.currency ?? '€' }}{{ String(financeSummary.grandTotal) }}</span>
-          </div>
-        </div>
-
-        <!-- CostBreakdown fallback: finance summary only -->
-        <div v-else-if="financeSummary" class="summary-card" style="margin-bottom:var(--s-4)">
-          <div class="sub" style="margin-bottom:var(--s-3)">Budget review</div>
-          <!-- Status pill -->
-          <div v-if="financeSummary.status" style="margin-bottom:var(--s-3)">
-            <span
-              style="font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.06em;padding:3px 10px;border-radius:var(--r-1);font-weight:600"
-              :style="financeSummary.status === 'within_budget'
-                ? 'background:rgba(0,255,136,0.08);color:var(--green);border:1px solid rgba(0,255,136,0.3)'
-                : 'background:rgba(255,163,0,0.08);color:var(--amber);border:1px solid rgba(255,163,0,0.3)'"
-            >{{ financeSummary.status === 'within_budget' ? '✓ Within budget' : '⚠ Over budget' }}</span>
-          </div>
-          <!-- Cost line — only if a real value was calculated -->
-          <div class="kv" style="margin-top:var(--s-2)">
-            <div class="k">Estimated cost</div>
-            <div class="v mono">
-              <template v-if="financeSummary.grandTotal && Number(financeSummary.grandTotal) > 0">
-                {{ financeSummary.currency ?? '€' }}{{ Number(financeSummary.grandTotal).toLocaleString() }}
-              </template>
-              <span v-else class="helper">Not itemised</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Agents involved -->
-        <div class="suggest" style="margin-bottom:var(--s-4)">
-          <h4>Agents involved</h4>
-          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:var(--s-2)">
-            <span
-              v-for="agent in Object.keys(latestByAgent)"
-              :key="agent"
-              class="chip on"
-              style="font-size:var(--t-12)"
-              :style="`color:${AGENT_COLOUR[agent] ?? 'var(--fg-2)'};border-color:${AGENT_COLOUR[agent] ?? 'var(--fg-3)'}44`"
-            >{{ agent }}</span>
-          </div>
-        </div>
-
-        <!-- Export & Share actions -->
-        <div style="display:flex;flex-direction:column;gap:var(--s-2);padding-top:var(--s-4);border-top:var(--hair)">
-          <button
-            class="btn btn-primary"
-            style="width:100%;justify-content:center"
-            :disabled="exportLoading"
-            @click="downloadPdf"
-          >{{ exportLoading ? 'Generating…' : '↓ Export PDF' }}</button>
-          <button
-            class="btn"
-            style="width:100%;justify-content:center"
-            :disabled="shareLoading"
-            @click="handleShare"
-          >{{ shareCopied ? '✓ Copied!' : shareLoading ? 'Generating…' : '⎘ Share link' }}</button>
-          <p v-if="exportError || shareError" style="margin:0;font-size:var(--t-12);color:var(--red)">
-            {{ exportError ?? shareError }}
-          </p>
-        </div>
-      </div>
-    </div>
-
-    <!-- ── Step 4: Itinerary (v2 — timeline rail + focused day) ── -->
-    <TripItineraryStepV2
-      v-if="step === 4 && itineraryV2Enabled"
+    <!-- ── Step 4: Itinerary (timeline rail + focused day) ── -->
+    <TripItineraryStep
+      v-if="step === 4"
       :trip-name="tripName"
       :region="region"
       :start-date="startDate"

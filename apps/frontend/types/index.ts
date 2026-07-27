@@ -130,11 +130,9 @@ export interface TransportActivityData {
 }
 
 // ── Itinerary day (Step 4) ───────────────────────────────────────
-// Structurally matches the ItineraryDay/ItineraryActivity shape TripInputForm.vue's
-// timelineDays computed already produces (see buildDays()) — kept here so both
-// v1 (structurally, unexported) and the new v2 component tree can share one
-// type without v1 needing to import from v2 code.
-export interface ItineraryActivityV2 {
+// Shared shape produced by TripInputForm.vue's timelineDays computed
+// (see buildDays()) and consumed by the itinerary review components.
+export interface ItineraryActivity {
   name:           string
   time?:          string
   location?:      string
@@ -149,18 +147,21 @@ export interface ItineraryActivityV2 {
   transportData?: TransportActivityData
 }
 
-export interface ItineraryCityTransitionV2 {
+export interface ItineraryCityTransition {
   to:         string
   travelTime: string
 }
 
-export interface ItineraryDayV2 {
+export interface ItineraryDay {
   day:             number
   date?:           string
   city?:           string
   country?:        string
-  cityTransition?: ItineraryCityTransitionV2
-  activities:      ItineraryActivityV2[]
+  cityTransition?: ItineraryCityTransition
+  activities:      ItineraryActivity[]
+  meals?:          Array<{ type: string; name: string }>
+  // Per-day transport legs from the merged itinerary; preferred over logistics options.
+  rawTransport?:   Array<Record<string, unknown>>
 }
 
 // ── Trip input ────────────────────────────────────────────────
@@ -280,14 +281,14 @@ export interface SatisfactionScore {
   breakdown:   Record<string, number>
 }
 
-// ── Weather assessment (Step 4 v2) ──────────────────────────────
+// ── Weather assessment (Step 4) ─────────────────────────────────
 // Typed mirror of the shared backend WeatherAssessment/WeatherDayAssessment
 // (services/shared/src/types/workflow.ts), narrowed defensively at the
-// boundary from the loose Record<string,unknown> the legacy v1 code still
-// uses. tempHigh/tempLow/condition/precipitationProbability are absent when
-// no real forecast matched a day (flexible dates with no month, or a date
-// OpenWeatherMap had no data for) — never fabricate them client-side.
-export interface WeatherDayAssessmentV2 {
+// boundary from the loose Record<string,unknown> the orchestrator proposal
+// carries it as. tempHigh/tempLow/condition/precipitationProbability are
+// absent when no real forecast matched a day (flexible dates with no month,
+// or a date OpenWeatherMap had no data for) — never fabricate them client-side.
+export interface WeatherDayAssessment {
   day:         number
   date:        string | null
   weatherRisk: 'low' | 'medium' | 'high'
@@ -297,7 +298,7 @@ export interface WeatherDayAssessmentV2 {
   precipitationProbability?: number
 }
 
-export interface WeatherTimingIssueV2 {
+export interface WeatherTimingIssue {
   day:        number
   activity1:  string
   activity2:  string
@@ -305,10 +306,10 @@ export interface WeatherTimingIssueV2 {
   suggestion: string
 }
 
-export interface WeatherAssessmentV2 {
+export interface WeatherAssessment {
   overallRisk:    'low' | 'medium' | 'high'
-  dayAssessments: WeatherDayAssessmentV2[]
-  timingIssues:   WeatherTimingIssueV2[]
+  dayAssessments: WeatherDayAssessment[]
+  timingIssues:   WeatherTimingIssue[]
   summary:        string
 }
 

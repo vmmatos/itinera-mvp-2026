@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import DayPanel from '~/components/trip/itinerary/DayPanel.vue'
-import type { DayVM } from '~/utils/itineraryV2'
+import type { DayVM } from '~/utils/itineraryViewModel'
 
 function dayVM(overrides: Partial<DayVM> = {}): DayVM {
   return {

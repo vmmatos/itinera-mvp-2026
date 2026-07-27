@@ -15,12 +15,13 @@ import {
 } from '../setup'
 
 import TripInputForm from '~/components/trip/TripInputForm.vue'
+import TripItineraryStep from '~/components/trip/itinerary/ItineraryStep.vue'
 
 const mountForm = () =>
   mount(TripInputForm, {
     global: {
       plugins: [createPinia()],
-      stubs: { transition: true, TripTimeline: true, TripActivityCard: true, TripBudgetBreakdown: true, AppLogo: true, TripNegotiateStepV2: true, TripItineraryStepV2: true },
+      stubs: { transition: true, TripTimeline: true, TripActivityCard: true, TripBudgetBreakdown: true, AppLogo: true, TripNegotiateStepV2: true, TripItineraryStep: true },
     },
   })
 
@@ -289,9 +290,9 @@ describe('TripInputForm — pre-fill from lastInput', () => {
   })
 })
 
-// ── Refine trip button (step 4) ───────────────────────────────────
+// ── Step 4: TripItineraryStep wiring ──────────────────────────────
 
-describe('TripInputForm — Refine trip (step 4)', () => {
+describe('TripInputForm — Step 4 (TripItineraryStep)', () => {
   const VALID_TRIP_UUID = '11111111-1111-1111-1111-111111111111'
 
   const mountAtStep4 = () =>
@@ -299,7 +300,13 @@ describe('TripInputForm — Refine trip (step 4)', () => {
       props: { viewTripId: VALID_TRIP_UUID },
       global: {
         plugins: [createPinia()],
-        stubs: { transition: true, TripTimeline: true, TripActivityCard: true, TripBudgetBreakdown: true, AppLogo: true, TripNegotiateStepV2: true, TripItineraryStepV2: true },
+        // Registering the real component (alongside the boolean stub below) lets
+        // VTU's auto-stub introspect its actual props schema, so `.props()`
+        // assertions on the stub work — otherwise it falls back to a schema-less
+        // generic stub since TripItineraryStep is resolved by Nuxt auto-import,
+        // which this plain vitest+@vitejs/plugin-vue setup doesn't replicate.
+        components: { TripItineraryStep },
+        stubs: { transition: true, TripTimeline: true, TripActivityCard: true, TripBudgetBreakdown: true, AppLogo: true, TripNegotiateStepV2: true, TripItineraryStep: true },
       },
     })
 
@@ -325,23 +332,27 @@ describe('TripInputForm — Refine trip (step 4)', () => {
     vi.useRealTimers()
   })
 
-  it('renders the Refine trip button when on step 4', async () => {
+  it('renders TripItineraryStep with the traveller count forwarded when on step 4', async () => {
     const wrapper = mountAtStep4()
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.find('[data-testid="refine-trip-btn"]').exists()).toBe(true)
+    const step = wrapper.findComponent({ name: 'TripItineraryStep' })
+    expect(step.exists()).toBe(true)
+    // The current user is always auto-added as the first traveller, regardless
+    // of the viewTripId/lastInput path — a stable prop to assert wiring on.
+    expect(step.props('travellers')).toBe(1)
   })
 
-  it('clicking Refine trip calls setLastInput and returns to step 1', async () => {
+  it('emitting refine from TripItineraryStep calls setLastInput and returns to step 1', async () => {
     const wrapper = mountAtStep4()
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
 
-    const refineBtn = wrapper.find('[data-testid="refine-trip-btn"]')
-    expect(refineBtn.exists()).toBe(true)
+    const step = wrapper.findComponent({ name: 'TripItineraryStep' })
+    expect(step.exists()).toBe(true)
 
-    await refineBtn.trigger('click')
+    await step.vm.$emit('refine')
     await wrapper.vm.$nextTick()
 
     expect(mockSetLastInput).toHaveBeenCalledOnce()
@@ -397,7 +408,7 @@ describe('TripInputForm — wizardRootStyle (step 3 layout)', () => {
   })
 })
 
-describe('TripInputForm — Step 4 weather forecast (not-show-meteo)', () => {
+describe('TripInputForm — Step 4 weatherAssessment forwarding', () => {
   const VALID_TRIP_UUID = '11111111-1111-1111-1111-111111111111'
 
   const mountAtStep4 = () =>
@@ -405,7 +416,13 @@ describe('TripInputForm — Step 4 weather forecast (not-show-meteo)', () => {
       props: { viewTripId: VALID_TRIP_UUID },
       global: {
         plugins: [createPinia()],
-        stubs: { transition: true, TripTimeline: true, TripActivityCard: true, TripBudgetBreakdown: true, AppLogo: true, TripNegotiateStepV2: true, TripItineraryStepV2: true },
+        // Registering the real component (alongside the boolean stub below) lets
+        // VTU's auto-stub introspect its actual props schema, so `.props()`
+        // assertions on the stub work — otherwise it falls back to a schema-less
+        // generic stub since TripItineraryStep is resolved by Nuxt auto-import,
+        // which this plain vitest+@vitejs/plugin-vue setup doesn't replicate.
+        components: { TripItineraryStep },
+        stubs: { transition: true, TripTimeline: true, TripActivityCard: true, TripBudgetBreakdown: true, AppLogo: true, TripNegotiateStepV2: true, TripItineraryStep: true },
       },
     })
 
@@ -424,7 +441,7 @@ describe('TripInputForm — Step 4 weather forecast (not-show-meteo)', () => {
     vi.useRealTimers()
   })
 
-  it('renders the weather forecast card from the orchestrator proposal\'s weatherAssessment', async () => {
+  it('forwards the orchestrator proposal\'s weatherAssessment to TripItineraryStep', async () => {
     mockApiGet
       .mockResolvedValueOnce({ data: { data: { status: 'confirmed' } } })
       .mockResolvedValueOnce({
@@ -452,11 +469,13 @@ describe('TripInputForm — Step 4 weather forecast (not-show-meteo)', () => {
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.text()).toContain('Weather forecast')
-    expect(wrapper.text()).toContain('Storms expected on day 1')
+    const step = wrapper.findComponent({ name: 'TripItineraryStep' })
+    const weatherAssessment = step.props('weatherAssessment') as Record<string, unknown> | null
+    expect(weatherAssessment?.overallRisk).toBe('high')
+    expect(weatherAssessment?.summary).toContain('Storms expected on day 1')
   })
 
-  it('hides the weather forecast card when no orchestrator proposal carries a weatherAssessment', async () => {
+  it('forwards a null weatherAssessment when no orchestrator proposal carries one', async () => {
     // Regression guard for the bug this fixes: the 'logistics' proposal is
     // the /plan route-graph and must NOT be read as a weather source.
     mockApiGet
@@ -476,6 +495,7 @@ describe('TripInputForm — Step 4 weather forecast (not-show-meteo)', () => {
     await wrapper.vm.$nextTick()
     await wrapper.vm.$nextTick()
 
-    expect(wrapper.text()).not.toContain('Weather forecast')
+    const step = wrapper.findComponent({ name: 'TripItineraryStep' })
+    expect(step.props('weatherAssessment')).toBeNull()
   })
 })

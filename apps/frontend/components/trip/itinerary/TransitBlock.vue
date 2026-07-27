@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import type { TransitVM } from '~/utils/itineraryV2'
-import { formatEur } from '~/utils/itineraryV2'
+import type { TransitVM } from '~/utils/itineraryViewModel'
+import { formatEur } from '~/utils/itineraryViewModel'
 
 const props = defineProps<{
   transit: TransitVM

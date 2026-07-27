@@ -1,11 +1,11 @@
 import { describe, it, expect, afterEach } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
-import ItineraryStepV2 from '~/components/trip/itinerary/ItineraryStepV2.vue'
-import type { ItineraryDayV2, BudgetBreakdown, TransportOption } from '~/types/index'
+import ItineraryStep from '~/components/trip/itinerary/ItineraryStep.vue'
+import type { ItineraryDay, BudgetBreakdown, TransportOption } from '~/types/index'
 
 const TRANSPORT_OPTION: TransportOption = { mode: 'car', durationMinutes: 295, priceEur: 107, warnings: [] }
 
-function twoDayItinerary(): ItineraryDayV2[] {
+function twoDayItinerary(): ItineraryDay[] {
   return [
     { day: 1, date: 'Sat 12 Jul', city: 'Mértola', activities: [{ name: 'Castle visit', time: 'morning', cost: 18, ownerAgent: 'alice' }] },
     {
@@ -49,38 +49,38 @@ afterEach(() => {
   wrapper = null
 })
 
-describe('ItineraryStepV2', () => {
+describe('ItineraryStep', () => {
   it('renders a graceful empty state for an empty itinerary, not a crash', () => {
-    wrapper = mount(ItineraryStepV2, { props: baseProps({ timelineDays: [] }) })
+    wrapper = mount(ItineraryStep, { props: baseProps({ timelineDays: [] }) })
     expect(wrapper.find('[data-testid="itinerary-empty"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="day-cell"]').exists()).toBe(false)
   })
 
   it('a single-day trip renders one rail cell and no transit node', () => {
-    wrapper = mount(ItineraryStepV2, { props: baseProps({ timelineDays: [twoDayItinerary()[0]!] }) })
+    wrapper = mount(ItineraryStep, { props: baseProps({ timelineDays: [twoDayItinerary()[0]!] }) })
     expect(wrapper.findAll('[data-testid="day-cell"]')).toHaveLength(1)
     expect(wrapper.find('.transit-gap').exists()).toBe(false)
   })
 
   it('defaults to focusing day 1', () => {
-    wrapper = mount(ItineraryStepV2, { props: baseProps() })
+    wrapper = mount(ItineraryStep, { props: baseProps() })
     expect(wrapper.find('[data-testid="day-city"]').text()).toBe('Mértola')
   })
 
   it('clicking a rail cell updates the focused day panel', async () => {
-    wrapper = mount(ItineraryStepV2, { props: baseProps() })
+    wrapper = mount(ItineraryStep, { props: baseProps() })
     await wrapper.findAll('[data-testid="day-cell"]')[1]!.trigger('click')
     expect(wrapper.find('[data-testid="day-city"]').text()).toBe('Seia')
   })
 
   it('clicking a cost-by-day bar updates the focused day panel', async () => {
-    wrapper = mount(ItineraryStepV2, { props: baseProps() })
+    wrapper = mount(ItineraryStep, { props: baseProps() })
     await wrapper.findAll('[data-testid="cost-bar"]')[1]!.trigger('click')
     expect(wrapper.find('[data-testid="day-city"]').text()).toBe('Seia')
   })
 
   it('ArrowRight/ArrowLeft navigate days and clamp at the bounds', async () => {
-    wrapper = mount(ItineraryStepV2, { props: baseProps(), attachTo: document.body })
+    wrapper = mount(ItineraryStep, { props: baseProps(), attachTo: document.body })
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }))
     await wrapper.vm.$nextTick()
     expect(wrapper.find('[data-testid="day-city"]').text()).toBe('Mértola') // clamped at day 0
@@ -95,7 +95,7 @@ describe('ItineraryStepV2', () => {
   })
 
   it('toggling pp/total recomputes the rail cost, price hero, category amounts and the transit price pill together', async () => {
-    wrapper = mount(ItineraryStepV2, { props: baseProps() })
+    wrapper = mount(ItineraryStep, { props: baseProps() })
     expect(wrapper.find('[data-testid="cost-hero"]').text()).toBe('€924')
 
     await wrapper.find('[data-testid="price-toggle"]').findAll('button')[1]!.trigger('click')
@@ -108,7 +108,7 @@ describe('ItineraryStepV2', () => {
   })
 
   it('does not crash and still renders slots when weatherAssessment is entirely null', () => {
-    wrapper = mount(ItineraryStepV2, { props: baseProps({ weatherAssessment: null }) })
+    wrapper = mount(ItineraryStep, { props: baseProps({ weatherAssessment: null }) })
     expect(wrapper.find('[data-testid="weather-banner"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="day-slot"]').exists()).toBe(true)
   })
