@@ -62,6 +62,17 @@ function planEventWithWindows(t = 1): AgentStreamEvent {
   }
 }
 
+function singleCityPlanEvent(t = 1): AgentStreamEvent {
+  return {
+    tripId: TRIP_ID, type: 'agent.plan', agent: 'logistics', round: 1, timestamp: `t${t}`,
+    content: {
+      cityStays: [
+        { city: 'Barcelona', arrivalDate: '2026-08-10', departureDate: '2026-08-15' },
+      ],
+    },
+  }
+}
+
 function proposeEvent(agent: AgentName, t = 1): AgentStreamEvent {
   return {
     tripId: TRIP_ID, type: 'agent.propose', agent, round: 1, timestamp: `t${t}`,
@@ -157,6 +168,22 @@ describe('negotiationReducer.reconcile — happy path', () => {
     expect(state.slots.every((d) => Object.values(d.slots).every((s) => s.status === 'empty'))).toBe(true)
   })
 
+  it('a multi-city agent.plan reports a generic route-plan message on the card and decision stream', () => {
+    const state = createInitialNegotiationState()
+    reconcile(state, planEvent())
+    expect(state.agents.find((a) => a.id === 'logistics')!.lastAction).toBe('sent route plan')
+    expect(state.events[0]!.body).toBe('Route plan ready')
+  })
+
+  it('a single-destination agent.plan explains there is no inter-city transport to plan, and still builds the slot grid', () => {
+    const state = createInitialNegotiationState()
+    reconcile(state, singleCityPlanEvent())
+    expect(state.agents.find((a) => a.id === 'logistics')!.lastAction).toBe('no inter-city transfers needed')
+    expect(state.events[0]!.body).toBe('Single destination — no inter-city transport to plan')
+    expect(state.slots).toHaveLength(5) // 5 nights in the single city
+    expect(state.slots.every((d) => d.city === 'Barcelona')).toBe(true)
+  })
+
   it('agent.propose creates a pending decision-stream event keyed by agent:city:date:slot', () => {
     const state = createInitialNegotiationState()
     reconcile(state, proposeEvent('diana'))
@@ -233,6 +260,16 @@ describe('negotiationReducer.reconcile — error / edge scenarios', () => {
     expect(state.slots[0]!.slots.morning).toEqual({
       status: 'reserved', name: 'Reserved by logistics', by: 'logistics', color: colorFor('logistics'),
     })
+  })
+
+  it('an agent.plan with no cityStays does not throw and does not misreport a single-destination trip', () => {
+    const state = createInitialNegotiationState()
+    expect(() => reconcile(state, {
+      tripId: TRIP_ID, type: 'agent.plan', agent: 'logistics', round: 1, timestamp: 't1', content: {},
+    })).not.toThrow()
+    expect(state.agents.find((a) => a.id === 'logistics')!.lastAction).toBe('sent route plan')
+    expect(state.events[0]!.body).toBe('Route plan ready')
+    expect(state.slots).toHaveLength(0)
   })
 
   it('a reserved transit slot is never overwritten by a later agent.decision', () => {
