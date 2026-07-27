@@ -235,31 +235,57 @@ function handleWorkflowEvent(state: NegotiationState, event: AgentStreamEvent): 
   })
 }
 
-// A single-destination trip has no inter-city legs to plan (logistics-agent's
-// /plan only ever builds legs between adjacent destinations — see
-// services/logistics-agent/src/routes/logistics.ts). Without this branch the
-// card and decision-stream both show the same generic "route plan" copy as a
-// multi-city trip, which reads as stuck/broken rather than "nothing to do
-// here by design". Only claim single-destination when cityStays says so
-// explicitly (length === 1) — a missing/empty payload is a malformed event,
-// not evidence of a single-city trip, so it keeps the generic fallback.
-function handlePlanEvent(state: NegotiationState, event: AgentStreamEvent): void {
-  const content = event.content as { cityStays?: PlanCityStay[] } | null | undefined
-  const singleDestination = content?.cityStays?.length === 1
-  setAgentState(state, 'logistics', 'idle', singleDestination ? 'no inter-city transfers needed' : 'sent route plan')
-  if (content?.cityStays?.length) {
-    state.slots = buildDraftDays(content.cityStays)
+// Shared by the live agent.plan handler and the REST-backfill path below, so
+// a plan applied late (see seedLogisticsPlanIfMissing) looks identical to one
+// applied live.
+function applyLogisticsPlan(state: NegotiationState, cityStays: PlanCityStay[], timestamp: string): void {
+  setAgentState(state, 'logistics', 'idle', 'sent route plan')
+  if (cityStays.length) {
+    state.slots = buildDraftDays(cityStays)
   }
   pushOrUpdateEvent(state, {
-    id: `plan-${event.timestamp}`,
+    id: `plan-${timestamp}`,
     who: 'logistics',
     color: colorFor('logistics'),
     kind: 'agent · plan',
     body: singleDestination ? 'Single destination — no inter-city transport to plan' : 'Route plan ready',
     facts: [],
     chip: 'applied',
-    timestamp: event.timestamp,
+    timestamp,
   })
+}
+
+function handlePlanEvent(state: NegotiationState, event: AgentStreamEvent): void {
+  const content = event.content as { cityStays?: PlanCityStay[] } | null | undefined
+  applyLogisticsPlan(state, content?.cityStays ?? [], event.timestamp)
+}
+
+// The logistics agent typically publishes agent.plan within tens of ms of
+// trip creation — often faster than the frontend's SSE handshake (auth +
+// Kong hop + stream open), so it's structurally likely to be missed on a
+// fresh connect. Nothing else ever *creates* a slots day-card (only
+// handleProposeEvent/handleDecisionEvent/handleMergeEvent look one up), so a
+// missed agent.plan leaves the Draft Itinerary panel — and the logistics
+// agent card's lastAction — empty forever. Call this once after connect()
+// fetches the trip's persisted proposals (GET /api/v1/trips/:id/proposals,
+// the same endpoint TripInputForm.vue's Step 4 already relies on) to recover
+// from that race.
+export interface BackfillProposal {
+  agent: string
+  content: Record<string, unknown>
+  createdAt?: string
+}
+
+export function seedLogisticsPlanIfMissing(state: NegotiationState, proposals: BackfillProposal[]): void {
+  // A live agent.plan already won — RabbitMQ never redelivers an
+  // already-published message to a newly-connected SSE client, so there's no
+  // real live-vs-backfill race to resolve here, only an ordering one.
+  if (state.slots.length > 0) return
+  const proposal = proposals.find((p) => p.agent === 'logistics')
+  if (!proposal) return
+  const content = proposal.content as { cityStays?: PlanCityStay[] } | undefined
+  if (!content?.cityStays?.length) return
+  applyLogisticsPlan(state, content.cityStays, proposal.createdAt ?? new Date().toISOString())
 }
 
 function handleEstimateEvent(state: NegotiationState, event: AgentStreamEvent): void {

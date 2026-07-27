@@ -3,6 +3,7 @@ import {
   createInitialNegotiationState,
   reconcile,
   sweepPendingEvents,
+  seedLogisticsPlanIfMissing,
   filledSlotCount,
   runningTotal,
   colorFor,
@@ -477,6 +478,63 @@ describe('negotiationReducer.reconcile — terminal workflow states', () => {
     reconcile(state, workflowEvent('FINAL_VALIDATION'))
     reconcile(state, workflowEvent('FINISH'))
     expect(state.stages.every((s) => s.status === 'done')).toBe(true)
+  })
+})
+
+describe('seedLogisticsPlanIfMissing', () => {
+  it('happy path: populates slots and the logistics agent card from a REST-backfilled plan proposal', () => {
+    const state = createInitialNegotiationState()
+    seedLogisticsPlanIfMissing(state, [
+      { agent: 'logistics', content: planEvent().content as Record<string, unknown>, createdAt: '2026-08-01T10:00:00Z' },
+    ])
+
+    expect(state.slots.length).toBeGreaterThan(0)
+    expect(state.agents.find((a) => a.id === 'logistics')!.lastAction).toBe('sent route plan')
+  })
+
+  it('happy path: a multi-city plan with transit windows backfills reserved slots too, same as the live event would', () => {
+    const state = createInitialNegotiationState()
+    seedLogisticsPlanIfMissing(state, [
+      { agent: 'logistics', content: planEventWithWindows().content as Record<string, unknown> },
+    ])
+
+    const reserved = state.slots.flatMap((d) => Object.values(d.slots)).filter((s) => s.status === 'reserved')
+    expect(reserved.length).toBeGreaterThan(0)
+  })
+
+  it('does not overwrite slots already populated by a live agent.plan event', () => {
+    const state = createInitialNegotiationState()
+    reconcile(state, planEvent(1))
+    const liveSlots = state.slots
+
+    seedLogisticsPlanIfMissing(state, [
+      { agent: 'logistics', content: planEventWithWindows().content as Record<string, unknown> },
+    ])
+
+    expect(state.slots).toBe(liveSlots) // untouched — same array reference
+  })
+
+  it('no-ops when no logistics proposal is present', () => {
+    const state = createInitialNegotiationState()
+    seedLogisticsPlanIfMissing(state, [{ agent: 'finance', content: { grandTotal: 1000 } }])
+
+    expect(state.slots).toHaveLength(0)
+    expect(state.agents.find((a) => a.id === 'logistics')!.lastAction).toBeNull()
+  })
+
+  it('no-ops without throwing on a logistics proposal missing cityStays', () => {
+    const state = createInitialNegotiationState()
+    expect(() => {
+      seedLogisticsPlanIfMissing(state, [{ agent: 'logistics', content: { orderedLegs: [] } }])
+    }).not.toThrow()
+
+    expect(state.slots).toHaveLength(0)
+  })
+
+  it('no-ops on an empty proposals array', () => {
+    const state = createInitialNegotiationState()
+    expect(() => seedLogisticsPlanIfMissing(state, [])).not.toThrow()
+    expect(state.slots).toHaveLength(0)
   })
 })
 

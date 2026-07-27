@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { ref, computed, type Ref } from 'vue'
 import { useNegotiationStore } from '~/stores/negotiation'
+import { mockApiGet } from '../../setup'
 import type { AgentStreamEvent } from '~/types/index'
 
 // useNegotiationStore.connect() calls the globally-shimmed useAgentStream
@@ -136,5 +137,89 @@ describe('useNegotiationStore', () => {
 
     expect(store.state.session.status).toBe('negotiating')
     expect(store.state.events).toHaveLength(0)
+  })
+})
+
+// ── connect() REST backfill (recovers from a missed live agent.plan event) ──
+// Uses real timers — these tests need setTimeout to actually flush the
+// microtask queue after connect()'s fire-and-forget hydrateFromProposals().
+describe('useNegotiationStore — proposals backfill on connect()', () => {
+  beforeEach(() => {
+    vi.useRealTimers()
+    mockApiGet.mockReset()
+  })
+
+  it('happy path: seeds the Draft Itinerary and logistics card when the live agent.plan event never arrives', async () => {
+    mockAgentStream() // no SSE events emitted — simulates a client that connected too late
+    mockApiGet.mockResolvedValueOnce({
+      data: {
+        success: true,
+        data: [
+          {
+            agent: 'logistics',
+            content: { cityStays: [{ city: 'Dublin', arrivalDate: '2026-08-18', departureDate: '2026-08-22', timeWindows: [] }] },
+            createdAt: '2026-08-01T10:00:00Z',
+          },
+        ],
+      },
+    })
+
+    const store = useNegotiationStore()
+    store.connect(computed(() => 'trip-1'))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(mockApiGet).toHaveBeenCalledWith('/api/v1/trips/trip-1/proposals')
+    expect(store.state.agents.find((a) => a.id === 'logistics')!.lastAction).toBe('sent route plan')
+    expect(store.state.slots.length).toBeGreaterThan(0)
+  })
+
+  it('does not overwrite state seeded live by the SSE stream first', async () => {
+    const { events } = mockAgentStream()
+    mockApiGet.mockResolvedValueOnce({
+      data: { success: true, data: [{ agent: 'logistics', content: { cityStays: [{ city: 'Porto', arrivalDate: '2026-08-01', departureDate: '2026-08-03' }] } }] },
+    })
+
+    const store = useNegotiationStore()
+    store.connect(computed(() => 'trip-1'))
+    emit(events, {
+      tripId: 'trip-1', type: 'agent.plan', agent: 'logistics', round: 1, timestamp: 'live-1',
+      content: { cityStays: [{ city: 'Barcelona', arrivalDate: '2026-08-10', departureDate: '2026-08-11' }] },
+    })
+    const liveSlots = store.state.slots
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    // The REST backfill resolved after the live event already won — must not clobber it.
+    expect(store.state.slots).toBe(liveSlots)
+    expect(store.state.slots[0]!.city).toBe('Barcelona')
+  })
+
+  it('error path: does not throw and leaves state untouched when the proposals fetch rejects', async () => {
+    mockAgentStream()
+    mockApiGet.mockRejectedValueOnce(new Error('network error'))
+
+    const store = useNegotiationStore()
+    expect(() => store.connect(computed(() => 'trip-1'))).not.toThrow()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(store.state.slots).toHaveLength(0)
+  })
+
+  it('a superseded connect() does not let a late-resolving fetch mutate the new session', async () => {
+    mockAgentStream()
+    let resolveFirst!: (v: unknown) => void
+    mockApiGet.mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve }))
+
+    const store = useNegotiationStore()
+    store.connect(computed(() => 'trip-1'))
+    // Reconnect before the first fetch resolves — simulates navigating to a different trip fast.
+    mockApiGet.mockResolvedValueOnce({ data: { success: true, data: [] } })
+    store.connect(computed(() => 'trip-2'))
+
+    resolveFirst({
+      data: { success: true, data: [{ agent: 'logistics', content: { cityStays: [{ city: 'Old trip', arrivalDate: '2026-08-01', departureDate: '2026-08-02' }] } }] },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(store.state.slots).toHaveLength(0)
   })
 })
