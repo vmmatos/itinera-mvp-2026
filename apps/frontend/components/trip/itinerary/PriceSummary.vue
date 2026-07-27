@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { BudgetBreakdown } from '~/types/index'
-import { budgetCategoriesToRows, formatMoney } from '~/utils/itineraryV2'
+import { budgetCategoriesToRows, formatMoney } from '~/utils/itineraryViewModel'
 
 const props = defineProps<{
   budgetBreakdown: BudgetBreakdown | null

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import type { SegmentVM, DayVM } from '~/utils/itineraryV2'
-import { formatMoney } from '~/utils/itineraryV2'
+import type { SegmentVM, DayVM } from '~/utils/itineraryViewModel'
+import { formatMoney } from '~/utils/itineraryViewModel'
 
 const props = defineProps<{
   segments: SegmentVM[]

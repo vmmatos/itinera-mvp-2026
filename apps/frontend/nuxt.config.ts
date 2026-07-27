@@ -18,7 +18,6 @@ export default defineNuxtConfig({
       apiBase: process.env.NUXT_PUBLIC_API_BASE ?? 'http://localhost',
       wsUrl:   process.env.NUXT_PUBLIC_WS_URL   ?? 'http://localhost',
       appMode: process.env.NUXT_PUBLIC_APP_MODE ?? 'development',
-      itineraryV2: process.env.NUXT_PUBLIC_ITINERARY_V2 === 'true',
     },
   },
 

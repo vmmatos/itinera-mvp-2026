@@ -1,9 +1,9 @@
 import type {
-  ItineraryDayV2,
-  ItineraryActivityV2,
-  WeatherAssessmentV2,
-  WeatherDayAssessmentV2,
-  WeatherTimingIssueV2,
+  ItineraryDay,
+  ItineraryActivity,
+  WeatherAssessment,
+  WeatherDayAssessment,
+  WeatherTimingIssue,
   BudgetBreakdown,
   BudgetCategory,
   TransportOption,
@@ -81,7 +81,7 @@ export interface SegmentVM {
   transitAfter?: TransitGapVM
 }
 
-function transitLabelForDay(day: ItineraryDayV2): TransitGapVM | undefined {
+function transitLabelForDay(day: ItineraryDay): TransitGapVM | undefined {
   const transitActivity = day.activities.find((a) => a.transportData)
   if (transitActivity?.transportData) {
     const opt = transitActivity.transportData.selectedOption
@@ -93,7 +93,7 @@ function transitLabelForDay(day: ItineraryDayV2): TransitGapVM | undefined {
   return undefined
 }
 
-export function groupIntoSegments(days: ItineraryDayV2[]): SegmentVM[] {
+export function groupIntoSegments(days: ItineraryDay[]): SegmentVM[] {
   const segments: SegmentVM[] = []
   days.forEach((day, i) => {
     const city = day.city?.trim() || 'Trip'
@@ -152,15 +152,15 @@ export interface DayWeatherVM {
 }
 
 // Narrows the loose Record<string,unknown> shape v1 still uses (the raw
-// proposal JSON) into WeatherAssessmentV2 at the boundary. Defensive: any
+// proposal JSON) into WeatherAssessment at the boundary. Defensive: any
 // missing/malformed field falls back to a safe default rather than throwing
 // — a malformed weather block must never crash the itinerary screen.
-export function parseWeatherAssessment(raw: Record<string, unknown> | null): WeatherAssessmentV2 | null {
+export function parseWeatherAssessment(raw: Record<string, unknown> | null): WeatherAssessment | null {
   if (!raw) return null
   const dayAssessmentsRaw = raw['dayAssessments']
   if (!Array.isArray(dayAssessmentsRaw)) return null
 
-  const dayAssessments: WeatherDayAssessmentV2[] = dayAssessmentsRaw
+  const dayAssessments: WeatherDayAssessment[] = dayAssessmentsRaw
     .filter((d): d is Record<string, unknown> => !!d && typeof d === 'object')
     .map((d) => ({
       day: typeof d['day'] === 'number' ? d['day'] : 0,
@@ -173,7 +173,7 @@ export function parseWeatherAssessment(raw: Record<string, unknown> | null): Wea
     }))
 
   const timingIssuesRaw = raw['timingIssues']
-  const timingIssues: WeatherTimingIssueV2[] = Array.isArray(timingIssuesRaw)
+  const timingIssues: WeatherTimingIssue[] = Array.isArray(timingIssuesRaw)
     ? timingIssuesRaw
         .filter((t): t is Record<string, unknown> => !!t && typeof t === 'object')
         .map((t) => ({
@@ -194,11 +194,11 @@ export function parseWeatherAssessment(raw: Record<string, unknown> | null): Wea
   }
 }
 
-function findDayAssessment(assessment: WeatherAssessmentV2 | null, dayNumber: number): WeatherDayAssessmentV2 | undefined {
+function findDayAssessment(assessment: WeatherAssessment | null, dayNumber: number): WeatherDayAssessment | undefined {
   return assessment?.dayAssessments.find((d) => d.day === dayNumber)
 }
 
-function buildDayWeather(assessment: WeatherAssessmentV2 | null, dayNumber: number): DayWeatherVM | null {
+function buildDayWeather(assessment: WeatherAssessment | null, dayNumber: number): DayWeatherVM | null {
   const match = findDayAssessment(assessment, dayNumber)
   if (!match) return null
   return {
@@ -239,7 +239,7 @@ function altVM(opt: TransportOption): TransitAltVM {
   }
 }
 
-export function buildTransitVM(activity: ItineraryActivityV2): TransitVM | null {
+export function buildTransitVM(activity: ItineraryActivity): TransitVM | null {
   const td = activity.transportData
   if (!td) return null
   const opt = td.selectedOption
@@ -289,7 +289,7 @@ export interface AccommodationBlock {
   nights: number
 }
 
-function accommodationShareFor(day: ItineraryDayV2, accommodation: AccommodationBlock[]): number {
+function accommodationShareFor(day: ItineraryDay, accommodation: AccommodationBlock[]): number {
   const city = day.city?.trim().toLowerCase()
   if (!city) return 0
   const block = accommodation.find((a) => a.city.trim().toLowerCase() === city)
@@ -303,8 +303,8 @@ function accommodationShareFor(day: ItineraryDayV2, accommodation: Accommodation
 // — this keeps the rail/chart numbers honest and roughly reconciled with the
 // price hero rather than silently undercounting by omitting lodging.
 export function buildDayViewModels(
-  days: ItineraryDayV2[],
-  weatherAssessment: WeatherAssessmentV2 | null,
+  days: ItineraryDay[],
+  weatherAssessment: WeatherAssessment | null,
   accommodation: AccommodationBlock[],
   budgetBreakdown: BudgetBreakdown | null,
 ): DayVM[] {

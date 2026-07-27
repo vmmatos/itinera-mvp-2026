@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import DaySlot from '~/components/trip/itinerary/DaySlot.vue'
-import type { SlotItemVM } from '~/utils/itineraryV2'
+import type { SlotItemVM } from '~/utils/itineraryViewModel'
 
 function slot(overrides: Partial<SlotItemVM> = {}): SlotItemVM {
   return { title: 'Guided visit to Mértola Castle', description: 'A medieval castle.', costPerPerson: 18, agentName: 'alice', transit: null, ...overrides }

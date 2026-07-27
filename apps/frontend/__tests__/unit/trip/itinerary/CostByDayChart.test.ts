@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import CostByDayChart from '~/components/trip/itinerary/CostByDayChart.vue'
-import type { DayVM } from '~/utils/itineraryV2'
+import type { DayVM } from '~/utils/itineraryViewModel'
 
 function dayVM(index: number, costPerPerson: number): DayVM {
   return { day: index + 1, index, dateLabel: `Day ${index + 1}`, city: 'Mértola', costPerPerson, isTransitDay: false, weather: null, slots: { morning: [], afternoon: [], evening: [] } }
