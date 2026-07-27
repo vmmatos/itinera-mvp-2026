@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import type { BudgetBreakdown, ItineraryDayV2, SatisfactionScore } from '~/types/index'
+import type { BudgetBreakdown, ItineraryDay, SatisfactionScore } from '~/types/index'
 import {
   groupIntoSegments,
   buildDayViewModels,
@@ -8,13 +8,13 @@ import {
   currencySymbolFor,
   formatDateRange,
   type AccommodationBlock,
-} from '~/utils/itineraryV2'
+} from '~/utils/itineraryViewModel'
 import TripItineraryReviewHeader from './ReviewHeader.vue'
 import TripItineraryTimelineRail from './TimelineRail.vue'
 import TripItineraryDayPanel from './DayPanel.vue'
 import TripItinerarySummaryPanel from './SummaryPanel.vue'
 
-interface ValidatorSummaryV2 {
+interface ValidatorSummary {
   fairnessScore: number | null
   overallScore: number | null
   constraintsPassed: boolean | null
@@ -29,12 +29,12 @@ const props = defineProps<{
   dateMode: 'fixed' | 'flexible'
   preferredMonth: string
   travellers: number
-  timelineDays: ItineraryDayV2[]
+  timelineDays: ItineraryDay[]
   budgetBreakdown: BudgetBreakdown | null
   accommodation: AccommodationBlock[]
   weatherAssessment: Record<string, unknown> | null
   showWeather: boolean
-  validatorSummary: ValidatorSummaryV2 | null
+  validatorSummary: ValidatorSummary | null
   travellerScores: SatisfactionScore[]
   agentNames: string[]
   exportLoading: boolean
@@ -58,10 +58,10 @@ const summaryOpen = ref(false)
 
 const currencySymbol = computed(() => currencySymbolFor(props.budgetBreakdown?.currency))
 
-const weatherAssessmentV2 = computed(() => (props.showWeather ? parseWeatherAssessment(props.weatherAssessment) : null))
+const parsedWeather = computed(() => (props.showWeather ? parseWeatherAssessment(props.weatherAssessment) : null))
 
 const dayVMs = computed(() =>
-  buildDayViewModels(props.timelineDays, weatherAssessmentV2.value, props.accommodation, props.budgetBreakdown),
+  buildDayViewModels(props.timelineDays, parsedWeather.value, props.accommodation, props.budgetBreakdown),
 )
 
 const segments = computed(() => groupIntoSegments(props.timelineDays))
@@ -85,7 +85,7 @@ const satisfactionScore = computed(() => {
   return props.validatorSummary?.overallScore ?? null
 })
 
-const timingConflicts = computed(() => weatherAssessmentV2.value?.timingIssues.length ?? 0)
+const timingConflicts = computed(() => parsedWeather.value?.timingIssues.length ?? 0)
 
 function select(index: number): void {
   selectedDay.value = Math.max(0, Math.min(dayVMs.value.length - 1, index))
@@ -107,7 +107,7 @@ watch(() => dayVMs.value.length, (len) => {
 </script>
 
 <template>
-  <div class="itin-v2">
+  <div class="itin-step">
     <TripItineraryReviewHeader
       :title="title"
       :meta="meta"
@@ -175,7 +175,7 @@ watch(() => dayVMs.value.length, (len) => {
 </template>
 
 <style scoped>
-.itin-v2 { flex: 1; min-height: 0; display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+.itin-step { flex: 1; min-height: 0; display: flex; flex-direction: column; height: 100%; overflow: hidden; }
 .content { display: grid; grid-template-columns: minmax(0, 1fr) 400px; flex: 1; min-height: 0; }
 .empty { padding: var(--s-8); text-align: center; color: var(--fg-3); font-family: var(--mono); font-size: var(--t-13); }
 @media (max-width: 1080px) {

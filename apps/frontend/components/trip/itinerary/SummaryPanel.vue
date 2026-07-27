@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { BudgetBreakdown } from '~/types/index'
-import type { DayVM } from '~/utils/itineraryV2'
+import type { DayVM } from '~/utils/itineraryViewModel'
 import TripItineraryPriceSummary from './PriceSummary.vue'
 import TripItineraryCostByDayChart from './CostByDayChart.vue'
 import TripItineraryNegotiationQuality from './NegotiationQuality.vue'

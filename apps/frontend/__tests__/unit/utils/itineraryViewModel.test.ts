@@ -13,10 +13,10 @@ import {
   formatDateRange,
   dayCostMax,
   parseWeatherAssessment,
-} from '~/utils/itineraryV2'
-import type { ItineraryDayV2, BudgetBreakdown, TransportOption } from '~/types/index'
+} from '~/utils/itineraryViewModel'
+import type { ItineraryDay, BudgetBreakdown, TransportOption } from '~/types/index'
 
-function day(overrides: Partial<ItineraryDayV2> = {}): ItineraryDayV2 {
+function day(overrides: Partial<ItineraryDay> = {}): ItineraryDay {
   return { day: 1, date: 'Sat 12 Jul', city: 'Mértola', activities: [], ...overrides }
 }
 

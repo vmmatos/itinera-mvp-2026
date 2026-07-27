@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { DayVM } from '~/utils/itineraryV2'
-import { dayCostMax } from '~/utils/itineraryV2'
+import type { DayVM } from '~/utils/itineraryViewModel'
+import { dayCostMax } from '~/utils/itineraryViewModel'
 
 const props = defineProps<{
   days: DayVM[]

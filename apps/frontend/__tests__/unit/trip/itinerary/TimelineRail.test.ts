@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import TimelineRail from '~/components/trip/itinerary/TimelineRail.vue'
-import type { DayVM, SegmentVM } from '~/utils/itineraryV2'
+import type { DayVM, SegmentVM } from '~/utils/itineraryViewModel'
 
 function dayVM(index: number, overrides: Partial<DayVM> = {}): DayVM {
   return {

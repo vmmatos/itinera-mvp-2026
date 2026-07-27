@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import TransitBlock from '~/components/trip/itinerary/TransitBlock.vue'
-import type { TransitVM } from '~/utils/itineraryV2'
+import type { TransitVM } from '~/utils/itineraryViewModel'
 
 function transit(overrides: Partial<TransitVM> = {}): TransitVM {
   return {

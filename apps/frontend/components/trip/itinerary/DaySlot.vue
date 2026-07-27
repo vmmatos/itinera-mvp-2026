@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import type { SlotItemVM, Phase } from '~/utils/itineraryV2'
-import { formatMoney } from '~/utils/itineraryV2'
+import type { SlotItemVM, Phase } from '~/utils/itineraryViewModel'
+import { formatMoney } from '~/utils/itineraryViewModel'
 import { agentColorToken } from '~/utils/agentColorTokens'
 import { AGENT_COLOURS, type AgentName } from '~/types/index'
 import TripItineraryTransitBlock from './TransitBlock.vue'
