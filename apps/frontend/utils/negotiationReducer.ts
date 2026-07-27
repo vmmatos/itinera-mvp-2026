@@ -235,9 +235,18 @@ function handleWorkflowEvent(state: NegotiationState, event: AgentStreamEvent): 
   })
 }
 
+// A single-destination trip has no inter-city legs to plan (logistics-agent's
+// /plan only ever builds legs between adjacent destinations — see
+// services/logistics-agent/src/routes/logistics.ts). Without this branch the
+// card and decision-stream both show the same generic "route plan" copy as a
+// multi-city trip, which reads as stuck/broken rather than "nothing to do
+// here by design". Only claim single-destination when cityStays says so
+// explicitly (length === 1) — a missing/empty payload is a malformed event,
+// not evidence of a single-city trip, so it keeps the generic fallback.
 function handlePlanEvent(state: NegotiationState, event: AgentStreamEvent): void {
-  setAgentState(state, 'logistics', 'idle', 'sent route plan')
   const content = event.content as { cityStays?: PlanCityStay[] } | null | undefined
+  const singleDestination = content?.cityStays?.length === 1
+  setAgentState(state, 'logistics', 'idle', singleDestination ? 'no inter-city transfers needed' : 'sent route plan')
   if (content?.cityStays?.length) {
     state.slots = buildDraftDays(content.cityStays)
   }
@@ -246,7 +255,7 @@ function handlePlanEvent(state: NegotiationState, event: AgentStreamEvent): void
     who: 'logistics',
     color: colorFor('logistics'),
     kind: 'agent · plan',
-    body: 'Route plan ready',
+    body: singleDestination ? 'Single destination — no inter-city transport to plan' : 'Route plan ready',
     facts: [],
     chip: 'applied',
     timestamp: event.timestamp,
