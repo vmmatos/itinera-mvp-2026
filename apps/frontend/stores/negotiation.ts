@@ -5,8 +5,10 @@ import {
   createInitialNegotiationState,
   reconcile,
   sweepPendingEvents,
+  seedLogisticsPlanIfMissing,
   filledSlotCount,
   runningTotal as computeRunningTotal,
+  type BackfillProposal,
 } from '~/utils/negotiationReducer'
 
 // Grace period after the merge/resolve stage finishes before any proposal
@@ -16,12 +18,17 @@ const SWEEP_DELAY_MS = 8000
 const MERGE_STAGE_INDEX = 3 // MERGE_AND_SCORE — see WORKFLOW_STAGE_ORDER
 
 export const useNegotiationStore = defineStore('negotiation', () => {
+  const api = useApi()
   const state = ref<NegotiationState>(createInitialNegotiationState())
   const connected = ref(false)
 
   let stopEventsWatch: (() => void) | null = null
   let sweepTimer: ReturnType<typeof setTimeout> | null = null
   let processedCount = 0
+  // Bumped by reset() (including the one connect() runs first) — lets a
+  // still-in-flight hydrateFromProposals() from a superseded connect() detect
+  // it's stale and avoid mutating state that's since moved on.
+  let connectionEpoch = 0
 
   const busyCount = computed(() => state.value.agents.filter((a) => a.state !== 'idle').length)
   const filledCount = computed(() => filledSlotCount(state.value))
@@ -39,8 +46,25 @@ export const useNegotiationStore = defineStore('negotiation', () => {
     }
   }
 
+  // The logistics agent typically publishes agent.plan within tens of ms of
+  // trip creation — often before the SSE stream below has even finished its
+  // handshake — so this one-shot REST fetch backfills the Draft Itinerary /
+  // logistics agent card from what's already persisted, in case the live
+  // event was missed. Best-effort: the live SSE stream remains authoritative,
+  // and this never throws or blocks connect().
+  async function hydrateFromProposals(tripId: string, epoch: number): Promise<void> {
+    try {
+      const res = await api.get<{ success: boolean; data: BackfillProposal[] }>(`/api/v1/trips/${tripId}/proposals`)
+      if (epoch !== connectionEpoch) return // superseded by a newer connect()/reset()
+      seedLogisticsPlanIfMissing(state.value, res.data.data)
+    } catch {
+      // Best-effort only — ignore and rely on the live stream.
+    }
+  }
+
   function connect(tripId: Ref<string | null>, budgetTotal = 0): void {
     reset(budgetTotal)
+    const epoch = connectionEpoch
     const stream = useAgentStream(tripId)
     processedCount = 0
     stopEventsWatch = watch(
@@ -59,9 +83,11 @@ export const useNegotiationStore = defineStore('negotiation', () => {
       // (heartbeat, sweep timer) stay accurate.
       { immediate: true, flush: 'sync' },
     )
+    if (tripId.value) void hydrateFromProposals(tripId.value, epoch)
   }
 
   function reset(budgetTotal = 0): void {
+    connectionEpoch += 1
     stopEventsWatch?.()
     stopEventsWatch = null
     if (sweepTimer !== null) {
