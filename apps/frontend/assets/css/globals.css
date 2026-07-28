@@ -93,6 +93,10 @@
   --magenta-line: rgba(211, 107, 255, 0.32);
 
   --red: #ff5d5d;
+  --tangerine: #ff8c42;
+  --tangerine-bg: rgba(255, 140, 66, 0.08);
+  --tangerine-line: rgba(255, 140, 66, 0.32);
+
 }
 
 /* ── Base reset ─────────────────────────────────────────────── */
