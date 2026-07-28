@@ -74,8 +74,8 @@ defineEmits<{ select: [index: number] }>()
 .seg-label .bracket { flex: 1; height: 1px; background: var(--line-2); margin-left: 2px; }
 .days-row { display: flex; gap: 6px; }
 .transit-gap { align-self: stretch; display: flex; align-items: center; padding-top: 20px; }
-.transit-gap .tnode { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 0 var(--s-2); color: var(--fg-3); }
-.transit-gap .tnode .ico { font-size: var(--t-14); }
+.transit-gap .tnode { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 0 var(--s-3); margin: 0 2px; border-left: 1px dashed var(--line-2); border-right: 1px dashed var(--line-2); color: var(--fg-3); }
+.transit-gap .tnode .ico { font-size: var(--t-16); }
 .transit-gap .tnode .tt { font-family: var(--mono); font-size: 9px; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
 .daycell { width: 88px; flex-shrink: 0; border: var(--hair); background: var(--bg-2); padding: var(--s-2) var(--s-2) 9px; cursor: pointer; display: flex; flex-direction: column; gap: 5px; transition: border-color .12s, background .12s; position: relative; }
 .daycell:hover { border-color: var(--line-3); }

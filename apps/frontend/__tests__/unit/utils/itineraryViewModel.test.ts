@@ -105,6 +105,30 @@ describe('groupIntoSegments', () => {
     const segments = groupIntoSegments(days)
     expect(segments[0]?.transitAfter?.label).toBe('4h 55m')
   })
+
+  it('attaches the transit gap to the origin segment when the transit day is already labelled with the destination city (morning departure)', () => {
+    const days = [
+      day({ day: 1, city: 'Mértola' }),
+      day({ day: 2, city: 'Seia', cityTransition: { to: 'Seia', travelTime: '3h' } }),
+      day({ day: 3, city: 'Seia' }),
+    ]
+    const segments = groupIntoSegments(days)
+    expect(segments).toHaveLength(2)
+    expect(segments[0]?.city).toBe('Mértola')
+    expect(segments[0]?.transitAfter?.label).toBe('3h')
+    expect(segments[1]?.city).toBe('Seia')
+    expect(segments[1]?.transitAfter).toBeUndefined()
+  })
+
+  it('does not throw and drops the marker when a cityTransition appears on the very first day (no prior segment)', () => {
+    const days = [
+      day({ day: 1, city: 'Seia', cityTransition: { to: 'Seia', travelTime: '3h' } }),
+      day({ day: 2, city: 'Seia' }),
+    ]
+    const segments = groupIntoSegments(days)
+    expect(segments).toHaveLength(1)
+    expect(segments[0]?.transitAfter).toBeUndefined()
+  })
 })
 
 describe('buildDayViewModels', () => {
