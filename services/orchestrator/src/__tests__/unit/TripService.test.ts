@@ -40,6 +40,10 @@ import { TripService } from '@/services/TripService';
 import { StateManager } from '@/services/StateManager';
 import type { IOrchestrationEngine } from '@/services/WorkflowEngine';
 import { AppDataSource } from '@/data-source';
+import { Trip } from '@/entities/Trip';
+import { Proposal } from '@/entities/Proposal';
+import { AgentLog } from '@/entities/AgentLog';
+import { TripMetric } from '@/entities/TripMetric';
 
 const OWNER_ID = 'user-001';
 const ADMIN_ID = 'admin-001';
@@ -162,5 +166,219 @@ describe('TripService.startOrchestration', () => {
     await new Promise((r) => setImmediate(r));
 
     expect(run).toHaveBeenCalledWith('trip-123');
+  });
+});
+
+describe('TripService.getTrip (admin debug view)', () => {
+  let service: TripService;
+  let mockTripFindOne: ReturnType<typeof vi.fn>;
+  let mockProposalFind: ReturnType<typeof vi.fn>;
+  let mockAgentLogFind: ReturnType<typeof vi.fn>;
+  let mockTripMetricFind: ReturnType<typeof vi.fn>;
+
+  const CONFIRMED_TRIP = { ...TRIP_A, id: 'trip-confirmed', status: 'confirmed' };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    const stateManager = new StateManager();
+    const engine: IOrchestrationEngine = { run: vi.fn(), setTripService: vi.fn() };
+    service = new TripService(stateManager, engine);
+
+    mockTripFindOne = vi.fn().mockResolvedValue(CONFIRMED_TRIP);
+    mockProposalFind = vi.fn().mockResolvedValue([]);
+    mockAgentLogFind = vi.fn().mockResolvedValue([]);
+    mockTripMetricFind = vi.fn().mockResolvedValue([]);
+
+    vi.mocked(AppDataSource.getRepository).mockImplementation((entity: unknown) => {
+      if (entity === Trip) return { findOne: mockTripFindOne } as never;
+      if (entity === Proposal) return { find: mockProposalFind } as never;
+      if (entity === AgentLog) return { find: mockAgentLogFind } as never;
+      if (entity === TripMetric) return { find: mockTripMetricFind } as never;
+      throw new Error(`Unexpected entity in getRepository mock: ${String(entity)}`);
+    });
+  });
+
+  const orchestratorProposal = (overrides: Partial<Proposal> = {}): Proposal => ({
+    id: 'prop-orchestrator-1',
+    tripId: CONFIRMED_TRIP.id,
+    agent: 'orchestrator',
+    round: 1,
+    content: {
+      itinerary: [{ day: 1, city: 'Barcelona', activities: [{ activity: 'Sagrada Familia', agent: 'alice', time: 'morning' }] }],
+      decisions: [
+        { proposalId: 'sp-alice-1', agent: 'alice', city: 'Barcelona', date: '2026-07-01', slot: 'morning', activity: 'Sagrada Familia', status: 'accepted', reason: 'Included in the final itinerary.' },
+        { proposalId: 'sp-bob-1', agent: 'bob', city: 'Barcelona', date: '2026-07-01', slot: 'afternoon', activity: 'Beach day', status: 'rejected', reason: 'Budget, duplicate, or a competing proposal was preferred.' },
+      ],
+      satisfactionEstimates: { alice: 1, bob: 0 },
+    },
+    score: null,
+    status: 'pending',
+    action: 'propose',
+    reasoning: 'Structural route plan generated',
+    createdAt: new Date('2026-06-01T10:00:00Z'),
+    updatedAt: new Date('2026-06-01T10:00:00Z'),
+    ...overrides,
+  } as Proposal);
+
+  const financeVerdictProposal = (overrides: Partial<Proposal> = {}): Proposal => ({
+    id: 'prop-finance-2',
+    tripId: CONFIRMED_TRIP.id,
+    agent: 'finance',
+    round: 2,
+    content: { verdict: { approved: true, budgetFeasible: true } },
+    score: null,
+    status: 'pending',
+    action: 'accept',
+    reasoning: 'Within budget',
+    createdAt: new Date('2026-06-01T10:05:00Z'),
+    updatedAt: new Date('2026-06-01T10:05:00Z'),
+    ...overrides,
+  } as Proposal);
+
+  const agentLog = (overrides: Partial<AgentLog> = {}): AgentLog => ({
+    id: 'log-1',
+    tripId: CONFIRMED_TRIP.id,
+    agent: 'orchestrator',
+    round: 1,
+    action: 'merge',
+    latencyMs: 500,
+    tokensUsed: 1200,
+    reasoning: null,
+    createdAt: new Date('2026-06-01T10:00:30Z'),
+    ...overrides,
+  } as AgentLog);
+
+  const tripMetric = (overrides: Partial<TripMetric> = {}): TripMetric => ({
+    id: 'metric-1',
+    tripId: CONFIRMED_TRIP.id,
+    round: 2,
+    consensusScore: 82,
+    conflictCount: 0,
+    convergenceRounds: 1,
+    forcedConvergence: false,
+    financeBlockCount: 1,
+    logisticsBlockCount: 0,
+    totalTokensUsed: 5000,
+    totalTimeMs: 42000,
+    metadata: {},
+    createdAt: new Date('2026-06-01T10:06:00Z'),
+    ...overrides,
+  } as TripMetric);
+
+  // ── Happy path ─────────────────────────────────────────────
+
+  it('does not let AgentLog.action clobber the Proposal\'s own action column', async () => {
+    mockProposalFind.mockResolvedValue([orchestratorProposal(), financeVerdictProposal()]);
+    mockAgentLogFind.mockResolvedValue([
+      agentLog({ agent: 'orchestrator', round: 1, action: 'merge' }),
+      agentLog({ id: 'log-2', agent: 'finance', round: 2, action: 'review' }),
+    ]);
+
+    const result = await service.getTrip(CONFIRMED_TRIP.id, true) as import('@/services/TripService').TripDebugView;
+
+    const orchestratorDto = result.proposals.find((p) => p.agent === 'orchestrator');
+    const financeDto = result.proposals.find((p) => p.agent === 'finance');
+    expect(orchestratorDto?.action).toBe('propose');
+    expect(financeDto?.action).toBe('accept');
+  });
+
+  it('derives commits from orchestrator decisions plus the finance verdict', async () => {
+    mockProposalFind.mockResolvedValue([orchestratorProposal(), financeVerdictProposal()]);
+    mockAgentLogFind.mockResolvedValue([agentLog(), agentLog({ id: 'log-2', agent: 'finance', round: 2, action: 'review' })]);
+
+    const result = await service.getTrip(CONFIRMED_TRIP.id, true) as import('@/services/TripService').TripDebugView;
+
+    expect(result.commits).toHaveLength(3);
+    expect(result.commits.find((c) => c.id === 'sp-alice-1')?.action).toBe('accepted');
+    expect(result.commits.find((c) => c.id === 'sp-bob-1')?.action).toBe('rejected');
+    expect(result.commits.find((c) => c.agent === 'finance')?.action).toBe('accept');
+  });
+
+  it('wires per-agent win-rate scores from satisfactionEstimates', async () => {
+    mockProposalFind.mockResolvedValue([orchestratorProposal()]);
+    mockAgentLogFind.mockResolvedValue([agentLog()]);
+
+    const result = await service.getTrip(CONFIRMED_TRIP.id, true) as import('@/services/TripService').TripDebugView;
+
+    expect(result.scores).toEqual(
+      expect.arrayContaining([
+        { agent: 'alice', winRate: 1 },
+        { agent: 'bob', winRate: 0 },
+      ]),
+    );
+  });
+
+  it('surfaces totalTimeMs and block counts from the latest TripMetric row', async () => {
+    mockProposalFind.mockResolvedValue([orchestratorProposal(), financeVerdictProposal()]);
+    mockAgentLogFind.mockResolvedValue([agentLog()]);
+    mockTripMetricFind.mockResolvedValue([tripMetric({ totalTimeMs: 42000, financeBlockCount: 2, logisticsBlockCount: 1 })]);
+
+    const result = await service.getTrip(CONFIRMED_TRIP.id, true) as import('@/services/TripService').TripDebugView;
+
+    expect(result.metrics[0]).toMatchObject({
+      totalTimeMs: 42000,
+      financeBlockCount: 2,
+      logisticsBlockCount: 1,
+    });
+  });
+
+  // ── Error / edge scenarios ─────────────────────────────────
+
+  it('returns empty commits and scores when no orchestrator proposal exists (workflow crashed pre-merge)', async () => {
+    mockProposalFind.mockResolvedValue([]);
+    mockAgentLogFind.mockResolvedValue([]);
+
+    const result = await service.getTrip(CONFIRMED_TRIP.id, true) as import('@/services/TripService').TripDebugView;
+
+    expect(result.commits).toEqual([]);
+    expect(result.scores).toEqual([]);
+  });
+
+  it('does not throw when content.decisions is missing or malformed', async () => {
+    mockProposalFind.mockResolvedValue([
+      orchestratorProposal({ content: { itinerary: [], decisions: 'not-an-array' } as unknown as Record<string, unknown> }),
+    ]);
+    mockAgentLogFind.mockResolvedValue([]);
+
+    const result = await service.getTrip(CONFIRMED_TRIP.id, true) as import('@/services/TripService').TripDebugView;
+
+    expect(result.commits).toEqual([]);
+  });
+
+  it('returns empty scores when satisfactionEstimates is missing', async () => {
+    mockProposalFind.mockResolvedValue([
+      orchestratorProposal({ content: { itinerary: [], decisions: [] } as unknown as Record<string, unknown> }),
+    ]);
+    mockAgentLogFind.mockResolvedValue([]);
+
+    const result = await service.getTrip(CONFIRMED_TRIP.id, true) as import('@/services/TripService').TripDebugView;
+
+    expect(result.scores).toEqual([]);
+  });
+
+  it('returns an empty metrics array (not a crash) when no TripMetric row exists yet', async () => {
+    mockProposalFind.mockResolvedValue([orchestratorProposal()]);
+    mockAgentLogFind.mockResolvedValue([agentLog()]);
+    mockTripMetricFind.mockResolvedValue([]);
+
+    const result = await service.getTrip(CONFIRMED_TRIP.id, true) as import('@/services/TripService').TripDebugView;
+
+    expect(result.metrics).toEqual([]);
+  });
+
+  it('returns a plain TripSummary with no debug fields for non-admin callers', async () => {
+    mockProposalFind.mockResolvedValue([orchestratorProposal()]);
+
+    const result = await service.getTrip(CONFIRMED_TRIP.id, false);
+
+    expect(result).not.toHaveProperty('commits');
+    expect(result).not.toHaveProperty('scores');
+    expect(mockProposalFind).not.toHaveBeenCalled();
+  });
+
+  it('throws NotFoundError when the trip does not exist', async () => {
+    mockTripFindOne.mockResolvedValue(null);
+
+    await expect(service.getTrip('missing-trip', true)).rejects.toThrow();
   });
 });
