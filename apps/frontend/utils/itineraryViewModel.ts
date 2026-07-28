@@ -98,14 +98,20 @@ export function groupIntoSegments(days: ItineraryDay[]): SegmentVM[] {
   days.forEach((day, i) => {
     const city = day.city?.trim() || 'Trip'
     const last = segments[segments.length - 1]
-    if (last && last.city === city) {
-      last.dayIndexes.push(i)
+    const continuesSegment = !!last && last.city === city
+    if (continuesSegment) {
+      last!.dayIndexes.push(i)
     } else {
       segments.push({ city, dayIndexes: [i] })
     }
     if (day.cityTransition?.to) {
       const gap = transitLabelForDay(day)
-      const owner = segments[segments.length - 1]
+      // The transit day may already be labelled with the destination city
+      // (morning departure) instead of the origin (late departure) — the
+      // marker always belongs to the origin segment, so pick it by comparing
+      // this day's own city to the announced destination, not by segment index.
+      const isDestinationLabelled = city === day.cityTransition.to
+      const owner = isDestinationLabelled ? segments[segments.length - 2] : segments[segments.length - 1]
       if (gap && owner) owner.transitAfter = gap
     }
   })
