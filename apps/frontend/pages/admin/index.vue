@@ -25,6 +25,14 @@ const filteredTrips = computed(() => {
   })
 })
 
+const STATUS_BADGE: Record<Trip['status'], string> = {
+  draft:       'badge-blue',
+  negotiating: 'badge-amber',
+  confirmed:   'badge-green',
+  completed:   'badge-green',
+  cancelled:   'badge-red',
+}
+
 const fetchTrips = async (): Promise<void> => {
   loading.value = true
   error.value = null
@@ -102,7 +110,7 @@ onMounted(() => {
           <div class="trip-meta">
             <span class="id helper">{{ trip.id.slice(0, 8) }}</span>
             <span
-              :class="['badge', trip.status === 'negotiating' ? 'badge-green' : 'badge-blue']"
+              :class="['badge', STATUS_BADGE[trip.status] ?? 'badge-blue']"
             >{{ trip.status }}</span>
             <span class="helper">{{ trip.region }}</span>
             <span class="helper">{{ trip.startDate }}</span>
