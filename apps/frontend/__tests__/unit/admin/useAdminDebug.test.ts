@@ -29,6 +29,7 @@ function makeDebugData(overrides: Partial<TripDebugData> = {}): TripDebugData {
     proposals: [],
     agentLogs: [],
     metrics: [],
+    commits: [],
     scores: [],
     ...overrides,
   }

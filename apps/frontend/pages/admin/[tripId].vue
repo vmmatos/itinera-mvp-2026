@@ -26,6 +26,7 @@ const proposals = computed(() => debugData.value?.proposals ?? [])
 const agentLogs = computed(() => debugData.value?.agentLogs ?? [])
 const metrics = computed(() => debugData.value?.metrics ?? [])
 const scores = computed(() => debugData.value?.scores ?? [])
+const commits = computed(() => debugData.value?.commits ?? [])
 const trip = computed(() => debugData.value ?? null)
 
 const isNegotiating = computed(() => debugData.value?.status === 'negotiating')
@@ -118,6 +119,7 @@ onUnmounted(() => { stopPolling() })
         <AdminTimelinePanel
           :proposals="proposals"
           :agent-logs="agentLogs"
+          :commits="commits"
           :trip-name="debugData?.name ?? ''"
         />
 

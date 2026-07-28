@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import type { ProposalRound, AgentLogEntry } from '~/types/index'
+import type { ProposalRound, AgentLogEntry, CommitEntry } from '~/types/index'
 import { AGENT_COLOURS } from '~/types/index'
 
 const props = defineProps<{
   proposals: ProposalRound[]
   agentLogs: AgentLogEntry[]
+  commits: CommitEntry[]
   tripName: string
 }>()
 
@@ -49,13 +50,18 @@ interface TimelineDay {
 }
 
 const timelineDays = computed((): TimelineDay[] => {
-  const accepted = props.proposals.filter(
-    (p) => p.action === 'accept' || p.action === 'score',
-  )
-  if (accepted.length === 0) return []
+  // The itinerary lives on the orchestrator's merge proposal — finance/
+  // validator only validate that same content, they never re-propose it, so
+  // filtering by action ('accept'/'score') can never match the real days.
+  const merged = props.proposals.filter((p) => {
+    if (p.agent !== 'orchestrator' || !p.content || typeof p.content !== 'object') return false
+    const c = p.content as Record<string, unknown>
+    return Array.isArray(c.itinerary) || Array.isArray(c.days)
+  })
+  if (merged.length === 0) return []
 
   const dayMap = new Map<string, TimelineActivity[]>()
-  for (const p of accepted) {
+  for (const p of merged) {
     if (!p.content || typeof p.content !== 'object') continue
     const c = p.content as Record<string, unknown>
     const itinerary = Array.isArray(c.itinerary)
@@ -95,9 +101,9 @@ const HOURS_AM = ['06', '07', '08', '09', '10', '11', '12', '13', '14', '15', '1
 const HOURS_PM = ['12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22', '23']
 
 const commitLog = computed(() =>
-  props.proposals
-    .filter((p) => p.action === 'accept')
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
+  [...props.commits].sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+  ),
 )
 
 const traceLog = computed(() =>
@@ -194,15 +200,20 @@ const traceLog = computed(() =>
     <div v-else-if="activeTab === 'commits'" class="log-scroll">
       <div v-if="commitLog.length === 0" class="empty-state">no commits yet</div>
       <div
-        v-for="p in commitLog"
-        :key="p.id"
+        v-for="c in commitLog"
+        :key="c.id"
         class="log-row"
-        :data-c="colourCode(p.agent)"
+        :data-c="colourCode(c.agent)"
       >
-        <span class="ts">{{ formatTs(p.createdAt) }}</span>
-        <span class="lvl commit">commit</span>
-        <span class="ag">{{ p.agent }}</span>
-        <span class="msg">round {{ p.round }} · {{ p.action }}</span>
+        <span class="ts">{{ formatTs(c.createdAt) }}</span>
+        <span class="lvl commit">{{ c.action }}</span>
+        <span class="ag">{{ c.agent }}</span>
+        <span class="msg">
+          round {{ c.round }}
+          <template v-if="c.activity"> · {{ c.activity }}</template>
+          <template v-if="c.city"> · {{ c.city }}</template>
+          <span v-if="c.reason" class="reasoning"> — {{ c.reason.slice(0, 60) }}</span>
+        </span>
       </div>
     </div>
 
