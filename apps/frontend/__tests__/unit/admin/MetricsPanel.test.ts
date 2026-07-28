@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import type { TripMetrics, SatisfactionScore, AgentLogEntry } from '~/types/index'
+import type { TripMetrics, AgentWinRate, AgentLogEntry } from '~/types/index'
 
 // Shim Nuxt auto-imports
 // @ts-expect-error global shim
@@ -9,24 +9,18 @@ globalThis.useRuntimeConfig = vi.fn(() => ({ public: { apiBase: 'http://localhos
 
 function makeMetrics(overrides: Partial<TripMetrics> = {}): TripMetrics {
   return {
-    convergenceRounds: 4,
     fairnessScore: 0.81,
     autonomyScore: 0.72,
     totalTimeMs: 102000,
     totalTokensUsed: 24000,
+    financeBlockCount: 1,
+    logisticsBlockCount: 0,
     ...overrides,
   }
 }
 
-function makeScore(name: string, score: number): SatisfactionScore {
-  return {
-    travellerId: `user-${name}`,
-    name,
-    persona: 'culture',
-    preScore: score,
-    postScore: score,
-    breakdown: {},
-  }
+function makeScore(agent: string, winRate: number): AgentWinRate {
+  return { agent: agent as AgentWinRate['agent'], winRate }
 }
 
 function makeLog(agent: string, latencyMs: number, tokensUsed: number): AgentLogEntry {
@@ -74,19 +68,32 @@ describe('MetricsPanel computed logic', () => {
     expect(latest.fairnessScore.toFixed(2)).toBe('0.81')
   })
 
-  it('computes agentSatisfaction bar widths as percentages', () => {
-    const scores: SatisfactionScore[] = [
+  it('computes agentWinRate bar widths as percentages', () => {
+    const scores: AgentWinRate[] = [
       makeScore('alice', 0.84),
       makeScore('bob', 0.78),
     ]
     const AGENTS = ['alice', 'bob', 'carlos', 'diana']
     const result = AGENTS.map((name) => {
-      const s = scores.find((sc) => sc.name.toLowerCase() === name)
-      return { name, pct: s ? Math.round(s.postScore * 100) : null }
+      const s = scores.find((sc) => sc.agent === name)
+      return { name, pct: s ? Math.round(s.winRate * 100) : null }
     })
     expect(result.find((r) => r.name === 'alice')?.pct).toBe(84)
     expect(result.find((r) => r.name === 'bob')?.pct).toBe(78)
     expect(result.find((r) => r.name === 'carlos')?.pct).toBeNull()
+  })
+
+  it('formats total time in ms from latest metrics entry', () => {
+    const metrics = [makeMetrics({ totalTimeMs: 84213 })]
+    const latest = metrics[metrics.length - 1]
+    expect(`${latest.totalTimeMs}ms`).toBe('84213ms')
+  })
+
+  it('formats negotiation blocks from finance/logistics block counts', () => {
+    const metrics = [makeMetrics({ financeBlockCount: 2, logisticsBlockCount: 1 })]
+    const latest = metrics[metrics.length - 1]
+    expect(`finance ×${latest.financeBlockCount} · logistics ×${latest.logisticsBlockCount}`)
+      .toBe('finance ×2 · logistics ×1')
   })
 
   it('computes autonomy percentages by agent log count', () => {
@@ -126,6 +133,17 @@ describe('MetricsPanel computed logic', () => {
     expect(metrics[metrics.length - 1].fairnessScore).toBe(0.72)
   })
 
+  it('returns "—" for total time and negotiation blocks when metrics array is empty', () => {
+    const metrics: TripMetrics[] = []
+    const latest = metrics.length > 0 ? metrics[metrics.length - 1] : null
+    const totalTime = latest ? `${latest.totalTimeMs}ms` : '—'
+    const negotiationBlocks = latest
+      ? `finance ×${latest.financeBlockCount} · logistics ×${latest.logisticsBlockCount}`
+      : '—'
+    expect(totalTime).toBe('—')
+    expect(negotiationBlocks).toBe('—')
+  })
+
   it('builds SVG sparkline points from metrics scores', () => {
     const scores = [0.5, 0.65, 0.72, 0.81]
     const maxVal = Math.max(...scores, 1)
@@ -145,11 +163,12 @@ describe('MetricsPanel computed logic', () => {
 describe('MetricsPanel data shape validation', () => {
   it('TripMetrics interface has required fields', () => {
     const m = makeMetrics()
-    expect(typeof m.convergenceRounds).toBe('number')
     expect(typeof m.fairnessScore).toBe('number')
     expect(typeof m.autonomyScore).toBe('number')
     expect(typeof m.totalTimeMs).toBe('number')
     expect(typeof m.totalTokensUsed).toBe('number')
+    expect(typeof m.financeBlockCount).toBe('number')
+    expect(typeof m.logisticsBlockCount).toBe('number')
   })
 
   it('AgentLogEntry has required latency and token fields', () => {

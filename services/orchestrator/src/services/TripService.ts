@@ -53,18 +53,39 @@ interface AgentLogEntryDto {
 }
 
 interface TripMetricsDto {
-  convergenceRounds: number;
   fairnessScore: number;
   autonomyScore: number;
   totalTimeMs: number;
   totalTokensUsed: number;
+  financeBlockCount: number;
+  logisticsBlockCount: number;
+}
+
+export interface CommitEntryDto {
+  id: string;
+  agent: string;
+  round: number;
+  action: 'accepted' | 'merged' | 'rejected' | 'accept' | 'reject';
+  activity?: string;
+  city?: string;
+  reason?: string;
+  createdAt: string;
+}
+
+// Proposal win-rate proxy per persona agent (share of that agent's proposals
+// accepted/merged into the final itinerary) — not a real traveller
+// satisfaction survey, which this codebase has no instrumentation for.
+export interface AgentWinRateDto {
+  agent: string;
+  winRate: number;
 }
 
 export interface TripDebugView extends TripSummary {
   proposals: ProposalRoundDto[];
   agentLogs: AgentLogEntryDto[];
   metrics: TripMetricsDto[];
-  scores: never[];
+  scores: AgentWinRateDto[];
+  commits: CommitEntryDto[];
 }
 
 export class TripService extends BaseService {
@@ -232,7 +253,7 @@ export class TripService extends BaseService {
     rawProposals: Proposal[],
     rawLogs: AgentLog[],
     rawMetrics: TripMetric[],
-  ): Pick<TripDebugView, 'proposals' | 'agentLogs' | 'metrics' | 'scores'> {
+  ): Pick<TripDebugView, 'proposals' | 'agentLogs' | 'metrics' | 'scores' | 'commits'> {
     const toIso = (d: Date | string): string =>
       d instanceof Date ? d.toISOString() : String(d);
 
@@ -245,7 +266,10 @@ export class TripService extends BaseService {
         id: p.id,
         round: p.round,
         agent: p.agent,
-        action: log?.action ?? p.status,
+        // Proposal's own action column is authoritative (e.g. finance's
+        // accept/reject verdict) — AgentLog.action describes the call type
+        // (merge/review/estimate) and must not clobber it.
+        action: p.action ?? log?.action ?? p.status,
         content: p.content,
         reasoning: log?.reasoning ?? undefined,
         createdAt: toIso(p.createdAt),
@@ -272,21 +296,80 @@ export class TripService extends BaseService {
       typeof vFairness?.['fairnessScore'] === 'number' ? vFairness['fairnessScore'] / 100 : 0;
     const autonomyScore =
       typeof vMetrics?.['autonomyPct'] === 'number' ? vMetrics['autonomyPct'] / 100 : 0;
-    const convergenceRounds =
-      typeof vMetrics?.['convergenceRounds'] === 'number'
-        ? vMetrics['convergenceRounds']
-        : rawMetrics.length;
 
     const totalTokensUsed = rawLogs.reduce((s, l) => s + (l.tokensUsed ?? 0), 0);
     const times = rawLogs.map((l) => new Date(l.createdAt).getTime());
     const totalTimeMs =
       times.length > 1 ? Math.max(...times) - Math.min(...times) : 0;
 
+    const latestMetric = rawMetrics[rawMetrics.length - 1];
+    const metrics: TripMetricsDto[] = latestMetric
+      ? [{
+          fairnessScore,
+          autonomyScore,
+          totalTimeMs: latestMetric.totalTimeMs ?? totalTimeMs,
+          totalTokensUsed: latestMetric.totalTokensUsed ?? totalTokensUsed,
+          financeBlockCount: latestMetric.financeBlockCount ?? 0,
+          logisticsBlockCount: latestMetric.logisticsBlockCount ?? 0,
+        }]
+      : [];
+
+    const orchestratorProposals = rawProposals.filter((p) => p.agent === 'orchestrator');
+
+    const commits: CommitEntryDto[] = [];
+    for (const p of orchestratorProposals) {
+      const content = p.content as Record<string, unknown> | undefined;
+      const decisions = Array.isArray(content?.['decisions']) ? content!['decisions'] : [];
+      for (const raw of decisions) {
+        if (typeof raw !== 'object' || raw === null) continue;
+        const d = raw as Record<string, unknown>;
+        const status = d['status'];
+        if (status !== 'accepted' && status !== 'merged' && status !== 'rejected') continue;
+        commits.push({
+          id: typeof d['proposalId'] === 'string' ? d['proposalId'] : `${p.id}-${commits.length}`,
+          agent: typeof d['agent'] === 'string' ? d['agent'] : p.agent,
+          round: p.round,
+          action: status,
+          activity: typeof d['activity'] === 'string' ? d['activity'] : undefined,
+          city: typeof d['city'] === 'string' ? d['city'] : undefined,
+          reason: typeof d['reason'] === 'string' ? d['reason'] : undefined,
+          createdAt: toIso(p.createdAt),
+        });
+      }
+    }
+    const financeVerdict = rawProposals.find(
+      (p) => p.agent === 'finance' && p.round === 2 && (p.action === 'accept' || p.action === 'reject'),
+    );
+    if (financeVerdict) {
+      commits.push({
+        id: financeVerdict.id,
+        agent: 'finance',
+        round: financeVerdict.round,
+        action: financeVerdict.action as 'accept' | 'reject',
+        reason: financeVerdict.reasoning ?? undefined,
+        createdAt: toIso(financeVerdict.createdAt),
+      });
+    }
+
+    // Win-rate proxy: share of each persona agent's proposals that made it
+    // into the final itinerary (accepted/merged vs rejected).
+    const scores: AgentWinRateDto[] = [];
+    for (const p of orchestratorProposals) {
+      const content = p.content as Record<string, unknown> | undefined;
+      const estimates = content?.['satisfactionEstimates'] as Record<string, unknown> | undefined;
+      if (!estimates || typeof estimates !== 'object') continue;
+      for (const [agent, value] of Object.entries(estimates)) {
+        if (typeof value !== 'number') continue;
+        scores.push({ agent, winRate: value });
+      }
+    }
+
     return {
       proposals,
       agentLogs,
-      metrics: [{ convergenceRounds, fairnessScore, autonomyScore, totalTimeMs, totalTokensUsed }],
-      scores: [],
+      metrics,
+      scores,
+      commits,
     };
   }
 }

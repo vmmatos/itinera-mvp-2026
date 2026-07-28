@@ -314,11 +314,20 @@ export interface WeatherAssessment {
 }
 
 export interface TripMetrics {
-  convergenceRounds: number
-  fairnessScore:     number
-  autonomyScore:     number
-  totalTimeMs:       number
-  totalTokensUsed:   number
+  fairnessScore:       number
+  autonomyScore:       number
+  totalTimeMs:         number
+  totalTokensUsed:     number
+  financeBlockCount:   number
+  logisticsBlockCount: number
+}
+
+// Proposal win-rate proxy per persona agent (share of that agent's proposals
+// accepted/merged into the final itinerary) — not a real traveller
+// satisfaction survey. See SatisfactionScore for that unrelated concept.
+export interface AgentWinRate {
+  agent:   AgentName
+  winRate: number
 }
 
 export interface Trip {
@@ -363,11 +372,25 @@ export interface AgentLogEntry {
   createdAt:  string
 }
 
+export type CommitAction = 'accepted' | 'merged' | 'rejected' | 'accept' | 'reject'
+
+export interface CommitEntry {
+  id:         string
+  agent:      string
+  round:      number
+  action:     CommitAction
+  activity?:  string
+  city?:      string
+  reason?:    string
+  createdAt:  string
+}
+
 export interface TripDebugData extends Trip {
   proposals:  ProposalRound[]
   agentLogs:  AgentLogEntry[]
   metrics:    TripMetrics[]
-  scores:     SatisfactionScore[]
+  commits:    CommitEntry[]
+  scores:     AgentWinRate[]
 }
 
 // ── SSE event (from ws-relay) ─────────────────────────────────

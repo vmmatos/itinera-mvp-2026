@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { TripMetrics, SatisfactionScore, AgentLogEntry } from '~/types/index'
+import type { TripMetrics, AgentWinRate, AgentLogEntry } from '~/types/index'
 import { AGENT_COLOURS } from '~/types/index'
 
 const props = defineProps<{
   metrics: TripMetrics[]
-  scores: SatisfactionScore[]
+  scores: AgentWinRate[]
   agentLogs: AgentLogEntry[]
   tripId: string
 }>()
@@ -28,18 +28,18 @@ const latest = computed(() =>
     : null,
 )
 
-const consensusScore = computed(() =>
-  latest.value?.convergenceRounds != null
-    ? (latest.value.fairnessScore ?? 0).toFixed(2)
-    : '—',
-)
-
 const fairnessScore = computed(() =>
   latest.value ? latest.value.fairnessScore.toFixed(2) : '—',
 )
 
-const convergenceRounds = computed(() =>
-  latest.value ? String(latest.value.convergenceRounds) : '—',
+const totalTime = computed(() =>
+  latest.value ? `${latest.value.totalTimeMs}ms` : '—',
+)
+
+const negotiationBlocks = computed(() =>
+  latest.value
+    ? `finance ×${latest.value.financeBlockCount} · logistics ×${latest.value.logisticsBlockCount}`
+    : '—',
 )
 
 const autonomyScore = computed(() =>
@@ -80,11 +80,11 @@ const sparkPoints = computed(() => {
     .join(' ')
 })
 
-const agentSatisfaction = computed(() => {
+const agentWinRate = computed(() => {
   const AGENTS = ['alice', 'bob', 'carlos', 'diana']
   return AGENTS.map((name) => {
-    const score = props.scores.find((s) => s.name.toLowerCase() === name || s.persona === name)
-    const pct = score ? Math.round(score.postScore * 100) : null
+    const score = props.scores.find((s) => s.agent === name)
+    const pct = score ? Math.round(score.winRate * 100) : null
     return { name, pct, colourCode: colourCode(name) }
   })
 })
@@ -123,15 +123,22 @@ const agentAutonomy = computed(() => {
         </svg>
       </div>
 
-      <!-- convergence -->
+      <!-- negotiation blocks -->
       <div class="metric-row">
         <div class="lbl">
-          <span>convergence rounds</span>
-          <span class="delta">{{ latest ? `total time — ms` : 'pending' }}</span>
+          <span>negotiation blocks</span>
+          <span class="delta">retries before convergence</span>
         </div>
         <div class="v">
-          {{ convergenceRounds }}
-          <span class="u">/ est. 6 rounds</span>
+          {{ negotiationBlocks }}
+        </div>
+      </div>
+
+      <!-- total time -->
+      <div class="metric-row">
+        <div class="lbl"><span>total time</span></div>
+        <div class="v">
+          {{ totalTime }}
         </div>
       </div>
 
@@ -146,11 +153,11 @@ const agentAutonomy = computed(() => {
         </div>
       </div>
 
-      <!-- per-agent satisfaction bars -->
+      <!-- per-agent win-rate bars -->
       <div class="metric-bars">
-        <div class="lbl">per-agent satisfaction</div>
+        <div class="lbl">per-agent win-rate</div>
         <div
-          v-for="ag in agentSatisfaction"
+          v-for="ag in agentWinRate"
           :key="ag.name"
           class="mb-row"
           :data-c="ag.colourCode"
