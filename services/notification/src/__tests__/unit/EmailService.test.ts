@@ -93,4 +93,40 @@ describe('createEmailTransport', () => {
       'SMTP connection refused',
     )
   })
+
+  const attachment = {
+    filename: 'itinerary-123.pdf',
+    content: Buffer.from('%PDF-1.4 fake'),
+    contentType: 'application/pdf',
+  }
+
+  it('SMTP transport forwards attachments to sendMail as filename/content/contentType', async () => {
+    const transport = createEmailTransport(smtpConfig)
+    await transport.send('user@example.com', from, rendered, [attachment])
+    const call = mockSendMail.mock.calls[0][0] as Record<string, unknown>
+    expect(call.attachments).toEqual([
+      { filename: 'itinerary-123.pdf', content: attachment.content, contentType: 'application/pdf' },
+    ])
+  })
+
+  it('SendGrid transport forwards attachments base64-encoded with disposition=attachment', async () => {
+    const transport = createEmailTransport(sgConfig)
+    await transport.send('user@example.com', from, rendered, [attachment])
+    const call = mockSgSend.mock.calls[0][0] as Record<string, unknown>
+    expect(call.attachments).toEqual([
+      {
+        filename: 'itinerary-123.pdf',
+        type: 'application/pdf',
+        content: attachment.content.toString('base64'),
+        disposition: 'attachment',
+      },
+    ])
+  })
+
+  it('omits attachments field when none are passed', async () => {
+    const transport = createEmailTransport(smtpConfig)
+    await transport.send('user@example.com', from, rendered)
+    const call = mockSendMail.mock.calls[0][0] as Record<string, unknown>
+    expect(call.attachments).toBeUndefined()
+  })
 })

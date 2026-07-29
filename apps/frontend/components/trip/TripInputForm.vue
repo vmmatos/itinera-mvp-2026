@@ -716,6 +716,11 @@ const handleReject = async (): Promise<void> => {
 const exportLoading = ref(false)
 const exportError   = ref<string | null>(null)
 
+const emailTo          = ref(authStore.user?.email ?? '')
+const sendEmailLoading = ref(false)
+const sendEmailError   = ref<string | null>(null)
+const sendEmailSuccess = ref(false)
+
 const buildExportPayload = (): Record<string, unknown> => ({
   tripId: activeTripId.value,
   itinerary: {
@@ -776,6 +781,23 @@ const downloadPdf = async (): Promise<void> => {
     exportError.value = 'PDF export failed. Try again.'
   } finally {
     exportLoading.value = false
+  }
+}
+
+const sendPdfEmail = async (): Promise<void> => {
+  sendEmailLoading.value = true
+  sendEmailError.value = null
+  sendEmailSuccess.value = false
+  try {
+    await api.post('/api/share/api/v1/export/email', {
+      ...buildExportPayload(),
+      to: emailTo.value,
+    })
+    sendEmailSuccess.value = true
+  } catch {
+    sendEmailError.value = 'Failed to send email. Try again.'
+  } finally {
+    sendEmailLoading.value = false
   }
 }
 
@@ -1405,6 +1427,31 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
             >
               {{ exportLoading ? 'Generating…' : '↓ Download PDF' }}
             </button>
+          </div>
+
+          <!-- Send by email -->
+          <div style="border:var(--hair);border-radius:var(--r-2);padding:var(--s-5);background:var(--bg-1)">
+            <div style="margin-bottom:var(--s-3)">
+              <p style="margin:0;font-size:var(--t-15);font-weight:500">Send by email</p>
+              <p style="margin:4px 0 0;font-size:var(--t-13);color:var(--fg-3)">We'll email the PDF to the address below — confirm it or use a different one.</p>
+            </div>
+            <div v-if="sendEmailError" style="font-size:var(--t-13);color:var(--red);margin-bottom:var(--s-3)">{{ sendEmailError }}</div>
+            <div v-if="sendEmailSuccess" style="font-size:var(--t-13);color:var(--green);margin-bottom:var(--s-3)">Sent to {{ emailTo }}.</div>
+            <div style="display:flex;gap:var(--s-2)">
+              <input
+                v-model="emailTo"
+                type="email"
+                placeholder="you@example.com"
+                style="flex:1;min-width:0;padding:8px 10px;border:var(--hair);border-radius:var(--r-1);background:var(--bg-0);color:var(--fg-1);font-size:var(--t-14)"
+              >
+              <button
+                class="btn btn-primary"
+                :disabled="sendEmailLoading || !emailTo"
+                @click="sendPdfEmail"
+              >
+                {{ sendEmailLoading ? 'Sending…' : 'Send' }}
+              </button>
+            </div>
           </div>
 
           <!-- Summary card -->

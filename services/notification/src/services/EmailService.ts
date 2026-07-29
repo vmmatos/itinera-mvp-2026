@@ -4,11 +4,18 @@ import nodemailer from 'nodemailer'
 import type { Config } from '@/config'
 import type { RenderedEmail } from '@/templates'
 
+export interface EmailAttachment {
+  filename: string
+  content: Buffer
+  contentType: string
+}
+
 export interface EmailTransport {
   send(
     to: string,
     from: { email: string; name: string },
     rendered: RenderedEmail,
+    attachments?: EmailAttachment[],
   ): Promise<void>
 }
 
@@ -22,13 +29,19 @@ export function createEmailTransport(config: Config): EmailTransport {
     sgMail.setApiKey(config.SENDGRID_API_KEY)
 
     return {
-      async send(to, from, rendered): Promise<void> {
+      async send(to, from, rendered, attachments): Promise<void> {
         await sgMail.send({
           to,
           from: { email: from.email, name: from.name },
           subject: rendered.subject,
           html: rendered.html,
           text: rendered.text,
+          attachments: attachments?.map((a) => ({
+            filename: a.filename,
+            type: a.contentType,
+            content: a.content.toString('base64'),
+            disposition: 'attachment',
+          })),
         })
         logger.info('Email sent via SendGrid', { to, subject: rendered.subject })
       },
@@ -43,13 +56,18 @@ export function createEmailTransport(config: Config): EmailTransport {
   })
 
   return {
-    async send(to, from, rendered): Promise<void> {
+    async send(to, from, rendered, attachments): Promise<void> {
       await transporter.sendMail({
         to,
         from: `"${from.name}" <${from.email}>`,
         subject: rendered.subject,
         html: rendered.html,
         text: rendered.text,
+        attachments: attachments?.map((a) => ({
+          filename: a.filename,
+          content: a.content,
+          contentType: a.contentType,
+        })),
       })
       logger.info('Email sent via SMTP', {
         to,

@@ -34,6 +34,7 @@ const mockGenerate = vi.fn()
 const mockResolve = vi.fn()
 const mockGeneratePdf = vi.fn()
 const mockIsConnected = vi.fn().mockReturnValue(true)
+const mockSendItineraryPdf = vi.fn()
 
 vi.mock('@/services/ShareLinkGenerator', () => ({
   ShareLinkGenerator: vi.fn().mockImplementation(() => ({
@@ -56,6 +57,12 @@ vi.mock('@/services/RedisService', () => ({
   })),
 }))
 
+vi.mock('@/services/NotificationClient', () => ({
+  NotificationClient: vi.fn().mockImplementation(() => ({
+    sendItineraryPdf: mockSendItineraryPdf,
+  })),
+}))
+
 import { createHealthRouter } from '@/routes/health'
 import { createPublicShareRouter } from '@/routes/share.public'
 import { createProtectedShareRouter } from '@/routes/share.protected'
@@ -63,6 +70,7 @@ import { createExportRouter } from '@/routes/export'
 import { ShareLinkGenerator } from '@/services/ShareLinkGenerator'
 import { PDFGeneratorService } from '@/services/PDFGeneratorService'
 import { RedisService } from '@/services/RedisService'
+import { NotificationClient } from '@/services/NotificationClient'
 import { authMiddleware, NotFoundError } from '@itinera/shared'
 
 const validItinerary = {
@@ -77,13 +85,14 @@ function buildApp(): express.Express {
   const redis = new RedisService()
   const generator = new ShareLinkGenerator(redis)
   const pdfGenerator = new PDFGeneratorService()
+  const notificationClient = new NotificationClient()
 
   const app = express()
   app.use(express.json())
   app.use(createHealthRouter(redis))
   app.use('/api/v1/share', createPublicShareRouter(generator))
   app.use('/api/v1/share', authMiddleware, createProtectedShareRouter(generator))
-  app.use('/api/v1/export', authMiddleware, createExportRouter(pdfGenerator))
+  app.use('/api/v1/export', authMiddleware, createExportRouter(pdfGenerator, notificationClient))
 
   // error handler
   app.use(
@@ -304,6 +313,97 @@ describe('POST /api/v1/export/pdf', () => {
     const res = await request(app)
       .post('/api/v1/export/pdf')
       .send({ tripId: validTripId, itinerary: validItinerary })
+
+    expect(res.status).toBe(500)
+  })
+})
+
+describe('POST /api/v1/export/email', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockIsConnected.mockReturnValue(true)
+  })
+
+  it('returns 200 and forwards the generated PDF + traveller name to NotificationClient', async () => {
+    mockGeneratePdf.mockResolvedValue(Buffer.from([37, 80, 68, 70]))
+    mockSendItineraryPdf.mockResolvedValue(undefined)
+
+    const app = buildApp()
+    const res = await request(app)
+      .post('/api/v1/export/email')
+      .send({ tripId: validTripId, itinerary: validItinerary, to: 'traveller@example.com' })
+
+    expect(res.status).toBe(200)
+    expect(res.body.success).toBe(true)
+    expect(res.body.data.sent).toBe(true)
+
+    expect(mockSendItineraryPdf).toHaveBeenCalledOnce()
+    const [to, tripName, firstName, filename, pdfBuffer] = mockSendItineraryPdf.mock.calls[0] as [
+      string, string, string, string, Buffer,
+    ]
+    expect(to).toBe('traveller@example.com')
+    expect(tripName).toBe('Paris Trip')
+    expect(firstName).toBe('there') // validItinerary has no travellers
+    expect(filename).toBe(`itinerary-${validTripId}.pdf`)
+    expect(pdfBuffer).toEqual(Buffer.from([37, 80, 68, 70]))
+  })
+
+  it('uses the first traveller\'s name as the greeting when present', async () => {
+    mockGeneratePdf.mockResolvedValue(Buffer.from([37, 80, 68, 70]))
+    mockSendItineraryPdf.mockResolvedValue(undefined)
+
+    const app = buildApp()
+    await request(app)
+      .post('/api/v1/export/email')
+      .send({
+        tripId: validTripId,
+        itinerary: { ...validItinerary, travellers: [{ name: 'Alice' }, { name: 'Bob' }] },
+        to: 'traveller@example.com',
+      })
+
+    const firstName = mockSendItineraryPdf.mock.calls[0][2] as string
+    expect(firstName).toBe('Alice')
+  })
+
+  it('returns 400 when "to" is not a valid email', async () => {
+    const app = buildApp()
+    const res = await request(app)
+      .post('/api/v1/export/email')
+      .send({ tripId: validTripId, itinerary: validItinerary, to: 'not-an-email' })
+
+    expect(res.status).toBe(400)
+    expect(mockSendItineraryPdf).not.toHaveBeenCalled()
+  })
+
+  it('returns 400 when tripId is missing', async () => {
+    const app = buildApp()
+    const res = await request(app)
+      .post('/api/v1/export/email')
+      .send({ itinerary: validItinerary, to: 'traveller@example.com' })
+
+    expect(res.status).toBe(400)
+  })
+
+  it('returns 500 when pdfGenerator.generate throws', async () => {
+    mockGeneratePdf.mockRejectedValue(new Error('Chromium crashed'))
+
+    const app = buildApp()
+    const res = await request(app)
+      .post('/api/v1/export/email')
+      .send({ tripId: validTripId, itinerary: validItinerary, to: 'traveller@example.com' })
+
+    expect(res.status).toBe(500)
+    expect(mockSendItineraryPdf).not.toHaveBeenCalled()
+  })
+
+  it('returns 500 when NotificationClient.sendItineraryPdf rejects', async () => {
+    mockGeneratePdf.mockResolvedValue(Buffer.from([37, 80, 68, 70]))
+    mockSendItineraryPdf.mockRejectedValue(new Error('notification service returned 500'))
+
+    const app = buildApp()
+    const res = await request(app)
+      .post('/api/v1/export/email')
+      .send({ tripId: validTripId, itinerary: validItinerary, to: 'traveller@example.com' })
 
     expect(res.status).toBe(500)
   })
