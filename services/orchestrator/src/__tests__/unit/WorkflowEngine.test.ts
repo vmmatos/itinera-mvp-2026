@@ -111,6 +111,7 @@ function makeContext(overrides: Partial<WorkflowContext> = {}): WorkflowContext 
     budgetTotal: 1500,
     budgetCurrency: 'EUR',
     preferredTransport: 'flight',
+    pace: 'medium',
     mustHaves: [],
     avoids: [],
     groupSize: 1,
@@ -1230,5 +1231,94 @@ describe('WorkflowEngine — parallel per-city merge calls (Part B)', () => {
 
     const content = mergedProposalContent();
     expect(content['itinerary']).toEqual([]);
+  });
+});
+
+describe('WorkflowEngine — group preferences reach the agents (pace / must-haves / avoids)', () => {
+  function tripWithTravellers(travellers: Array<Record<string, unknown>>): typeof MOCK_TRIP {
+    return { ...MOCK_TRIP, travellers } as unknown as typeof MOCK_TRIP;
+  }
+
+  async function runThroughMerge(trip: typeof MOCK_TRIP): Promise<void> {
+    setupCommonMocks(stateManager, eventPublisher);
+    vi.mocked(stateManager.getTrip).mockResolvedValue(trip as never);
+
+    vi.mocked(agentCaller.callLogisticsPlan).mockResolvedValue(ROUTE_GRAPH);
+    vi.mocked(agentCaller.callFinanceEstimate).mockResolvedValue(BUDGET_PLAN);
+    vi.mocked(agentCaller.callPreferenceAgentSlots).mockResolvedValue([
+      { content: {}, latencyMs: 10, tokensUsed: 1 },
+      { content: {}, latencyMs: 10, tokensUsed: 1 },
+      { content: {}, latencyMs: 10, tokensUsed: 1 },
+      { content: {}, latencyMs: 10, tokensUsed: 1 },
+    ]);
+    vi.mocked(agentCaller.callOrchestratorMerge).mockResolvedValue({
+      content: MERGED_ITINERARY,
+      latencyMs: 20,
+      tokensUsed: 20,
+    });
+
+    driveStateMachine(stateMachine, [
+      { nextState: 'LOGISTICS_PLANNING', action: { type: 'CALL_LOGISTICS_PLAN' } },
+      { nextState: 'FINANCE_ENVELOPE_CHECK', action: { type: 'CALL_FINANCE_ESTIMATE' } },
+      { nextState: 'PARALLEL_TURISTIC_PLANNING', action: { type: 'CALL_TOURIST_AGENTS' } },
+      { nextState: 'MERGE_AND_SCORE', action: { type: 'CALL_ORCHESTRATOR_MERGE' } },
+      { nextState: 'FINISH', action: { type: 'FINISH' } },
+    ]);
+
+    await engine.run(TRIP_ID);
+  }
+
+  it('happy path: reads pace/mustHaves/avoids from the travellers into every tourist slot', async () => {
+    await runThroughMerge(
+      tripWithTravellers([
+        { id: 't1', preferences: { pace: 'low', mustHaves: ['museus'], avoids: ['discotecas'] } },
+        { id: 't2', preferences: { pace: 'low', mustHaves: ['praias'], avoids: [] } },
+      ]),
+    );
+
+    const slots = vi.mocked(agentCaller.callPreferenceAgentSlots).mock.calls[0]![2];
+    expect(slots).not.toHaveLength(0);
+    for (const slot of slots) {
+      expect(slot.pace).toBe('low');
+      expect(slot.mustHaves).toEqual(['museus', 'praias']);
+      expect(slot.avoids).toEqual(['discotecas']);
+    }
+  });
+
+  it('happy path: forwards the same preferences to the merge call as a structured argument', async () => {
+    await runThroughMerge(
+      tripWithTravellers([
+        { id: 't1', preferences: { pace: 'high', mustHaves: ['museus'], avoids: ['casinos'] } },
+      ]),
+    );
+
+    const preferences = vi.mocked(agentCaller.callOrchestratorMerge).mock.calls[0]![7];
+    expect(preferences).toEqual({ pace: 'high', mustHaves: ['museus'], avoids: ['casinos'] });
+  });
+
+  it('maps the legacy dealBreakers key onto avoids for trips created before the rename', async () => {
+    await runThroughMerge(
+      tripWithTravellers([{ id: 't1', preferences: { pace: 'medium', dealBreakers: ['discotecas'] } }]),
+    );
+
+    const slots = vi.mocked(agentCaller.callPreferenceAgentSlots).mock.calls[0]![2];
+    expect(slots[0]!.avoids).toEqual(['discotecas']);
+  });
+
+  it('error: a trip whose travellers have no preferences falls back to defaults instead of throwing', async () => {
+    await runThroughMerge(tripWithTravellers([{ id: 't1' }]));
+
+    const slots = vi.mocked(agentCaller.callPreferenceAgentSlots).mock.calls[0]![2];
+    expect(slots[0]!.pace).toBe('medium');
+    expect(slots[0]!.mustHaves).toEqual([]);
+    expect(slots[0]!.avoids).toEqual([]);
+  });
+
+  it('error: a trip with no travellers at all still runs with default preferences', async () => {
+    await runThroughMerge(tripWithTravellers([]));
+
+    expect(agentCaller.callPreferenceAgentSlots).toHaveBeenCalledOnce();
+    const slots = vi.mocked(agentCaller.callPreferenceAgentSlots).mock.calls[0]![2];
+    expect(slots[0]!.pace).toBe('medium');
   });
 });

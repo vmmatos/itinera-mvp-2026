@@ -5,3 +5,10 @@ export { RabbitMQPublisher } from './RabbitMQPublisher';
 export { RedisService } from './RedisService';
 export { createAIProvider } from './aiProviderFactory';
 export type { AIProviderType } from './aiProviderFactory';
+export {
+  DEFAULT_PREFERENCES,
+  aggregateGroupPreferences,
+  foldTerm,
+  matchesPreferenceTerm,
+  normalizePreferences,
+} from './preferences';

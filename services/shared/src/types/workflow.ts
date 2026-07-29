@@ -1,4 +1,5 @@
 import type { DateInput, TransportMode, TransportOption } from './entities';
+import type { Pace } from './preferences';
 
 export type WorkflowState =
   | 'INTAKE_COMPLETE'
@@ -73,6 +74,7 @@ export interface TouristSlotInput {
   availableTimeSlots: TimeWindow[];
   budgetPerPersonBlock: number;
   currency: string;
+  pace: Pace;
   mustHaves: string[];
   avoids: string[];
   groupSize: number;
@@ -157,6 +159,7 @@ export interface WorkflowContext {
   budgetTotal: number;
   budgetCurrency: string;
   preferredTransport: TransportMode;
+  pace: Pace;
   mustHaves: string[];
   avoids: string[];
   groupSize: number;

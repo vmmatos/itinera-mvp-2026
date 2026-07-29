@@ -178,4 +178,40 @@ describe('ItineraryMerger', () => {
 
     expect(publisher.publish).not.toHaveBeenCalled();
   });
+  it('merge: serialises the group preferences into the user message', async () => {
+    vi.mocked(anthropic.complete).mockResolvedValue({
+      content: VALID_MERGE_JSON,
+      latencyMs: 500,
+      tokensUsed: 300,
+      truncated: false,
+    });
+
+    await merger.merge(VALID_TRIP_ID, 1, ROUTE_GRAPH, TOURIST_OUTPUTS, BUDGET_PLAN, 'Paris trip', 'Paris', {
+      pace: 'low',
+      mustHaves: ['museus'],
+      avoids: ['discotecas'],
+    });
+
+    const [, messages] = vi.mocked(anthropic.complete).mock.calls[0]!;
+    const userMessage = messages[0]!.content;
+    expect(userMessage).toContain('GROUP PREFERENCES');
+    expect(userMessage).toContain('"pace": "low"');
+    expect(userMessage).toContain('museus');
+    expect(userMessage).toContain('discotecas');
+  });
+
+  it('merge: falls back to neutral defaults when no preferences are supplied', async () => {
+    vi.mocked(anthropic.complete).mockResolvedValue({
+      content: VALID_MERGE_JSON,
+      latencyMs: 500,
+      tokensUsed: 300,
+      truncated: false,
+    });
+
+    const event = await merger.merge(VALID_TRIP_ID, 1, ROUTE_GRAPH, TOURIST_OUTPUTS, BUDGET_PLAN, 'Paris trip', 'Paris');
+
+    expect(event).toBeDefined();
+    const [, messages] = vi.mocked(anthropic.complete).mock.calls[0]!;
+    expect(messages[0]!.content).toContain('"pace": "medium"');
+  });
 });

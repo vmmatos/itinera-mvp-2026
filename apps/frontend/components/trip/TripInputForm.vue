@@ -95,8 +95,8 @@ const flexWindow     = ref<DateWindow>('moderate')
 
 const mustHaveInput  = ref('')
 const mustHaves      = ref<string[]>([])
-const dealBreakerInput = ref('')
-const dealBreakers   = ref<string[]>([])
+const avoidInput = ref('')
+const avoids     = ref<string[]>([])
 
 const transportPreference = ref<TransportMode>('best')
 
@@ -131,14 +131,14 @@ const removeMustHave = (v: string): void => {
   mustHaves.value = mustHaves.value.filter((x) => x !== v)
 }
 
-const addDealBreaker = (): void => {
-  const v = dealBreakerInput.value.trim()
-  if (v && !dealBreakers.value.includes(v)) dealBreakers.value.push(v)
-  dealBreakerInput.value = ''
+const addAvoid = (): void => {
+  const v = avoidInput.value.trim()
+  if (v && !avoids.value.includes(v)) avoids.value.push(v)
+  avoidInput.value = ''
 }
 
-const removeDealBreaker = (v: string): void => {
-  dealBreakers.value = dealBreakers.value.filter((x) => x !== v)
+const removeAvoid = (v: string): void => {
+  avoids.value = avoids.value.filter((x) => x !== v)
 }
 
 const step2Valid = computed(() =>
@@ -239,7 +239,12 @@ onMounted(() => {
     if (first) {
       tripFlexibility.value = first.preferences.pace ?? 'medium'
       mustHaves.value       = [...(first.preferences.mustHaves ?? [])]
-      dealBreakers.value    = [...(first.preferences.dealBreakers ?? [])]
+      // Union with the legacy `dealBreakers` key, mirroring normalizePreferences()
+      // on the backend, so a pre-rename lastInput still pre-fills the Avoid chips.
+      avoids.value          = [...new Set([
+        ...(first.preferences.avoids ?? []),
+        ...(first.preferences.dealBreakers ?? []),
+      ])]
     }
     if (li.travellers.length > 0) {
       travellers.value = li.travellers.map((t, i) => ({
@@ -275,7 +280,7 @@ const submit = async (): Promise<void> => {
         dietary:      [],
         constraints:  [],
         mustHaves:    mustHaves.value,
-        dealBreakers: dealBreakers.value,
+        avoids:       avoids.value,
       },
     })),
   }
@@ -691,7 +696,7 @@ const handleRefine = (): void => {
         dietary:      [],
         constraints:  [],
         mustHaves:    mustHaves.value,
-        dealBreakers: dealBreakers.value,
+        avoids:       avoids.value,
       },
     })),
   }
@@ -1262,22 +1267,22 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
           <div class="field-label">Avoid</div>
           <div class="field-input" style="width:100%">
             <span
-              v-for="item in dealBreakers"
+              v-for="item in avoids"
               :key="item"
               class="chip on"
-              data-testid="deal-breaker-chip"
+              data-testid="avoid-chip"
             >
               {{ item }}
-              <span class="x" @click="removeDealBreaker(item)">×</span>
+              <span class="x" @click="removeAvoid(item)">×</span>
             </span>
             <input
-              v-model="dealBreakerInput"
+              v-model="avoidInput"
               class="txt"
               placeholder="+ add avoid"
               style="width:160px"
               maxlength="200"
-              @keydown.enter.prevent="addDealBreaker"
-              @blur="addDealBreaker"
+              @keydown.enter.prevent="addAvoid"
+              @blur="addAvoid"
             />
           </div>
         </div>
@@ -1330,7 +1335,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
             <div class="k">must-haves</div>
             <div class="v mono">{{ mustHaves.length }}</div>
             <div class="k">avoids</div>
-            <div class="v mono">{{ dealBreakers.length }}</div>
+            <div class="v mono">{{ avoids.length }}</div>
           </div>
         </div>
 
