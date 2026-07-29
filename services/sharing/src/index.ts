@@ -6,6 +6,7 @@ import { config } from '@/config'
 import { RedisService } from '@/services/RedisService'
 import { ShareLinkGenerator } from '@/services/ShareLinkGenerator'
 import { PDFGeneratorService } from '@/services/PDFGeneratorService'
+import { NotificationClient } from '@/services/NotificationClient'
 import { createHealthRouter } from '@/routes/health'
 import { createPublicShareRouter } from '@/routes/share.public'
 import { createProtectedShareRouter } from '@/routes/share.protected'
@@ -19,6 +20,7 @@ async function start(): Promise<void> {
 
   const generator = new ShareLinkGenerator(redis)
   const pdfGenerator = new PDFGeneratorService()
+  const notificationClient = new NotificationClient()
 
   const app = express()
 
@@ -32,7 +34,7 @@ async function start(): Promise<void> {
 
   // Protected routes — JWT required
   app.use('/api/v1/share', authMiddleware, createProtectedShareRouter(generator))
-  app.use('/api/v1/export', authMiddleware, createExportRouter(pdfGenerator))
+  app.use('/api/v1/export', authMiddleware, createExportRouter(pdfGenerator, notificationClient))
 
   app.use(errorHandler)
 

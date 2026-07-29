@@ -12,6 +12,7 @@ const EnvSchema = z.object({
   SHARE_LINK_TTL_SECONDS: z.coerce.number().default(604800),
   SHARING_BASE_URL: z.string().default('http://localhost:3008'),
   PUPPETEER_EXECUTABLE_PATH: z.string().optional(),
+  NOTIFICATION_URL: z.string().default('http://notification:3007'),
 })
 
 const parsed = EnvSchema.safeParse(process.env)

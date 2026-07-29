@@ -1,11 +1,12 @@
 import 'dotenv/config'
 import express from 'express'
 import helmet from 'helmet'
-import { requestLogger, errorHandler, createLogger } from '@itinera/shared'
+import { requestLogger, errorHandler, authMiddleware, createLogger } from '@itinera/shared'
 import { config, getRabbitMQUrl } from '@/config'
 import { createEmailTransport } from '@/services/EmailService'
 import { EmailConsumer } from '@/services/EmailConsumer'
 import { createHealthRouter } from '@/routes/health'
+import { createEmailRouter } from '@/routes/email'
 
 const logger = createLogger('notification')
 const app = express()
@@ -15,7 +16,9 @@ const consumer = new EmailConsumer(getRabbitMQUrl(), transport, config)
 
 app.use(helmet())
 app.use(requestLogger)
+app.use(express.json({ limit: '10mb' }))
 app.use(createHealthRouter(consumer))
+app.use('/api/v1/email', authMiddleware, createEmailRouter(transport, config))
 app.use(errorHandler)
 
 async function start(): Promise<void> {

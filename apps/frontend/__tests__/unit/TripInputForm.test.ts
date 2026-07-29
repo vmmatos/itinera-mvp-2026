@@ -8,6 +8,7 @@ import {
   mockCreateTrip,
   mockFetchTrips,
   mockApiGet,
+  mockApiPost,
   mockSetLastInput,
   tripStoreMock,
   authStoreMock,
@@ -497,5 +498,85 @@ describe('TripInputForm — Step 4 weatherAssessment forwarding', () => {
 
     const step = wrapper.findComponent({ name: 'TripItineraryStep' })
     expect(step.props('weatherAssessment')).toBeNull()
+  })
+})
+
+// ── Step 5: send PDF by email ───────────────────────────────────
+
+describe('TripInputForm — Step 5 (send PDF by email)', () => {
+  const VALID_TRIP_UUID = '11111111-1111-1111-1111-111111111111'
+
+  const mountAtStep5 = async () => {
+    const wrapper = mount(TripInputForm, {
+      props: { viewTripId: VALID_TRIP_UUID },
+      global: {
+        plugins: [createPinia()],
+        components: { TripItineraryStep },
+        stubs: { transition: true, TripTimeline: true, TripActivityCard: true, TripBudgetBreakdown: true, AppLogo: true, TripNegotiateStepV2: true, TripItineraryStep: true },
+      },
+    })
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    const step = wrapper.findComponent({ name: 'TripItineraryStep' })
+    await step.vm.$emit('accept')
+    await wrapper.vm.$nextTick()
+
+    return wrapper
+  }
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    tripStoreMock.loading  = false
+    tripStoreMock.error    = null
+    tripStoreMock.lastInput = null
+    agentStreamMock.events.value = []
+    agentStreamMock.connected.value = false
+
+    mockApiGet
+      .mockResolvedValue({ data: { data: { status: 'confirmed' } } })
+    mockApiGet
+      .mockResolvedValueOnce({ data: { data: { status: 'confirmed' } } })
+      .mockResolvedValueOnce({ data: { data: [] } })
+  })
+
+  it('pre-fills the email input with the authenticated user\'s email', async () => {
+    const wrapper = await mountAtStep5()
+
+    const input = wrapper.find('input[type="email"]')
+    expect((input.element as HTMLInputElement).value).toBe(authStoreMock.user.email)
+  })
+
+  it('happy path: sends the export payload to the confirmed "to" address and shows success', async () => {
+    mockApiPost.mockResolvedValueOnce({ data: { success: true, data: { sent: true } } })
+    const wrapper = await mountAtStep5()
+
+    const input = wrapper.find('input[type="email"]')
+    await input.setValue('someone-else@example.com')
+
+    const sendBtn = wrapper.findAll('button').find((b) => b.text().includes('Send'))
+    expect(sendBtn).toBeTruthy()
+    await sendBtn!.trigger('click')
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    expect(mockApiPost).toHaveBeenCalledWith(
+      '/api/share/api/v1/export/email',
+      expect.objectContaining({ to: 'someone-else@example.com' }),
+    )
+    expect(wrapper.text()).toContain('Sent to someone-else@example.com')
+  })
+
+  it('error path: shows an error message and does not crash when the request rejects', async () => {
+    mockApiPost.mockRejectedValueOnce(new Error('network error'))
+    const wrapper = await mountAtStep5()
+
+    const sendBtn = wrapper.findAll('button').find((b) => b.text().includes('Send'))
+    await sendBtn!.trigger('click')
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.text()).toContain('Failed to send email')
   })
 })

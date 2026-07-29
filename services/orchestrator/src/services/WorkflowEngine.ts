@@ -385,6 +385,10 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
       // between concurrently-running calls. A city-level failure is isolated
       // here too — it must not erase decisions already published for a
       // sibling city or abort the whole merge.
+      // Single source of truth for day→city attribution, computed once and
+      // shared by every per-city call below — see filterOwnedDays.
+      const dayOwnership = this.buildDayOwnership(routeGraph);
+
       const cityResults: CityMergeResult[] = await Promise.all(
         routeGraph.cityStays.map(async (stay): Promise<CityMergeResult> => {
           try {
@@ -426,7 +430,12 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
 
             const cityInputProposals = inputProposals.filter((p) => p.city === stay.city);
             const usedIds = new Set<string>();
-            const withTransportItinerary = (withTransport as { itinerary?: Array<{ activities?: Array<{ proposalIds?: string[] }> }> }).itinerary ?? [];
+            const rawItinerary = (withTransport as { itinerary?: Array<{ day?: number; activities?: Array<{ proposalIds?: string[] }> }> }).itinerary ?? [];
+            // merge.txt only tells the LLM (prompt-level) to stick to its
+            // target city — this is the deterministic backstop. Without it, a
+            // day hallucinated by the wrong city's call reaches the combined
+            // itinerary as a second, duplicate "Day N" card in the UI/PDF.
+            const withTransportItinerary = this.filterOwnedDays(rawItinerary, dayOwnership, stay.city);
             for (const day of withTransportItinerary) {
               for (const act of day.activities ?? []) {
                 for (const pid of act.proposalIds ?? []) usedIds.add(pid);
@@ -858,6 +867,29 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
       }
     }
     return map;
+  }
+
+  // Drops itinerary days a per-city merge call was not asked to own, per
+  // buildDayOwnership. A day with no ownership entry (routeGraph gave no
+  // routeGraph, or the date falls outside every stay's windows) is kept —
+  // absence of ownership data is not evidence of a wrong city.
+  private filterOwnedDays<T extends { day?: number }>(
+    itinerary: T[],
+    dayOwnership: Map<number, { city: string; country: string }>,
+    city: string,
+  ): T[] {
+    if (dayOwnership.size === 0) return itinerary;
+    return itinerary.filter((d) => {
+      const dayNum = typeof d['day'] === 'number' ? d['day'] : null;
+      if (dayNum === null) return true;
+      const owner = dayOwnership.get(dayNum);
+      if (!owner) return true;
+      if (this.normCity(owner.city) === this.normCity(city)) return true;
+      this.logger.warn('Dropped itinerary day not owned by this city — likely LLM drift across the merge.txt city-scoping instruction', {
+        city, day: dayNum, ownerCity: owner.city,
+      });
+      return false;
+    });
   }
 
   // Ensures the LLM doesn't drift city names/order away from the canonical destination list.

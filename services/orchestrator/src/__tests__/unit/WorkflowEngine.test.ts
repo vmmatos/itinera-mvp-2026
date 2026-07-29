@@ -655,6 +655,122 @@ describe('WorkflowEngine — late-departure travel day belongs to the origin cit
   });
 });
 
+describe('WorkflowEngine — duplicate transit-day dedupe (G: one card per calendar day)', () => {
+  // Same routeGraph as the late-departure case above: day 3 is owned by
+  // Madrid (origin) per timeWindows. Here BOTH per-city LLM calls hallucinate
+  // a day-3 entry — Madrid correctly (it owns it), Dublin incorrectly (its
+  // own timeWindows never mention 2026-08-12 at all). merge.txt tells the
+  // LLM to stay in its lane, but that's prompt-level only; this asserts the
+  // deterministic backstop (filterOwnedDays) drops Dublin's copy.
+  function lateDepartureRouteGraph(): RouteGraph {
+    return {
+      orderedLegs: [
+        {
+          from: 'Madrid',
+          to: 'Dublin',
+          departureDate: '2026-08-12',
+          bestOption: { mode: 'flight', durationMinutes: 165, priceEur: 58, departureTime: '21:35', arrivalTime: '00:20', warnings: [] },
+          alternatives: [{ mode: 'flight', durationMinutes: 180, priceEur: 95, warnings: [] }],
+          totalCostEurPerPerson: 58,
+        },
+      ],
+      cityStays: [
+        {
+          city: 'Madrid', country: 'Spain', arrivalDate: '2026-08-10', departureDate: '2026-08-12',
+          nights: 2,
+          timeWindows: [
+            ...windows('2026-08-10', {}),
+            ...windows('2026-08-11', {}),
+            ...windows('2026-08-12', { evening: 'outbound-transit' }),
+          ],
+          sleepPoint: 'Centro', budgetPerPersonPerNight: 80,
+        },
+        {
+          city: 'Dublin', country: 'Ireland', arrivalDate: '2026-08-12', departureDate: '2026-08-14',
+          nights: 2,
+          // No windows on 2026-08-12 — Dublin does not own the travel date.
+          timeWindows: [...windows('2026-08-13', { morning: 'inbound-recovery' })],
+          sleepPoint: 'Temple Bar', budgetPerPersonPerNight: 90,
+        },
+      ],
+      totalTransportCostEurPerPerson: 58,
+      totalDurationDays: 4,
+    };
+  }
+
+  const DUP_DAY_MADRID = {
+    accommodation: [],
+    itinerary: [
+      { day: 1, city: 'Madrid', country: 'Spain', activities: [] },
+      { day: 2, city: 'Madrid', country: 'Spain', activities: [] },
+      {
+        day: 3, city: 'Madrid', country: 'Spain',
+        activities: [
+          { time: 'morning', activity: 'Prado Museum visit' },
+          { time: 'evening', activity: 'Check out and depart to Dublin' },
+        ],
+      },
+    ],
+    decisions: [],
+    _financeApproved: true,
+    _budgetFeasible: true,
+  };
+
+  // Dublin's own call hallucinates day 3 too — outside its own timeWindows,
+  // this is exactly the "second Day N card" bug reported against the PDF.
+  const DUP_DAY_DUBLIN = {
+    accommodation: [],
+    itinerary: [
+      {
+        day: 3, city: 'Dublin', country: 'Ireland',
+        activities: [
+          { time: 'morning', activity: 'In transit from Madrid' },
+          { time: 'afternoon', activity: 'Introductory walk through Trinity College' },
+          { time: 'evening', activity: 'Traditional Irish music session' },
+        ],
+      },
+      { day: 4, city: 'Dublin', country: 'Ireland', activities: [
+        { time: 'morning', activity: 'Check in and rest' },
+      ] },
+    ],
+    decisions: [],
+    _financeApproved: true,
+    _budgetFeasible: true,
+  };
+
+  it('keeps only the owning city\'s day-3 entry when both per-city calls return it', async () => {
+    setupTwoCityMocks();
+    vi.mocked(agentCaller.callLogisticsPlan).mockResolvedValue(lateDepartureRouteGraph());
+    mockOrchestratorMergeByCity({ Madrid: DUP_DAY_MADRID, Dublin: DUP_DAY_DUBLIN });
+    driveHappyPath();
+
+    await engine.run(TRIP_ID);
+
+    const itinerary = mergedProposalContent()['itinerary'] as Array<Record<string, unknown>>;
+    const day3Entries = itinerary.filter((d) => d['day'] === 3);
+
+    expect(day3Entries).toHaveLength(1);
+    expect(day3Entries[0]?.['city']).toBe('Madrid');
+    const names = (day3Entries[0]?.['activities'] as Array<Record<string, unknown>>).map((a) => a['activity']);
+    expect(names).toContain('Prado Museum visit');
+    expect(names).not.toContain('Introductory walk through Trinity College');
+
+    // Day 4 (uniquely Dublin's) is untouched by the filter.
+    const day4 = itinerary.find((d) => d['day'] === 4)!;
+    expect(day4['city']).toBe('Dublin');
+  });
+
+  it('does not drop legitimate days when routeGraph ownership has no overlap (regression)', async () => {
+    setupTwoCityMocks();
+    driveHappyPath();
+
+    await engine.run(TRIP_ID);
+
+    const itinerary = mergedProposalContent()['itinerary'] as Array<Record<string, unknown>>;
+    expect(itinerary.map((d) => d['day']).sort()).toEqual([1, 2, 3, 4]);
+  });
+});
+
 describe('WorkflowEngine — per-leg transport priority', () => {
   it('stores per-leg results in context and surfaces the downgrade reason in the injected transport warnings', async () => {
     setupTwoCityMocks();
