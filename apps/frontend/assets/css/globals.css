@@ -150,6 +150,50 @@
   --shadow-lift: 0 2px 4px rgba(20, 20, 19, 0.05), 0 8px 24px rgba(20, 20, 19, 0.08);
 }
 
+/* ── Forced-dark subtree — unauthenticated pages (login/callback) stay
+   dark regardless of the visitor's persisted theme choice. Custom
+   properties resolve by nearest DOM ancestor, so redeclaring the full
+   dark set here overrides [data-theme="light"] for this subtree only,
+   without touching the persisted 'itn-theme' value. ─────────────── */
+.theme-force-dark {
+  --bg-0: #0a0a0a;
+  --bg-1: #111111;
+  --bg-2: #161616;
+  --bg-3: #1c1c1c;
+
+  --fg-0: #f2f2f2;
+  --fg-1: #c9c9c9;
+  --fg-2: #a1a1a1;
+  --fg-3: #666666;
+  --fg-4: #3a3a3a;
+
+  --line-1: #1f1f1f;
+  --line-2: #272727;
+  --line-3: #333333;
+
+  --green: #00ff88;
+  --green-dim: #00cc6e;
+  --green-bg: rgba(0, 255, 136, 0.08);
+  --green-line: rgba(0, 255, 136, 0.32);
+
+  --amber: #ffb547;
+  --amber-bg: rgba(255, 181, 71, 0.08);
+  --amber-line: rgba(255, 181, 71, 0.32);
+
+  --blue: #5b9dff;
+  --blue-bg: rgba(91, 157, 255, 0.08);
+  --blue-line: rgba(91, 157, 255, 0.32);
+
+  --magenta: #d36bff;
+  --magenta-bg: rgba(211, 107, 255, 0.08);
+  --magenta-line: rgba(211, 107, 255, 0.32);
+
+  --red: #ff5d5d;
+
+  --shadow: none;
+  --shadow-lift: none;
+}
+
 /* ── Theme swap transition — narrowly scoped, avoids fighting the
    pulse/spin/shimmer keyframe animations declared later ─────── */
 body, .card, .card-sm, .gcard, .summary-card, .suggest, .persona-card,
