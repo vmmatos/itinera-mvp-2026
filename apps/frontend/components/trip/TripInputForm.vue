@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onUnmounted, onMounted } from 'vue'
 import { PERSONA_LABELS, PERSONA_AGENT, AGENT_COLOURS } from '~/types/index'
-import type { Persona, Flexibility, Currency, DateWindow, DateInput, CreateTripInput, TravellerInput, SatisfactionScore, TransportMode, TransportOption, TransportActivityData, BudgetBreakdown, ItineraryDay, ItineraryActivity, ItineraryCityTransition } from '~/types/index'
+import type { Persona, Flexibility, Currency, DateWindow, DateInput, CreateTripInput, TravellerInput, TravellerScore, TransportMode, TransportOption, TransportActivityData, BudgetBreakdown, ItineraryDay, ItineraryActivity, ItineraryCityTransition } from '~/types/index'
 import { formatTransportLabel } from '~/utils/itinerary'
 
 const props = withDefaults(defineProps<{ viewTripId?: string }>(), { viewTripId: undefined })
@@ -629,10 +629,24 @@ const accommodationBlocks = computed<AccommodationBlock[]>(() => {
 
 // ── Step 4: Scores, cost breakdown, weather ───────────────────
 
-const travellerScores = computed<SatisfactionScore[]>(() => {
-  const vp = liveProposals.value.find((p) => p.agent === 'validator' && p.round === 6)
-  const c = vp?.content
-  return Array.isArray(c?.['scores']) ? (c['scores'] as SatisfactionScore[]) : []
+// Per-traveller preference match, from the same validator proposal
+// `validatorSummary` reads. The old lookup pinned round 6 and read
+// `content.scores`; the validator runs at round 2 and nests the rows under
+// `content.scoring.scores`, so it always came back empty and Step 4 silently
+// fell back to the single group number.
+const travellerScores = computed<TravellerScore[]>(() => {
+  const scoring = latestByAgent.value['validator']?.content?.['scoring'] as Record<string, unknown> | undefined
+  const rows = scoring?.['scores']
+  if (!Array.isArray(rows)) return []
+  // Rows written before the traveller-keyed rename have no travellerId/label —
+  // drop them rather than render a blank row.
+  return rows.filter((r): r is TravellerScore => {
+    if (typeof r !== 'object' || r === null) return false
+    const row = r as Record<string, unknown>
+    return typeof row['travellerId'] === 'string'
+      && typeof row['label'] === 'string'
+      && typeof row['score'] === 'number'
+  })
 })
 
 // WorkflowEngine.executeMerge attaches weatherAssessment to the merged

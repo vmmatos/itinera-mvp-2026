@@ -96,7 +96,7 @@ export const MERGED_ITINERARY_CONTENT = {
     { city: 'Porto', name: 'Ribeira boutique hotel', pricePerNight: 80 },
     { city: 'Lisbon', name: 'Chiado guesthouse', pricePerNight: 90 },
   ],
-  satisfactionEstimates: { alice: 0.82, bob: 0.79, carlos: 0.77, diana: 0.83 },
+  agentWinRates: { alice: 0.82, bob: 0.79, carlos: 0.77, diana: 0.83 },
 };
 
 // alice's proposal (alice-1) is referenced by an activity's proposalIds above

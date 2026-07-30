@@ -209,7 +209,7 @@ describe('TripService.getTrip (admin debug view)', () => {
         { proposalId: 'sp-alice-1', agent: 'alice', city: 'Barcelona', date: '2026-07-01', slot: 'morning', activity: 'Sagrada Familia', status: 'accepted', reason: 'Included in the final itinerary.' },
         { proposalId: 'sp-bob-1', agent: 'bob', city: 'Barcelona', date: '2026-07-01', slot: 'afternoon', activity: 'Beach day', status: 'rejected', reason: 'Budget, duplicate, or a competing proposal was preferred.' },
       ],
-      satisfactionEstimates: { alice: 1, bob: 0 },
+      agentWinRates: { alice: 1, bob: 0 },
     },
     score: null,
     status: 'pending',
@@ -294,7 +294,7 @@ describe('TripService.getTrip (admin debug view)', () => {
     expect(result.commits.find((c) => c.agent === 'finance')?.action).toBe('accept');
   });
 
-  it('wires per-agent win-rate scores from satisfactionEstimates', async () => {
+  it('wires per-agent win-rate scores from agentWinRates', async () => {
     mockProposalFind.mockResolvedValue([orchestratorProposal()]);
     mockAgentLogFind.mockResolvedValue([agentLog()]);
 
@@ -345,7 +345,51 @@ describe('TripService.getTrip (admin debug view)', () => {
     expect(result.commits).toEqual([]);
   });
 
-  it('returns empty scores when satisfactionEstimates is missing', async () => {
+  it('reads the legacy satisfactionEstimates key for proposals stored before the rename', async () => {
+    mockProposalFind.mockResolvedValue([
+      orchestratorProposal({
+        content: { itinerary: [], decisions: [], satisfactionEstimates: { alice: 0.5 } } as unknown as Record<string, unknown>,
+      }),
+    ]);
+    mockAgentLogFind.mockResolvedValue([]);
+
+    const result = await service.getTrip(CONFIRMED_TRIP.id, true) as import('@/services/TripService').TripDebugView;
+
+    expect(result.scores).toEqual([{ agent: 'alice', winRate: 0.5 }]);
+  });
+
+  it('prefers agentWinRates when a proposal carries both keys', async () => {
+    mockProposalFind.mockResolvedValue([
+      orchestratorProposal({
+        content: {
+          itinerary: [],
+          decisions: [],
+          agentWinRates: { alice: 1 },
+          satisfactionEstimates: { alice: 0.1 },
+        } as unknown as Record<string, unknown>,
+      }),
+    ]);
+    mockAgentLogFind.mockResolvedValue([]);
+
+    const result = await service.getTrip(CONFIRMED_TRIP.id, true) as import('@/services/TripService').TripDebugView;
+
+    expect(result.scores).toEqual([{ agent: 'alice', winRate: 1 }]);
+  });
+
+  it('does not throw when the win-rate map is not an object', async () => {
+    mockProposalFind.mockResolvedValue([
+      orchestratorProposal({
+        content: { itinerary: [], decisions: [], agentWinRates: 'nope' } as unknown as Record<string, unknown>,
+      }),
+    ]);
+    mockAgentLogFind.mockResolvedValue([]);
+
+    const result = await service.getTrip(CONFIRMED_TRIP.id, true) as import('@/services/TripService').TripDebugView;
+
+    expect(result.scores).toEqual([]);
+  });
+
+  it('returns empty scores when the win-rate map is missing', async () => {
     mockProposalFind.mockResolvedValue([
       orchestratorProposal({ content: { itinerary: [], decisions: [] } as unknown as Record<string, unknown> }),
     ]);

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import type { BudgetBreakdown, ItineraryDay, SatisfactionScore } from '~/types/index'
+import type { BudgetBreakdown, ItineraryDay, TravellerScore } from '~/types/index'
 import {
   groupIntoSegments,
   buildDayViewModels,
@@ -35,7 +35,7 @@ const props = defineProps<{
   weatherAssessment: Record<string, unknown> | null
   showWeather: boolean
   validatorSummary: ValidatorSummary | null
-  travellerScores: SatisfactionScore[]
+  travellerScores: TravellerScore[]
   agentNames: string[]
   exportLoading: boolean
   shareLoading: boolean
@@ -76,13 +76,15 @@ const meta = computed(() => {
   return parts.join(' · ')
 })
 
+// Group-level number. The validator's own mean is authoritative; averaging the
+// rows is only a fallback for a proposal that carried scores but no overall.
 const satisfactionScore = computed(() => {
-  const scores = props.travellerScores
-  if (scores.length > 0) {
-    const avg = scores.reduce((sum, s) => sum + s.postScore, 0) / scores.length
-    return Math.round(avg * 100)
+  if (props.validatorSummary?.overallScore !== null && props.validatorSummary?.overallScore !== undefined) {
+    return props.validatorSummary.overallScore
   }
-  return props.validatorSummary?.overallScore ?? null
+  const scores = props.travellerScores
+  if (scores.length === 0) return null
+  return Math.round(scores.reduce((sum, s) => sum + s.score, 0) / scores.length)
 })
 
 const timingConflicts = computed(() => parsedWeather.value?.timingIssues.length ?? 0)
@@ -153,6 +155,7 @@ watch(() => dayVMs.value.length, (len) => {
         :selected-day="selectedDay"
         :fairness-score="props.validatorSummary?.fairnessScore ?? null"
         :satisfaction-score="satisfactionScore"
+        :traveller-scores="props.travellerScores"
         :constraints-passed="props.validatorSummary?.constraintsPassed ?? null"
         :timing-conflicts="timingConflicts"
         :rounds="props.validatorSummary?.rounds ?? null"

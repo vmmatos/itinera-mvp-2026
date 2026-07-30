@@ -404,6 +404,80 @@ describe('TripInputForm — Step 4 (TripItineraryStep)', () => {
     expect(step.props('travellers')).toBe(1)
   })
 
+  const validatorProposal = (content: Record<string, unknown>, round = 2) => ({
+    id: 'prop-validator', agent: 'validator', round, action: 'score', content,
+    createdAt: '2026-07-01T10:00:00Z',
+  })
+
+  const mountWithProposals = async (proposals: unknown[]) => {
+    mockApiGet.mockReset()
+    mockApiGet
+      .mockResolvedValueOnce({ data: { data: { status: 'confirmed' } } })
+      .mockResolvedValueOnce({ data: { data: proposals } })
+      .mockResolvedValue({ data: { data: { status: 'confirmed' } } })
+
+    const wrapper = mountAtStep4()
+    for (let i = 0; i < 4; i++) await wrapper.vm.$nextTick()
+    return wrapper
+  }
+
+  it('reads the per-traveller rows from the validator proposal at whatever round it ran', async () => {
+    const wrapper = await mountWithProposals([
+      validatorProposal({
+        scoring: {
+          overallScore: 75,
+          scores: [
+            { travellerId: 't1', label: 'Ana', score: 100 },
+            { travellerId: 't2', label: 'Bruno', score: 50, vetoedBy: [] },
+          ],
+        },
+      }),
+    ])
+
+    const step = wrapper.findComponent({ name: 'TripItineraryStep' })
+    expect(step.props('travellerScores')).toEqual([
+      { travellerId: 't1', label: 'Ana', score: 100 },
+      { travellerId: 't2', label: 'Bruno', score: 50, vetoedBy: [] },
+    ])
+  })
+
+  it('returns no rows when there is no validator proposal', async () => {
+    const wrapper = await mountWithProposals([])
+
+    expect(wrapper.findComponent({ name: 'TripItineraryStep' }).props('travellerScores')).toEqual([])
+  })
+
+  it('returns no rows when the validator content has no scoring block', async () => {
+    const wrapper = await mountWithProposals([validatorProposal({ fairness: { fairnessScore: 100 } })])
+
+    expect(wrapper.findComponent({ name: 'TripItineraryStep' }).props('travellerScores')).toEqual([])
+  })
+
+  it('drops malformed rows and rows written before the traveller-keyed rename', async () => {
+    const wrapper = await mountWithProposals([
+      validatorProposal({
+        scoring: {
+          scores: [
+            { travellerId: 't1', label: 'Ana', score: 100 },
+            { userId: 'u1', score: 80 },
+            { travellerId: 't2', label: 'Bruno', score: 'high' },
+            null,
+          ],
+        },
+      }),
+    ])
+
+    expect(wrapper.findComponent({ name: 'TripItineraryStep' }).props('travellerScores')).toEqual([
+      { travellerId: 't1', label: 'Ana', score: 100 },
+    ])
+  })
+
+  it('error: a scoring block whose scores is not an array yields no rows', async () => {
+    const wrapper = await mountWithProposals([validatorProposal({ scoring: { scores: 'nope' } })])
+
+    expect(wrapper.findComponent({ name: 'TripItineraryStep' }).props('travellerScores')).toEqual([])
+  })
+
   it('emitting refine from TripItineraryStep calls setLastInput and returns to step 1', async () => {
     const wrapper = mountAtStep4()
     await wrapper.vm.$nextTick()

@@ -564,11 +564,14 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
         decisions: combinedDecisions,
       };
 
-      // Computed deterministically from the decisions above rather than asked
-      // of the LLM — no downstream consumer reads this field, so accuracy
-      // (real acceptance ratio) is strictly better than an LLM guess at zero
-      // extra cost.
-      const satisfactionEstimates: Record<string, number> = {};
+      // Per-persona-agent proposal win rate: the share of that agent's proposals
+      // that made it into the final itinerary. Computed deterministically from
+      // the decisions above rather than asked of the LLM.
+      //
+      // NOT traveller satisfaction — it used to be stored under
+      // `satisfactionEstimates`, which read as a claim about people. Real
+      // per-traveller scores come from the validator, keyed by traveller id.
+      const agentWinRates: Record<string, number> = {};
       const countsByAgent = new Map<string, { total: number; won: number }>();
       for (const d of decisions) {
         const c = countsByAgent.get(d.agent) ?? { total: 0, won: 0 };
@@ -577,7 +580,7 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
         countsByAgent.set(d.agent, c);
       }
       for (const [agent, c] of countsByAgent) {
-        satisfactionEstimates[agent] = c.total > 0 ? c.won / c.total : 0;
+        agentWinRates[agent] = c.total > 0 ? c.won / c.total : 0;
       }
 
       // Public holiday / Sunday-Monday closure checks — real activities + dates only
@@ -637,7 +640,7 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
         });
       }
 
-      const finalItinerary = { ...withTransport, restrictionWarnings, weatherAssessment, satisfactionEstimates };
+      const finalItinerary = { ...withTransport, restrictionWarnings, weatherAssessment, agentWinRates };
 
       await this.stateManager.logAgentCall({
         tripId: context.tripId,

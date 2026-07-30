@@ -1148,7 +1148,7 @@ describe('WorkflowEngine — parallel per-city merge calls (Part B)', () => {
 
     // satisfactionEstimates is computed deterministically in code now, not
     // read off either per-city LLM response (both fixtures carry none).
-    expect(mergedProposalContent()['satisfactionEstimates']).toBeDefined();
+    expect(mergedProposalContent()['agentWinRates']).toBeDefined();
   });
 
   it('happy path: streams per city — a fast city is processed/logged without waiting for a slower sibling still in flight', async () => {

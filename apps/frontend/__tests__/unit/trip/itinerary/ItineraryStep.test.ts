@@ -113,3 +113,37 @@ describe('ItineraryStep', () => {
     expect(wrapper.find('[data-testid="day-slot"]').exists()).toBe(true)
   })
 })
+
+describe('ItineraryStep — per-traveller preference match', () => {
+  const SCORES = [
+    { travellerId: 't1', label: 'Ana', score: 100 },
+    { travellerId: 't2', label: 'Bruno', score: 50 },
+  ]
+
+  it('forwards the traveller rows into the summary panel', () => {
+    wrapper = mount(ItineraryStep, { props: baseProps({ travellerScores: SCORES }) })
+
+    const rows = wrapper.findAll('[data-testid="traveller-satisfaction-row"]')
+    expect(rows).toHaveLength(2)
+    expect(rows[0]!.text()).toContain('Ana')
+  })
+
+  it('keeps showing the group aggregate when there are no traveller rows', () => {
+    wrapper = mount(ItineraryStep, { props: baseProps({ travellerScores: [] }) })
+
+    expect(wrapper.find('[data-testid="traveller-satisfaction"]').exists()).toBe(false)
+    // validatorSummary.overallScore is 92 in baseProps.
+    expect(wrapper.text()).toContain('92%')
+  })
+
+  it('falls back to the mean of the rows when the validator sent no overall score', () => {
+    wrapper = mount(ItineraryStep, {
+      props: baseProps({
+        travellerScores: SCORES,
+        validatorSummary: { fairnessScore: 100, overallScore: null, constraintsPassed: true, rounds: 2 },
+      }),
+    })
+
+    expect(wrapper.text()).toContain('75%')
+  })
+})

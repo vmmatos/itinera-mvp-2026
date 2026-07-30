@@ -287,13 +287,20 @@ export interface FinalPlan {
   bookingRequired: string[]
 }
 
-export interface SatisfactionScore {
+/**
+ * One traveller's preference match, as produced by the validator's ScoringEngine
+ * and read from the validator proposal's `content.scoring.scores`.
+ *
+ * A keyword match between the trip's must-haves plus this traveller's
+ * persona-derived interests and what the itinerary actually contains — not a
+ * measured satisfaction survey, which this product has no instrumentation for.
+ */
+export interface TravellerScore {
   travellerId: string
-  name:        string
-  persona:     Persona
-  preScore:    number
-  postScore:   number
-  breakdown:   Record<string, number>
+  label:       string
+  score:       number
+  /** Avoided terms found in the itinerary; present only when the score was vetoed to 0. */
+  vetoedBy?:   string[]
 }
 
 // ── Weather assessment (Step 4) ─────────────────────────────────
