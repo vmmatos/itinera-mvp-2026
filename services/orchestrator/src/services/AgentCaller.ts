@@ -98,12 +98,19 @@ export class AgentCaller extends BaseService {
     return toAgentCallResult(resp.review, Date.now() - start);
   }
 
+  /**
+   * `groupPreferences` carries the trip-level must-haves/avoids the validator
+   * scores every traveller against. Sent in the body rather than read from the
+   * `trips` table by the validator, which owns no trip schema — the orchestrator
+   * already holds the brief in the workflow context.
+   */
   async callValidatorAgent(
     tripId: string,
     round: number,
     proposal: Record<string, unknown>,
+    groupPreferences?: { mustHaves: string[]; avoids: string[] },
   ): Promise<AgentCallResult> {
-    return this.post<AgentCallResult>('validator', '/', { tripId, round, proposal });
+    return this.post<AgentCallResult>('validator', '/', { tripId, round, proposal, groupPreferences });
   }
 
   // ── WorkflowEngine v2 methods ──────────────────────────────────────────────

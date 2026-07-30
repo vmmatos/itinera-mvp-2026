@@ -366,12 +366,20 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
       // own city/date/slot text. The `decisions` log is now enrichment-only
       // (reason text), keyed by the same id, never load-bearing for status.
       const inputProposals: Array<{ id: string; agent: string; city: string; date: string; slot: 'morning' | 'afternoon' | 'evening'; activity: string; estimatedCostPerPerson: number }> = [];
+      // The slot proposals carry a `category` the merge output drops, and the
+      // validator scores traveller interests against exactly that field. Proposal
+      // ids are globally unique, so one map serves every per-city call below.
+      const categoryByProposalId = new Map<string, string>();
       for (const [agentName, output] of Object.entries(touristAgentOutputs)) {
         for (const p of output.slotProposals ?? []) {
           inputProposals.push({
             id: p.id, agent: agentName, city: p.city, date: p.date, slot: p.slot,
             activity: p.activity, estimatedCostPerPerson: p.estimatedCostPerPerson,
           });
+          const category = (p as { category?: unknown }).category;
+          if (typeof category === 'string' && category.trim().length > 0) {
+            categoryByProposalId.set(p.id, category);
+          }
         }
       }
 
@@ -449,12 +457,16 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
 
             const cityInputProposals = inputProposals.filter((p) => p.city === stay.city);
             const usedIds = new Set<string>();
-            const rawItinerary = (withTransport as { itinerary?: Array<{ day?: number; activities?: Array<{ proposalIds?: string[] }> }> }).itinerary ?? [];
+            const rawItinerary = (withTransport as { itinerary?: Array<{ day?: number; activities?: Array<{ proposalIds?: string[]; category?: string }> }> }).itinerary ?? [];
             // merge.txt only tells the LLM (prompt-level) to stick to its
             // target city — this is the deterministic backstop. Without it, a
             // day hallucinated by the wrong city's call reaches the combined
             // itinerary as a second, duplicate "Day N" card in the UI/PDF.
-            const withTransportItinerary = this.filterOwnedDays(rawItinerary, dayOwnership, stay.city);
+            const ownedDays = this.filterOwnedDays(rawItinerary, dayOwnership, stay.city);
+            // Restore the source slot proposal's category. Done after the day
+            // filter so discarded days cost nothing, and before the decision
+            // walk so both read the same objects.
+            const withTransportItinerary = this.backfillActivityCategories(ownedDays, categoryByProposalId);
             for (const day of withTransportItinerary) {
               for (const act of day.activities ?? []) {
                 for (const pid of act.proposalIds ?? []) usedIds.add(pid);
@@ -736,11 +748,43 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
     }
   }
 
+  /**
+   * Restore each merged activity's `category` from the slot proposal it was built
+   * from. The merge LLM is not asked for the field, and the validator scores a
+   * traveller's interests against it — so this is derived from `proposalIds`
+   * rather than trusted from the model.
+   *
+   * An existing category is never overwritten, and objects are copied rather than
+   * mutated because the decision derivation reads the same day objects.
+   */
+  private backfillActivityCategories<
+    T extends { activities?: Array<{ proposalIds?: string[]; category?: string }> },
+  >(itinerary: T[], categoryByProposalId: ReadonlyMap<string, string>): T[] {
+    if (categoryByProposalId.size === 0) return itinerary;
+
+    return itinerary.map((day) => {
+      if (!Array.isArray(day.activities)) return day;
+      return {
+        ...day,
+        activities: day.activities.map((activity) => {
+          if (typeof activity.category === 'string' && activity.category.trim().length > 0) return activity;
+          const source = (activity.proposalIds ?? [])
+            .map((id) => categoryByProposalId.get(id))
+            .find((category): category is string => category !== undefined);
+          return source === undefined ? activity : { ...activity, category: source };
+        }),
+      };
+    });
+  }
+
   private async executeFinalValidation(context: WorkflowContext, trip: Trip): Promise<WorkflowContext> {
     if (!context.mergedItinerary) return context;
     const start = Date.now();
     try {
-      const result = await this.agentCaller.callValidatorAgent(context.tripId, 2, context.mergedItinerary);
+      const result = await this.agentCaller.callValidatorAgent(context.tripId, 2, context.mergedItinerary, {
+        mustHaves: context.mustHaves,
+        avoids: context.avoids,
+      });
       const scoring = (result.content['scoring'] ?? {}) as Record<string, unknown>;
       const score = typeof scoring['overallScore'] === 'number' ? scoring['overallScore'] : 0;
 

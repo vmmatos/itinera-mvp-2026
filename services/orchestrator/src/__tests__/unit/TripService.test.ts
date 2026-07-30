@@ -386,7 +386,7 @@ describe('TripService.getTrip (admin debug view)', () => {
 describe('TripService.createTrip', () => {
   let service: TripService;
   let mockCreate: ReturnType<typeof vi.fn>;
-  let mockSave: ReturnType<typeof vi.fn>;
+  let mockSave: (entity: unknown) => Promise<unknown>;
 
   const BASE_INPUT = {
     name: 'Lisbon',
@@ -402,12 +402,11 @@ describe('TripService.createTrip', () => {
 
     // Every repository shares one `create` spy so both the trip and the
     // traveller rows it is asked to build can be asserted from one place.
-    mockCreate = vi.fn((entity: Record<string, unknown>) => entity);
-    mockSave = vi.fn(async (entity: unknown) =>
+    mockCreate = vi.fn((entity: unknown) => entity);
+    mockSave = async (entity: unknown): Promise<unknown> =>
       Array.isArray(entity)
         ? entity
-        : { id: 'trip-new', createdAt: new Date('2026-01-01'), updatedAt: new Date('2026-01-01'), ...(entity as object) },
-    );
+        : { id: 'trip-new', createdAt: new Date('2026-01-01'), updatedAt: new Date('2026-01-01'), ...(entity as object) };
     vi.mocked(AppDataSource.getRepository).mockReturnValue({ create: mockCreate } as never);
     vi.mocked(AppDataSource.transaction).mockImplementation(
       async (cb: unknown) => (cb as (m: { save: typeof mockSave }) => Promise<unknown>)({ save: mockSave }),
