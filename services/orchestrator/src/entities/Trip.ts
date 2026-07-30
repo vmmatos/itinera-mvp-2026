@@ -47,6 +47,14 @@ export class Trip {
   @Column({ type: 'jsonb', default: [] })
   destinations!: Array<{ country: string; city?: string; nights: number }>;
 
+  /**
+   * Trip-level group brief (pace / must-haves / avoids), stored raw and read
+   * through `resolveGroupPreferences`. `{}` means "not written" — legacy trips
+   * carry the same keys inside every traveller's own blob instead.
+   */
+  @Column({ type: 'jsonb', default: {} })
+  preferences!: Record<string, unknown>;
+
   @Column({ name: 'date_input', type: 'jsonb', nullable: true })
   dateInput!: DateInput | null;
 

@@ -173,19 +173,31 @@ export interface Destination {
 
 export interface TravellerInput {
   userId?:     string
-  name?:       string   // frontend-only: preserved in lastInput for pre-fill
+  name?:       string
   preferences: {
     persona:      Persona
     flexibility:  Flexibility
-    pace:         Flexibility
     budgetLimit?: number
     dietary:      string[]
     constraints:  string[]
-    mustHaves:    string[]
-    avoids:       string[]
+    /** Explicit interests. Omitted today — the backend derives them from `persona`. */
+    categories?:  string[]
+    /** @deprecated trip-level since M109 — only read when restoring an old lastInput. */
+    pace?:         Flexibility
+    /** @deprecated trip-level since M109 — only read when restoring an old lastInput. */
+    mustHaves?:    string[]
+    /** @deprecated trip-level since M109 — only read when restoring an old lastInput. */
+    avoids?:       string[]
     /** @deprecated legacy name for `avoids` — only read when restoring old lastInput. */
     dealBreakers?: string[]
   }
+}
+
+/** The group brief — one pace, one set of must-haves and avoids for the trip. */
+export interface TripPreferencesInput {
+  pace:      Flexibility
+  mustHaves: string[]
+  avoids:    string[]
 }
 
 export interface CreateTripInput {
@@ -195,6 +207,7 @@ export interface CreateTripInput {
   dateInput:           DateInput
   budgetTotal:         number
   budgetCurrency:      Currency
+  preferences:         TripPreferencesInput
   travellers:          TravellerInput[]
   transportPreference?: TransportMode
 }

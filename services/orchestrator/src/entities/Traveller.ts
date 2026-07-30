@@ -22,6 +22,10 @@ export class Traveller {
   @Column({ name: 'user_id', type: 'uuid', nullable: true })
   userId!: string | null;
 
+  /** Display name from the form. Null for travellers added without one. */
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  name!: string | null;
+
   @Column({ type: 'jsonb', default: {} })
   preferences!: Record<string, unknown>;
 

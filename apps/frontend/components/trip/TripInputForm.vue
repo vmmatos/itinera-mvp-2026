@@ -235,15 +235,16 @@ onMounted(() => {
     if (li.transportPreference) {
       transportPreference.value = li.transportPreference as TransportMode
     }
-    const first = li.travellers[0]
-    if (first) {
-      tripFlexibility.value = first.preferences.pace ?? 'medium'
-      mustHaves.value       = [...(first.preferences.mustHaves ?? [])]
-      // Union with the legacy `dealBreakers` key, mirroring normalizePreferences()
-      // on the backend, so a pre-rename lastInput still pre-fills the Avoid chips.
+    // The brief is trip-level. Fall back to traveller[0] so a lastInput written
+    // before the move still pre-fills, and union the legacy `dealBreakers` key,
+    // mirroring normalizePreferences() on the backend.
+    const brief = li.preferences ?? li.travellers[0]?.preferences
+    if (brief) {
+      tripFlexibility.value = brief.pace ?? 'medium'
+      mustHaves.value       = [...(brief.mustHaves ?? [])]
       avoids.value          = [...new Set([
-        ...(first.preferences.avoids ?? []),
-        ...(first.preferences.dealBreakers ?? []),
+        ...(brief.avoids ?? []),
+        ...((brief as { dealBreakers?: string[] }).dealBreakers ?? []),
       ])]
     }
     if (li.travellers.length > 0) {
@@ -270,17 +271,20 @@ const submit = async (): Promise<void> => {
     budgetTotal:         budgetTotal.value,
     budgetCurrency:      budgetCurrency.value,
     transportPreference: transportPreference.value,
+    // Sent once for the whole trip — not copied into every traveller.
+    preferences: {
+      pace:      tripFlexibility.value,
+      mustHaves: mustHaves.value,
+      avoids:    avoids.value,
+    },
     travellers:          travellers.value.map((t): TravellerInput => ({
       userId: t.isCurrentUser ? currentUserId.value : undefined,
       name:   t.name,
       preferences: {
         persona:      t.persona!,
         flexibility:  t.flexibility,
-        pace:         tripFlexibility.value,
         dietary:      [],
         constraints:  [],
-        mustHaves:    mustHaves.value,
-        avoids:       avoids.value,
       },
     })),
   }
@@ -686,17 +690,19 @@ const handleRefine = (): void => {
     endDate:        endDate.value,
     budgetTotal:    budgetTotal.value,
     budgetCurrency: budgetCurrency.value,
+    preferences: {
+      pace:      tripFlexibility.value,
+      mustHaves: mustHaves.value,
+      avoids:    avoids.value,
+    },
     travellers:     travellers.value.map((t): TravellerInput => ({
       userId: t.isCurrentUser ? currentUserId.value : undefined,
       name:   t.name,
       preferences: {
         persona:      t.persona ?? 'culture',
         flexibility:  t.flexibility,
-        pace:         tripFlexibility.value,
         dietary:      [],
         constraints:  [],
-        mustHaves:    mustHaves.value,
-        avoids:       avoids.value,
       },
     })),
   }

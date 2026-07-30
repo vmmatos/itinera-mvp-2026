@@ -1235,8 +1235,17 @@ describe('WorkflowEngine — parallel per-city merge calls (Part B)', () => {
 });
 
 describe('WorkflowEngine — group preferences reach the agents (pace / must-haves / avoids)', () => {
+  // MOCK_TRIP has no trip-level `preferences`, so these cases exercise the
+  // legacy path: the brief duplicated inside every traveller's own blob.
   function tripWithTravellers(travellers: Array<Record<string, unknown>>): typeof MOCK_TRIP {
     return { ...MOCK_TRIP, travellers } as unknown as typeof MOCK_TRIP;
+  }
+
+  function tripWithPreferences(
+    preferences: Record<string, unknown>,
+    travellers: Array<Record<string, unknown>> = [{ id: 't1' }],
+  ): typeof MOCK_TRIP {
+    return { ...MOCK_TRIP, preferences, travellers } as unknown as typeof MOCK_TRIP;
   }
 
   async function runThroughMerge(trip: typeof MOCK_TRIP): Promise<void> {
@@ -1268,7 +1277,58 @@ describe('WorkflowEngine — group preferences reach the agents (pace / must-hav
     await engine.run(TRIP_ID);
   }
 
-  it('happy path: reads pace/mustHaves/avoids from the travellers into every tourist slot', async () => {
+  it('happy path: reads the trip-level brief into every tourist slot', async () => {
+    await runThroughMerge(
+      tripWithPreferences({ pace: 'low', mustHaves: ['museus'], avoids: ['discotecas'] }),
+    );
+
+    const slots = vi.mocked(agentCaller.callPreferenceAgentSlots).mock.calls[0]![2];
+    expect(slots).not.toHaveLength(0);
+    for (const slot of slots) {
+      expect(slot.pace).toBe('low');
+      expect(slot.mustHaves).toEqual(['museus']);
+      expect(slot.avoids).toEqual(['discotecas']);
+    }
+  });
+
+  it('happy path: forwards the trip-level brief to the merge call', async () => {
+    await runThroughMerge(tripWithPreferences({ pace: 'high', mustHaves: ['praias'], avoids: [] }));
+
+    const preferences = vi.mocked(agentCaller.callOrchestratorMerge).mock.calls[0]![7];
+    expect(preferences).toEqual({ pace: 'high', mustHaves: ['praias'], avoids: [] });
+  });
+
+  it('the trip-level brief wins over stale per-traveller copies', async () => {
+    await runThroughMerge(
+      tripWithPreferences({ pace: 'low', mustHaves: ['museus'], avoids: ['discotecas'] }, [
+        { id: 't1', preferences: { pace: 'high', mustHaves: ['bares'], avoids: ['museus'] } },
+      ]),
+    );
+
+    const slots = vi.mocked(agentCaller.callPreferenceAgentSlots).mock.calls[0]![2];
+    expect(slots[0]!.pace).toBe('low');
+    expect(slots[0]!.mustHaves).toEqual(['museus']);
+    expect(slots[0]!.avoids).toEqual(['discotecas']);
+  });
+
+  it('maps a trip-level dealBreakers key onto avoids', async () => {
+    await runThroughMerge(tripWithPreferences({ dealBreakers: ['casinos'] }));
+
+    const slots = vi.mocked(agentCaller.callPreferenceAgentSlots).mock.calls[0]![2];
+    expect(slots[0]!.avoids).toEqual(['casinos']);
+  });
+
+  it('error: an empty trip-level blob falls back to the travellers (legacy trip)', async () => {
+    await runThroughMerge(
+      tripWithPreferences({}, [{ id: 't1', preferences: { pace: 'high', mustHaves: ['bares'] } }]),
+    );
+
+    const slots = vi.mocked(agentCaller.callPreferenceAgentSlots).mock.calls[0]![2];
+    expect(slots[0]!.pace).toBe('high');
+    expect(slots[0]!.mustHaves).toEqual(['bares']);
+  });
+
+  it('legacy: reads pace/mustHaves/avoids from the travellers into every tourist slot', async () => {
     await runThroughMerge(
       tripWithTravellers([
         { id: 't1', preferences: { pace: 'low', mustHaves: ['museus'], avoids: ['discotecas'] } },

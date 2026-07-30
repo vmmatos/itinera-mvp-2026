@@ -382,3 +382,79 @@ describe('TripService.getTrip (admin debug view)', () => {
     await expect(service.getTrip('missing-trip', true)).rejects.toThrow();
   });
 });
+
+describe('TripService.createTrip', () => {
+  let service: TripService;
+  let mockCreate: ReturnType<typeof vi.fn>;
+  let mockSave: ReturnType<typeof vi.fn>;
+
+  const BASE_INPUT = {
+    name: 'Lisbon',
+    destinations: [{ country: 'Portugal', city: 'Lisbon', nights: 3 }],
+    budgetCurrency: 'EUR' as const,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    const stateManager = new StateManager();
+    const engine: IOrchestrationEngine = { run: vi.fn(), setTripService: vi.fn() };
+    service = new TripService(stateManager, engine);
+
+    // Every repository shares one `create` spy so both the trip and the
+    // traveller rows it is asked to build can be asserted from one place.
+    mockCreate = vi.fn((entity: Record<string, unknown>) => entity);
+    mockSave = vi.fn(async (entity: unknown) =>
+      Array.isArray(entity)
+        ? entity
+        : { id: 'trip-new', createdAt: new Date('2026-01-01'), updatedAt: new Date('2026-01-01'), ...(entity as object) },
+    );
+    vi.mocked(AppDataSource.getRepository).mockReturnValue({ create: mockCreate } as never);
+    vi.mocked(AppDataSource.transaction).mockImplementation(
+      async (cb: unknown) => (cb as (m: { save: typeof mockSave }) => Promise<unknown>)({ save: mockSave }),
+    );
+  });
+
+  const createdTrip = (): Record<string, unknown> =>
+    mockCreate.mock.calls.map((c) => c[0] as Record<string, unknown>).find((e) => 'ownerId' in e)!;
+  const createdTravellers = (): Array<Record<string, unknown>> =>
+    mockCreate.mock.calls.map((c) => c[0] as Record<string, unknown>).filter((e) => 'tripId' in e);
+
+  it('persists the trip-level brief once, not per traveller', async () => {
+    await service.createTrip(OWNER_ID, {
+      ...BASE_INPUT,
+      preferences: { pace: 'low', mustHaves: ['museus'], avoids: ['discotecas'] },
+      travellers: [
+        { name: 'Ana', preferences: { persona: 'culture' } },
+        { name: 'Bruno', preferences: { persona: 'gastronomy' } },
+      ],
+    } as never);
+
+    expect(createdTrip().preferences).toEqual({ pace: 'low', mustHaves: ['museus'], avoids: ['discotecas'] });
+    for (const traveller of createdTravellers()) {
+      expect(traveller.preferences).not.toHaveProperty('pace');
+      expect(traveller.preferences).not.toHaveProperty('mustHaves');
+    }
+  });
+
+  it('persists each traveller name so per-traveller output can be labelled', async () => {
+    await service.createTrip(OWNER_ID, {
+      ...BASE_INPUT,
+      travellers: [{ name: 'Ana', preferences: {} }, { preferences: {} }],
+    } as never);
+
+    expect(createdTravellers().map((t) => t.name)).toEqual(['Ana', null]);
+  });
+
+  it('error: defaults an absent brief to an empty blob rather than failing', async () => {
+    await service.createTrip(OWNER_ID, { ...BASE_INPUT, travellers: [{ preferences: {} }] } as never);
+
+    expect(createdTrip().preferences).toEqual({});
+  });
+
+  it('error: a trip with no travellers still persists', async () => {
+    await service.createTrip(OWNER_ID, { ...BASE_INPUT, preferences: { pace: 'high' } } as never);
+
+    expect(createdTravellers()).toHaveLength(0);
+    expect(createdTrip().preferences).toEqual({ pace: 'high' });
+  });
+});

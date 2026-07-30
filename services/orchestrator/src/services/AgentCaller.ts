@@ -1,5 +1,5 @@
 import { BaseService } from '@itinera/shared';
-import type { DateInput, TransportMode, RouteGraph, BudgetPlan, TouristSlotInput, RestrictionWarning, TravellerPreferences } from '@itinera/shared';
+import type { DateInput, TransportMode, RouteGraph, BudgetPlan, TouristSlotInput, RestrictionWarning, GroupPreferences } from '@itinera/shared';
 import jwt from 'jsonwebtoken';
 import { config } from '@/config';
 
@@ -193,7 +193,7 @@ export class AgentCaller extends BaseService {
     budgetPlan: BudgetPlan,
     context: string,
     targetCity: string,
-    preferences: TravellerPreferences,
+    preferences: GroupPreferences,
   ): Promise<AgentCallResult> {
     const start = Date.now();
     const resp = await this.post<{ merged: AgentEventLike }>(

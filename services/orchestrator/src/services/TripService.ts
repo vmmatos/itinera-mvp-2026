@@ -138,6 +138,7 @@ export class TripService extends BaseService {
         budgetCurrency: input.budgetCurrency ?? 'EUR',
         dateInput: input.dateInput ?? null,
         transportPreference: input.transportPreference ?? 'best',
+        preferences: input.preferences ?? {},
         status: 'draft',
       });
       const savedTrip = await manager.save(newTrip);
@@ -147,6 +148,7 @@ export class TripService extends BaseService {
           travellerRepo.create({
             tripId: savedTrip.id,
             userId: t.userId ?? null,
+            name: t.name ?? null,
             preferences: t.preferences ?? {},
           }),
         );

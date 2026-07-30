@@ -1,7 +1,7 @@
 import path from 'path';
 import fs from 'fs';
-import type { AgentEvent, AgentName, AIMessage, IAIProvider, RouteGraph, BudgetPlan, TravellerPreferences } from '@itinera/shared';
-import { DEFAULT_PREFERENCES } from '@itinera/shared';
+import type { AgentEvent, AgentName, AIMessage, IAIProvider, RouteGraph, BudgetPlan, GroupPreferences } from '@itinera/shared';
+import { DEFAULT_GROUP_PREFERENCES } from '@itinera/shared';
 import { BaseOrchestratorAgent, ITINERARY_MAX_TOKENS } from '@/agents/BaseOrchestratorAgent';
 import { config } from '@/config';
 import { RabbitMQPublisher } from '@/services/RabbitMQPublisher';
@@ -33,7 +33,7 @@ export class ItineraryMerger extends BaseOrchestratorAgent {
     budgetPlan: BudgetPlan,
     context: string,
     targetCity: string,
-    preferences: TravellerPreferences = DEFAULT_PREFERENCES,
+    preferences: GroupPreferences = DEFAULT_GROUP_PREFERENCES,
   ): Promise<AgentEvent> {
     return this.handleAsync(async () => {
       const cacheKey = `orch:${tripId}:merger:${round}:merge:${targetCity}`;

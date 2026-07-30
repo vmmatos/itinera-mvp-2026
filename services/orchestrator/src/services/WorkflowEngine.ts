@@ -1,5 +1,5 @@
-import { BaseService, aggregateGroupPreferences } from '@itinera/shared';
-import type { TravellerPreferences } from '@itinera/shared';
+import { BaseService, hasGroupPreferences, resolveGroupPreferences } from '@itinera/shared';
+import type { GroupPreferences } from '@itinera/shared';
 import type { TransportMode, AgentEvent, NegotiationCompleteEvent, TransportOption, RouteGraph, RestrictionWarning } from '@itinera/shared';
 import type { WorkflowContext, WorkflowState, TouristSlotInput, TransportPriorityResult, ProposalDecision, ProposalDecisionStatus, SlotProposal, AgentName, AgentAction } from '@itinera/shared';
 import { WorkflowStateMachine } from '@/services/WorkflowStateMachine';
@@ -99,9 +99,14 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
   private buildInitialContext(trip: Trip): WorkflowContext {
     const destinations = trip.destinations ?? [];
     const firstCity = destinations[0]?.city ?? destinations[0]?.country ?? 'Unknown';
-    // Collapse every traveller's stated pace / must-haves / avoids into one set.
-    // Tolerates the legacy `dealBreakers` key still present in older rows.
-    const preferences = aggregateGroupPreferences(trip.travellers ?? []);
+    // The brief is trip-level. Trips created before `trips.preferences` existed
+    // carry it duplicated inside every traveller's blob, so fall back to
+    // collapsing those (also tolerates the legacy `dealBreakers` key).
+    const preferences = resolveGroupPreferences(trip.preferences, trip.travellers ?? []);
+    if (hasGroupPreferences(trip.preferences) && trip.travellers?.some((t) => hasGroupPreferences(t.preferences))) {
+      // A mixed-shape client: trip-level wins outright, per-traveller copies are ignored.
+      this.logger.debug('Trip and traveller preferences both present — using trip-level', { tripId: trip.id });
+    }
 
     return {
       tripId: trip.id,
@@ -347,7 +352,7 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
       const tripContext = `Trip: ${trip.name}. Budget: ${context.budgetTotal} ${context.budgetCurrency}. Group size: ${context.groupSize}.`;
       // Passed as a structured block rather than folded into tripContext, so the
       // merge prompt's must-have/avoid rules have a machine-readable source.
-      const groupPreferences: TravellerPreferences = {
+      const groupPreferences: GroupPreferences = {
         pace: context.pace,
         mustHaves: context.mustHaves,
         avoids: context.avoids,

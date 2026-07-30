@@ -187,6 +187,12 @@ describe('TripInputForm', () => {
     expect(payload.budgetCurrency).toBe('EUR')
     expect(payload.travellers[0].preferences.persona).toBe('culture')
 
+    // The brief is sent once for the trip, never copied per traveller.
+    expect(payload.preferences).toEqual({ pace: 'medium', mustHaves: [], avoids: [] })
+    expect(payload.travellers[0].preferences).not.toHaveProperty('pace')
+    expect(payload.travellers[0].preferences).not.toHaveProperty('mustHaves')
+    expect(payload.travellers[0].preferences).not.toHaveProperty('avoids')
+
     // submit → step 3 (negotiate); success is emitted later via goToDashboard
     expect(wrapper.findComponent({ name: 'TripNegotiateStepV2' }).exists()).toBe(true)
   })
@@ -276,7 +282,28 @@ describe('TripInputForm — pre-fill from lastInput', () => {
     expect(cultureCard?.classes().some((c) => c.startsWith('selected-'))).toBe(true)
   })
 
-  it('pre-fills the pace, must-have and avoid chips from lastInput', async () => {
+  it('pre-fills the brief from a trip-level lastInput', async () => {
+    tripStoreMock.lastInput = {
+      ...LAST_INPUT,
+      preferences: { pace: 'low' as const, mustHaves: ['fado'], avoids: ['filas'] },
+      travellers: [
+        {
+          ...LAST_INPUT.travellers[0],
+          preferences: { persona: 'culture' as const, flexibility: 'high' as const, dietary: [], constraints: [] },
+        },
+      ],
+    }
+
+    const wrapper = mountForm()
+    await wrapper.vm.$nextTick()
+    await wrapper.find('[class*="btn-primary"]').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.findAll('[data-testid="must-have-chip"]').map((c) => c.text()).join(' ')).toContain('fado')
+    expect(wrapper.findAll('[data-testid="avoid-chip"]').map((c) => c.text()).join(' ')).toContain('filas')
+  })
+
+  it('legacy: pre-fills the pace, must-have and avoid chips from a per-traveller lastInput', async () => {
     tripStoreMock.lastInput = LAST_INPUT
 
     const wrapper = mountForm()

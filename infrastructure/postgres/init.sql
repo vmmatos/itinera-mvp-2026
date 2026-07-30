@@ -21,18 +21,25 @@ CREATE TABLE IF NOT EXISTS users (
 -- trips
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS trips (
-  id               UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  name             VARCHAR(255)   NOT NULL,
-  status           VARCHAR(50)    NOT NULL DEFAULT 'draft',
-  region           VARCHAR(255),
-  destinations     JSONB          NOT NULL DEFAULT '[]',
-  owner_id         UUID           NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  start_date       DATE,
-  end_date         DATE,
-  budget_total     NUMERIC(12,2),
-  budget_currency  VARCHAR(10)    NOT NULL DEFAULT 'EUR',
-  created_at       TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
-  updated_at       TIMESTAMPTZ    NOT NULL DEFAULT NOW()
+  id                   UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name                 VARCHAR(255)   NOT NULL,
+  status               VARCHAR(50)    NOT NULL DEFAULT 'draft',
+  region               VARCHAR(255),
+  destinations         JSONB          NOT NULL DEFAULT '[]',
+  owner_id             UUID           NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  start_date           DATE,
+  end_date             DATE,
+  budget_total         NUMERIC(12,2),
+  budget_currency      VARCHAR(10)    NOT NULL DEFAULT 'EUR',
+  -- Trip-level group brief: pace / must-haves / avoids (1752000000000).
+  preferences          JSONB          NOT NULL DEFAULT '{}',
+  date_input           JSONB,
+  transport_preference VARCHAR(10)    NOT NULL DEFAULT 'best',
+  rejection_reason     TEXT,
+  workflow_state       VARCHAR(50),
+  workflow_context     JSONB,
+  created_at           TIMESTAMPTZ    NOT NULL DEFAULT NOW(),
+  updated_at           TIMESTAMPTZ    NOT NULL DEFAULT NOW()
 );
 
 -- ---------------------------------------------------------------------------
@@ -41,7 +48,9 @@ CREATE TABLE IF NOT EXISTS trips (
 CREATE TABLE IF NOT EXISTS travellers (
   id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   trip_id     UUID NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
-  user_id     UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  -- Nullable since 1748800000001: co-travellers have no account.
+  user_id     UUID REFERENCES users(id) ON DELETE CASCADE,
+  name        VARCHAR(255),
   preferences JSONB NOT NULL DEFAULT '{}',
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
