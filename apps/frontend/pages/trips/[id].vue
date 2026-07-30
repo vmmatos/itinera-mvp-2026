@@ -212,6 +212,7 @@ onMounted(async () => {
     <header class="border-b border-line-2 px-6 py-4 flex items-center justify-between">
       <AppLogo :size="20" />
       <div class="flex items-center gap-4">
+        <ThemeToggle />
         <NuxtLink to="/dashboard" class="btn text-13">← Dashboard</NuxtLink>
         <NuxtLink
           v-if="authStore.isAdmin && trip"

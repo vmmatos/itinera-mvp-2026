@@ -44,6 +44,14 @@ export default defineNuxtConfig({
           href: 'https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@300;400;500;600&display=swap',
         },
       ],
+      // Dark is always the SSR default (no data-theme attribute). This
+      // runs before first paint to correct for a persisted light choice,
+      // avoiding a flash — see stores/theme.ts for the matching storageKey.
+      script: [
+        {
+          innerHTML: "(function(){try{var m=localStorage.getItem('itn-theme');if(m==='light'){document.documentElement.setAttribute('data-theme','light');}}catch(e){}})();",
+        },
+      ],
     },
   },
 
