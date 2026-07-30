@@ -187,6 +187,12 @@ describe('TripInputForm', () => {
     expect(payload.budgetCurrency).toBe('EUR')
     expect(payload.travellers[0].preferences.persona).toBe('culture')
 
+    // The brief is sent once for the trip, never copied per traveller.
+    expect(payload.preferences).toEqual({ pace: 'medium', mustHaves: [], avoids: [] })
+    expect(payload.travellers[0].preferences).not.toHaveProperty('pace')
+    expect(payload.travellers[0].preferences).not.toHaveProperty('mustHaves')
+    expect(payload.travellers[0].preferences).not.toHaveProperty('avoids')
+
     // submit → step 3 (negotiate); success is emitted later via goToDashboard
     expect(wrapper.findComponent({ name: 'TripNegotiateStepV2' }).exists()).toBe(true)
   })
@@ -276,7 +282,28 @@ describe('TripInputForm — pre-fill from lastInput', () => {
     expect(cultureCard?.classes().some((c) => c.startsWith('selected-'))).toBe(true)
   })
 
-  it('pre-fills the pace, must-have and avoid chips from lastInput', async () => {
+  it('pre-fills the brief from a trip-level lastInput', async () => {
+    tripStoreMock.lastInput = {
+      ...LAST_INPUT,
+      preferences: { pace: 'low' as const, mustHaves: ['fado'], avoids: ['filas'] },
+      travellers: [
+        {
+          ...LAST_INPUT.travellers[0],
+          preferences: { persona: 'culture' as const, flexibility: 'high' as const, dietary: [], constraints: [] },
+        },
+      ],
+    }
+
+    const wrapper = mountForm()
+    await wrapper.vm.$nextTick()
+    await wrapper.find('[class*="btn-primary"]').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.findAll('[data-testid="must-have-chip"]').map((c) => c.text()).join(' ')).toContain('fado')
+    expect(wrapper.findAll('[data-testid="avoid-chip"]').map((c) => c.text()).join(' ')).toContain('filas')
+  })
+
+  it('legacy: pre-fills the pace, must-have and avoid chips from a per-traveller lastInput', async () => {
     tripStoreMock.lastInput = LAST_INPUT
 
     const wrapper = mountForm()
@@ -375,6 +402,80 @@ describe('TripInputForm — Step 4 (TripItineraryStep)', () => {
     // The current user is always auto-added as the first traveller, regardless
     // of the viewTripId/lastInput path — a stable prop to assert wiring on.
     expect(step.props('travellers')).toBe(1)
+  })
+
+  const validatorProposal = (content: Record<string, unknown>, round = 2) => ({
+    id: 'prop-validator', agent: 'validator', round, action: 'score', content,
+    createdAt: '2026-07-01T10:00:00Z',
+  })
+
+  const mountWithProposals = async (proposals: unknown[]) => {
+    mockApiGet.mockReset()
+    mockApiGet
+      .mockResolvedValueOnce({ data: { data: { status: 'confirmed' } } })
+      .mockResolvedValueOnce({ data: { data: proposals } })
+      .mockResolvedValue({ data: { data: { status: 'confirmed' } } })
+
+    const wrapper = mountAtStep4()
+    for (let i = 0; i < 4; i++) await wrapper.vm.$nextTick()
+    return wrapper
+  }
+
+  it('reads the per-traveller rows from the validator proposal at whatever round it ran', async () => {
+    const wrapper = await mountWithProposals([
+      validatorProposal({
+        scoring: {
+          overallScore: 75,
+          scores: [
+            { travellerId: 't1', label: 'Ana', score: 100 },
+            { travellerId: 't2', label: 'Bruno', score: 50, vetoedBy: [] },
+          ],
+        },
+      }),
+    ])
+
+    const step = wrapper.findComponent({ name: 'TripItineraryStep' })
+    expect(step.props('travellerScores')).toEqual([
+      { travellerId: 't1', label: 'Ana', score: 100 },
+      { travellerId: 't2', label: 'Bruno', score: 50, vetoedBy: [] },
+    ])
+  })
+
+  it('returns no rows when there is no validator proposal', async () => {
+    const wrapper = await mountWithProposals([])
+
+    expect(wrapper.findComponent({ name: 'TripItineraryStep' }).props('travellerScores')).toEqual([])
+  })
+
+  it('returns no rows when the validator content has no scoring block', async () => {
+    const wrapper = await mountWithProposals([validatorProposal({ fairness: { fairnessScore: 100 } })])
+
+    expect(wrapper.findComponent({ name: 'TripItineraryStep' }).props('travellerScores')).toEqual([])
+  })
+
+  it('drops malformed rows and rows written before the traveller-keyed rename', async () => {
+    const wrapper = await mountWithProposals([
+      validatorProposal({
+        scoring: {
+          scores: [
+            { travellerId: 't1', label: 'Ana', score: 100 },
+            { userId: 'u1', score: 80 },
+            { travellerId: 't2', label: 'Bruno', score: 'high' },
+            null,
+          ],
+        },
+      }),
+    ])
+
+    expect(wrapper.findComponent({ name: 'TripItineraryStep' }).props('travellerScores')).toEqual([
+      { travellerId: 't1', label: 'Ana', score: 100 },
+    ])
+  })
+
+  it('error: a scoring block whose scores is not an array yields no rows', async () => {
+    const wrapper = await mountWithProposals([validatorProposal({ scoring: { scores: 'nope' } })])
+
+    expect(wrapper.findComponent({ name: 'TripItineraryStep' }).props('travellerScores')).toEqual([])
   })
 
   it('emitting refine from TripItineraryStep calls setLastInput and returns to step 1', async () => {

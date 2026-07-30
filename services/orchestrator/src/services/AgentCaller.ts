@@ -1,5 +1,5 @@
 import { BaseService } from '@itinera/shared';
-import type { DateInput, TransportMode, RouteGraph, BudgetPlan, TouristSlotInput, RestrictionWarning, TravellerPreferences } from '@itinera/shared';
+import type { DateInput, TransportMode, RouteGraph, BudgetPlan, TouristSlotInput, RestrictionWarning, GroupPreferences } from '@itinera/shared';
 import jwt from 'jsonwebtoken';
 import { config } from '@/config';
 
@@ -98,12 +98,19 @@ export class AgentCaller extends BaseService {
     return toAgentCallResult(resp.review, Date.now() - start);
   }
 
+  /**
+   * `groupPreferences` carries the trip-level must-haves/avoids the validator
+   * scores every traveller against. Sent in the body rather than read from the
+   * `trips` table by the validator, which owns no trip schema — the orchestrator
+   * already holds the brief in the workflow context.
+   */
   async callValidatorAgent(
     tripId: string,
     round: number,
     proposal: Record<string, unknown>,
+    groupPreferences?: { mustHaves: string[]; avoids: string[] },
   ): Promise<AgentCallResult> {
-    return this.post<AgentCallResult>('validator', '/', { tripId, round, proposal });
+    return this.post<AgentCallResult>('validator', '/', { tripId, round, proposal, groupPreferences });
   }
 
   // ── WorkflowEngine v2 methods ──────────────────────────────────────────────
@@ -193,7 +200,7 @@ export class AgentCaller extends BaseService {
     budgetPlan: BudgetPlan,
     context: string,
     targetCity: string,
-    preferences: TravellerPreferences,
+    preferences: GroupPreferences,
   ): Promise<AgentCallResult> {
     const start = Date.now();
     const resp = await this.post<{ merged: AgentEventLike }>(

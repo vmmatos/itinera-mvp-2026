@@ -6,19 +6,23 @@ import { matchesPreferenceTerm } from '@itinera/shared';
  * finished itinerary can be scored against. Do not add it as a scoring dimension.
  */
 export interface TravellerPreference {
-  userId: string;
+  /** `travellers.id` — always present, unlike `user_id` which is null for guests. */
+  travellerId: string;
+  /** Resolved at the route boundary: name → persona label → "Traveller N". */
+  label: string;
   preferences: {
     /** Explicitly requested themes — weighted double a plain category match. */
     mustHaves?: string[];
     /** Hard exclusions — one match vetoes this traveller's score outright. */
     avoids?: string[];
-    /** Soft category interests. Not currently collected by the UI. */
+    /** This traveller's soft interests, derived from their persona. */
     categories?: string[];
   };
 }
 
 export interface TravellerScore {
-  userId: string;
+  travellerId: string;
+  label: string;
   score: number;
   /** Which avoids were found in the itinerary. Absent when nothing was vetoed. */
   vetoedBy?: string[];
@@ -31,6 +35,18 @@ export interface ScoringResult {
 
 const MUST_HAVE_WEIGHT = 2;
 const CATEGORY_WEIGHT = 1;
+
+/**
+ * How many category hits count as full credit for the category component.
+ *
+ * Must-haves stay linear — the group asked for those explicitly — but categories
+ * are a persona-derived proxy, and nobody expects an itinerary to touch every
+ * interest a persona implies. Without the cap the denominator grows with the
+ * vocabulary, so a traveller could only ever reach a fraction of the score, and
+ * because WorkflowStateMachine cancels a trip below an overall 60 that would turn
+ * "we filled some of your interests" into a cancelled trip.
+ */
+const CATEGORY_TARGET = 2;
 
 interface ItineraryTerms {
   /** category + name + venue + description. */
@@ -52,12 +68,13 @@ export class ScoringEngine {
 
       const vetoedBy = avoids.filter((a) => terms.forAvoids.some((h) => matchesPreferenceTerm(a, h)));
       if (vetoedBy.length > 0) {
-        return { userId: t.userId, score: 0, vetoedBy };
+        return { travellerId: t.travellerId, label: t.label, score: 0, vetoedBy };
       }
 
-      const denominator = mustHaves.length * MUST_HAVE_WEIGHT + categories.length * CATEGORY_WEIGHT;
+      const categoryTarget = Math.min(categories.length, CATEGORY_TARGET);
+      const denominator = mustHaves.length * MUST_HAVE_WEIGHT + categoryTarget * CATEGORY_WEIGHT;
       if (denominator === 0) {
-        return { userId: t.userId, score: 100 };
+        return { travellerId: t.travellerId, label: t.label, score: 100 };
       }
 
       const matchedMustHaves = mustHaves.filter((m) =>
@@ -67,10 +84,13 @@ export class ScoringEngine {
         terms.forMustHaves.some((h) => matchesPreferenceTerm(c, h)),
       ).length;
 
-      const earned = matchedMustHaves * MUST_HAVE_WEIGHT + matchedCategories * CATEGORY_WEIGHT;
+      // Category credit saturates at CATEGORY_TARGET so extra vocabulary can
+      // never push a traveller past full marks on that component.
+      const earned =
+        matchedMustHaves * MUST_HAVE_WEIGHT + Math.min(matchedCategories, categoryTarget) * CATEGORY_WEIGHT;
       const score = Math.max(0, Math.min(100, Math.round((earned / denominator) * 100)));
 
-      return { userId: t.userId, score };
+      return { travellerId: t.travellerId, label: t.label, score };
     });
 
     const overallScore = Math.round(

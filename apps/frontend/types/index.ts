@@ -173,19 +173,31 @@ export interface Destination {
 
 export interface TravellerInput {
   userId?:     string
-  name?:       string   // frontend-only: preserved in lastInput for pre-fill
+  name?:       string
   preferences: {
     persona:      Persona
     flexibility:  Flexibility
-    pace:         Flexibility
     budgetLimit?: number
     dietary:      string[]
     constraints:  string[]
-    mustHaves:    string[]
-    avoids:       string[]
+    /** Explicit interests. Omitted today — the backend derives them from `persona`. */
+    categories?:  string[]
+    /** @deprecated trip-level since M109 — only read when restoring an old lastInput. */
+    pace?:         Flexibility
+    /** @deprecated trip-level since M109 — only read when restoring an old lastInput. */
+    mustHaves?:    string[]
+    /** @deprecated trip-level since M109 — only read when restoring an old lastInput. */
+    avoids?:       string[]
     /** @deprecated legacy name for `avoids` — only read when restoring old lastInput. */
     dealBreakers?: string[]
   }
+}
+
+/** The group brief — one pace, one set of must-haves and avoids for the trip. */
+export interface TripPreferencesInput {
+  pace:      Flexibility
+  mustHaves: string[]
+  avoids:    string[]
 }
 
 export interface CreateTripInput {
@@ -195,6 +207,7 @@ export interface CreateTripInput {
   dateInput:           DateInput
   budgetTotal:         number
   budgetCurrency:      Currency
+  preferences:         TripPreferencesInput
   travellers:          TravellerInput[]
   transportPreference?: TransportMode
 }
@@ -274,13 +287,20 @@ export interface FinalPlan {
   bookingRequired: string[]
 }
 
-export interface SatisfactionScore {
+/**
+ * One traveller's preference match, as produced by the validator's ScoringEngine
+ * and read from the validator proposal's `content.scoring.scores`.
+ *
+ * A keyword match between the trip's must-haves plus this traveller's
+ * persona-derived interests and what the itinerary actually contains — not a
+ * measured satisfaction survey, which this product has no instrumentation for.
+ */
+export interface TravellerScore {
   travellerId: string
-  name:        string
-  persona:     Persona
-  preScore:    number
-  postScore:   number
-  breakdown:   Record<string, number>
+  label:       string
+  score:       number
+  /** Avoided terms found in the itinerary; present only when the score was vetoed to 0. */
+  vetoedBy?:   string[]
 }
 
 // ── Weather assessment (Step 4) ─────────────────────────────────

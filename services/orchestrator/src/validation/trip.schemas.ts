@@ -28,8 +28,23 @@ const PreferenceTermsSchema = z.array(z.string().max(120)).max(20);
  * the blob (persona, dietary, constraints, budgetLimit) which is stored verbatim.
  * `dealBreakers` is the legacy name for `avoids` — accepted so older clients keep
  * working; `normalizePreferences` in @itinera/shared unifies them on read.
+ *
+ * `pace`/`mustHaves`/`avoids` are still accepted here because the brief used to
+ * be copied into every traveller. New clients send it once at the trip level
+ * (`TripPreferencesSchema`); `categories` is the per-traveller key.
  */
 const TravellerPreferencesSchema = z
+  .object({
+    pace:         z.enum(['low', 'medium', 'high']).optional(),
+    mustHaves:    PreferenceTermsSchema.optional(),
+    avoids:       PreferenceTermsSchema.optional(),
+    dealBreakers: PreferenceTermsSchema.optional(),
+    categories:   PreferenceTermsSchema.optional(),
+  })
+  .passthrough();
+
+/** The group brief, collected once by the form. Stored in `trips.preferences`. */
+const TripPreferencesSchema = z
   .object({
     pace:         z.enum(['low', 'medium', 'high']).optional(),
     mustHaves:    PreferenceTermsSchema.optional(),
@@ -46,10 +61,12 @@ export const CreateTripSchema = z.object({
   budgetTotal:         z.number().positive().optional(),
   budgetCurrency:      z.enum(['EUR', 'USD']).default('EUR'),
   transportPreference: z.enum(['flight', 'train', 'car', 'best']).default('best').optional(),
+  preferences:         TripPreferencesSchema.default({}),
   travellers: z
     .array(
       z.object({
         userId:      z.string().uuid().optional(),
+        name:        z.string().min(1).max(255).optional(),
         preferences: TravellerPreferencesSchema.default({}),
       }),
     )

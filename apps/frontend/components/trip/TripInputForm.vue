@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onUnmounted, onMounted } from 'vue'
 import { PERSONA_LABELS, PERSONA_AGENT, AGENT_COLOURS } from '~/types/index'
-import type { Persona, Flexibility, Currency, DateWindow, DateInput, CreateTripInput, TravellerInput, SatisfactionScore, TransportMode, TransportOption, TransportActivityData, BudgetBreakdown, ItineraryDay, ItineraryActivity, ItineraryCityTransition } from '~/types/index'
+import type { Persona, Flexibility, Currency, DateWindow, DateInput, CreateTripInput, TravellerInput, TravellerScore, TransportMode, TransportOption, TransportActivityData, BudgetBreakdown, ItineraryDay, ItineraryActivity, ItineraryCityTransition } from '~/types/index'
 import { formatTransportLabel } from '~/utils/itinerary'
 
 const props = withDefaults(defineProps<{ viewTripId?: string }>(), { viewTripId: undefined })
@@ -235,15 +235,16 @@ onMounted(() => {
     if (li.transportPreference) {
       transportPreference.value = li.transportPreference as TransportMode
     }
-    const first = li.travellers[0]
-    if (first) {
-      tripFlexibility.value = first.preferences.pace ?? 'medium'
-      mustHaves.value       = [...(first.preferences.mustHaves ?? [])]
-      // Union with the legacy `dealBreakers` key, mirroring normalizePreferences()
-      // on the backend, so a pre-rename lastInput still pre-fills the Avoid chips.
+    // The brief is trip-level. Fall back to traveller[0] so a lastInput written
+    // before the move still pre-fills, and union the legacy `dealBreakers` key,
+    // mirroring normalizePreferences() on the backend.
+    const brief = li.preferences ?? li.travellers[0]?.preferences
+    if (brief) {
+      tripFlexibility.value = brief.pace ?? 'medium'
+      mustHaves.value       = [...(brief.mustHaves ?? [])]
       avoids.value          = [...new Set([
-        ...(first.preferences.avoids ?? []),
-        ...(first.preferences.dealBreakers ?? []),
+        ...(brief.avoids ?? []),
+        ...((brief as { dealBreakers?: string[] }).dealBreakers ?? []),
       ])]
     }
     if (li.travellers.length > 0) {
@@ -270,17 +271,20 @@ const submit = async (): Promise<void> => {
     budgetTotal:         budgetTotal.value,
     budgetCurrency:      budgetCurrency.value,
     transportPreference: transportPreference.value,
+    // Sent once for the whole trip — not copied into every traveller.
+    preferences: {
+      pace:      tripFlexibility.value,
+      mustHaves: mustHaves.value,
+      avoids:    avoids.value,
+    },
     travellers:          travellers.value.map((t): TravellerInput => ({
       userId: t.isCurrentUser ? currentUserId.value : undefined,
       name:   t.name,
       preferences: {
         persona:      t.persona!,
         flexibility:  t.flexibility,
-        pace:         tripFlexibility.value,
         dietary:      [],
         constraints:  [],
-        mustHaves:    mustHaves.value,
-        avoids:       avoids.value,
       },
     })),
   }
@@ -625,10 +629,24 @@ const accommodationBlocks = computed<AccommodationBlock[]>(() => {
 
 // ── Step 4: Scores, cost breakdown, weather ───────────────────
 
-const travellerScores = computed<SatisfactionScore[]>(() => {
-  const vp = liveProposals.value.find((p) => p.agent === 'validator' && p.round === 6)
-  const c = vp?.content
-  return Array.isArray(c?.['scores']) ? (c['scores'] as SatisfactionScore[]) : []
+// Per-traveller preference match, from the same validator proposal
+// `validatorSummary` reads. The old lookup pinned round 6 and read
+// `content.scores`; the validator runs at round 2 and nests the rows under
+// `content.scoring.scores`, so it always came back empty and Step 4 silently
+// fell back to the single group number.
+const travellerScores = computed<TravellerScore[]>(() => {
+  const scoring = latestByAgent.value['validator']?.content?.['scoring'] as Record<string, unknown> | undefined
+  const rows = scoring?.['scores']
+  if (!Array.isArray(rows)) return []
+  // Rows written before the traveller-keyed rename have no travellerId/label —
+  // drop them rather than render a blank row.
+  return rows.filter((r): r is TravellerScore => {
+    if (typeof r !== 'object' || r === null) return false
+    const row = r as Record<string, unknown>
+    return typeof row['travellerId'] === 'string'
+      && typeof row['label'] === 'string'
+      && typeof row['score'] === 'number'
+  })
 })
 
 // WorkflowEngine.executeMerge attaches weatherAssessment to the merged
@@ -686,17 +704,19 @@ const handleRefine = (): void => {
     endDate:        endDate.value,
     budgetTotal:    budgetTotal.value,
     budgetCurrency: budgetCurrency.value,
+    preferences: {
+      pace:      tripFlexibility.value,
+      mustHaves: mustHaves.value,
+      avoids:    avoids.value,
+    },
     travellers:     travellers.value.map((t): TravellerInput => ({
       userId: t.isCurrentUser ? currentUserId.value : undefined,
       name:   t.name,
       preferences: {
         persona:      t.persona ?? 'culture',
         flexibility:  t.flexibility,
-        pace:         tripFlexibility.value,
         dietary:      [],
         constraints:  [],
-        mustHaves:    mustHaves.value,
-        avoids:       avoids.value,
       },
     })),
   }

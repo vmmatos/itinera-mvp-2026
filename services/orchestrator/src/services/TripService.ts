@@ -138,6 +138,7 @@ export class TripService extends BaseService {
         budgetCurrency: input.budgetCurrency ?? 'EUR',
         dateInput: input.dateInput ?? null,
         transportPreference: input.transportPreference ?? 'best',
+        preferences: input.preferences ?? {},
         status: 'draft',
       });
       const savedTrip = await manager.save(newTrip);
@@ -147,6 +148,7 @@ export class TripService extends BaseService {
           travellerRepo.create({
             tripId: savedTrip.id,
             userId: t.userId ?? null,
+            name: t.name ?? null,
             preferences: t.preferences ?? {},
           }),
         );
@@ -356,9 +358,13 @@ export class TripService extends BaseService {
     const scores: AgentWinRateDto[] = [];
     for (const p of orchestratorProposals) {
       const content = p.content as Record<string, unknown> | undefined;
-      const estimates = content?.['satisfactionEstimates'] as Record<string, unknown> | undefined;
-      if (!estimates || typeof estimates !== 'object') continue;
-      for (const [agent, value] of Object.entries(estimates)) {
+      // `satisfactionEstimates` is the pre-M109 name for the same win-rate map —
+      // still read so proposals already in the DB keep rendering.
+      const rates = (content?.['agentWinRates'] ?? content?.['satisfactionEstimates']) as
+        | Record<string, unknown>
+        | undefined;
+      if (!rates || typeof rates !== 'object') continue;
+      for (const [agent, value] of Object.entries(rates)) {
         if (typeof value !== 'number') continue;
         scores.push({ agent, winRate: value });
       }

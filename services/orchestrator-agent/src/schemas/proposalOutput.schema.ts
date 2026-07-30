@@ -14,6 +14,9 @@ const ActivitySchema = z.object({
   country: z.string().optional(),
   satisfies: z.array(z.string()).optional(),
   ownerAgent: z.string().optional(),
+  // Not asked of the merge LLM — WorkflowEngine stamps it from the source slot
+  // proposal so the validator can score traveller interests against it.
+  category: z.string().optional(),
   description: z.string().optional(),
   // Ids of the input slot proposal(s) this activity was built from — the
   // authoritative link back to the originating proposal, copied verbatim

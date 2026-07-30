@@ -14,8 +14,13 @@ export class Traveller {
   @Column({ name: 'trip_id', type: 'uuid' })
   tripId!: string;
 
-  @Column({ name: 'user_id', type: 'uuid' })
-  userId!: string;
+  // Nullable since 1748800000001: co-travellers have no account.
+  @Column({ name: 'user_id', type: 'uuid', nullable: true })
+  userId!: string | null;
+
+  /** Display name from the form; null when the traveller was added without one. */
+  @Column({ type: 'varchar', length: 255, nullable: true })
+  name!: string | null;
 
   @Column({ type: 'jsonb', default: {} })
   preferences!: Record<string, unknown>;

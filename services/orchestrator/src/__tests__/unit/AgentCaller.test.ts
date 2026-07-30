@@ -100,6 +100,30 @@ describe('AgentCaller', () => {
     expect(result).toEqual(AGENT_RESULT);
   });
 
+  it('callValidatorAgent: forwards the trip-level brief so every traveller is scored against it', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(AGENT_RESULT),
+    });
+
+    await caller.callValidatorAgent('trip-1', 2, {}, { mustHaves: ['museus'], avoids: ['discotecas'] });
+
+    const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string) as Record<string, unknown>;
+    expect(sentBody['groupPreferences']).toEqual({ mustHaves: ['museus'], avoids: ['discotecas'] });
+  });
+
+  it('callValidatorAgent: omits the brief for a caller that has none', async () => {
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve(AGENT_RESULT),
+    });
+
+    await caller.callValidatorAgent('trip-1', 2, {});
+
+    const sentBody = JSON.parse(fetchMock.mock.calls[0][1].body as string) as Record<string, unknown>;
+    expect(sentBody['groupPreferences']).toBeUndefined();
+  });
+
   it('includes Authorization header on all calls', async () => {
     fetchMock.mockResolvedValue({
       ok: true,

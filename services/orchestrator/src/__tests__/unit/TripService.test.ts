@@ -209,7 +209,7 @@ describe('TripService.getTrip (admin debug view)', () => {
         { proposalId: 'sp-alice-1', agent: 'alice', city: 'Barcelona', date: '2026-07-01', slot: 'morning', activity: 'Sagrada Familia', status: 'accepted', reason: 'Included in the final itinerary.' },
         { proposalId: 'sp-bob-1', agent: 'bob', city: 'Barcelona', date: '2026-07-01', slot: 'afternoon', activity: 'Beach day', status: 'rejected', reason: 'Budget, duplicate, or a competing proposal was preferred.' },
       ],
-      satisfactionEstimates: { alice: 1, bob: 0 },
+      agentWinRates: { alice: 1, bob: 0 },
     },
     score: null,
     status: 'pending',
@@ -294,7 +294,7 @@ describe('TripService.getTrip (admin debug view)', () => {
     expect(result.commits.find((c) => c.agent === 'finance')?.action).toBe('accept');
   });
 
-  it('wires per-agent win-rate scores from satisfactionEstimates', async () => {
+  it('wires per-agent win-rate scores from agentWinRates', async () => {
     mockProposalFind.mockResolvedValue([orchestratorProposal()]);
     mockAgentLogFind.mockResolvedValue([agentLog()]);
 
@@ -345,7 +345,51 @@ describe('TripService.getTrip (admin debug view)', () => {
     expect(result.commits).toEqual([]);
   });
 
-  it('returns empty scores when satisfactionEstimates is missing', async () => {
+  it('reads the legacy satisfactionEstimates key for proposals stored before the rename', async () => {
+    mockProposalFind.mockResolvedValue([
+      orchestratorProposal({
+        content: { itinerary: [], decisions: [], satisfactionEstimates: { alice: 0.5 } } as unknown as Record<string, unknown>,
+      }),
+    ]);
+    mockAgentLogFind.mockResolvedValue([]);
+
+    const result = await service.getTrip(CONFIRMED_TRIP.id, true) as import('@/services/TripService').TripDebugView;
+
+    expect(result.scores).toEqual([{ agent: 'alice', winRate: 0.5 }]);
+  });
+
+  it('prefers agentWinRates when a proposal carries both keys', async () => {
+    mockProposalFind.mockResolvedValue([
+      orchestratorProposal({
+        content: {
+          itinerary: [],
+          decisions: [],
+          agentWinRates: { alice: 1 },
+          satisfactionEstimates: { alice: 0.1 },
+        } as unknown as Record<string, unknown>,
+      }),
+    ]);
+    mockAgentLogFind.mockResolvedValue([]);
+
+    const result = await service.getTrip(CONFIRMED_TRIP.id, true) as import('@/services/TripService').TripDebugView;
+
+    expect(result.scores).toEqual([{ agent: 'alice', winRate: 1 }]);
+  });
+
+  it('does not throw when the win-rate map is not an object', async () => {
+    mockProposalFind.mockResolvedValue([
+      orchestratorProposal({
+        content: { itinerary: [], decisions: [], agentWinRates: 'nope' } as unknown as Record<string, unknown>,
+      }),
+    ]);
+    mockAgentLogFind.mockResolvedValue([]);
+
+    const result = await service.getTrip(CONFIRMED_TRIP.id, true) as import('@/services/TripService').TripDebugView;
+
+    expect(result.scores).toEqual([]);
+  });
+
+  it('returns empty scores when the win-rate map is missing', async () => {
     mockProposalFind.mockResolvedValue([
       orchestratorProposal({ content: { itinerary: [], decisions: [] } as unknown as Record<string, unknown> }),
     ]);
@@ -380,5 +424,80 @@ describe('TripService.getTrip (admin debug view)', () => {
     mockTripFindOne.mockResolvedValue(null);
 
     await expect(service.getTrip('missing-trip', true)).rejects.toThrow();
+  });
+});
+
+describe('TripService.createTrip', () => {
+  let service: TripService;
+  let mockCreate: ReturnType<typeof vi.fn>;
+  let mockSave: (entity: unknown) => Promise<unknown>;
+
+  const BASE_INPUT = {
+    name: 'Lisbon',
+    destinations: [{ country: 'Portugal', city: 'Lisbon', nights: 3 }],
+    budgetCurrency: 'EUR' as const,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    const stateManager = new StateManager();
+    const engine: IOrchestrationEngine = { run: vi.fn(), setTripService: vi.fn() };
+    service = new TripService(stateManager, engine);
+
+    // Every repository shares one `create` spy so both the trip and the
+    // traveller rows it is asked to build can be asserted from one place.
+    mockCreate = vi.fn((entity: unknown) => entity);
+    mockSave = async (entity: unknown): Promise<unknown> =>
+      Array.isArray(entity)
+        ? entity
+        : { id: 'trip-new', createdAt: new Date('2026-01-01'), updatedAt: new Date('2026-01-01'), ...(entity as object) };
+    vi.mocked(AppDataSource.getRepository).mockReturnValue({ create: mockCreate } as never);
+    vi.mocked(AppDataSource.transaction).mockImplementation(
+      async (cb: unknown) => (cb as (m: { save: typeof mockSave }) => Promise<unknown>)({ save: mockSave }),
+    );
+  });
+
+  const createdTrip = (): Record<string, unknown> =>
+    mockCreate.mock.calls.map((c) => c[0] as Record<string, unknown>).find((e) => 'ownerId' in e)!;
+  const createdTravellers = (): Array<Record<string, unknown>> =>
+    mockCreate.mock.calls.map((c) => c[0] as Record<string, unknown>).filter((e) => 'tripId' in e);
+
+  it('persists the trip-level brief once, not per traveller', async () => {
+    await service.createTrip(OWNER_ID, {
+      ...BASE_INPUT,
+      preferences: { pace: 'low', mustHaves: ['museus'], avoids: ['discotecas'] },
+      travellers: [
+        { name: 'Ana', preferences: { persona: 'culture' } },
+        { name: 'Bruno', preferences: { persona: 'gastronomy' } },
+      ],
+    } as never);
+
+    expect(createdTrip().preferences).toEqual({ pace: 'low', mustHaves: ['museus'], avoids: ['discotecas'] });
+    for (const traveller of createdTravellers()) {
+      expect(traveller.preferences).not.toHaveProperty('pace');
+      expect(traveller.preferences).not.toHaveProperty('mustHaves');
+    }
+  });
+
+  it('persists each traveller name so per-traveller output can be labelled', async () => {
+    await service.createTrip(OWNER_ID, {
+      ...BASE_INPUT,
+      travellers: [{ name: 'Ana', preferences: {} }, { preferences: {} }],
+    } as never);
+
+    expect(createdTravellers().map((t) => t.name)).toEqual(['Ana', null]);
+  });
+
+  it('error: defaults an absent brief to an empty blob rather than failing', async () => {
+    await service.createTrip(OWNER_ID, { ...BASE_INPUT, travellers: [{ preferences: {} }] } as never);
+
+    expect(createdTrip().preferences).toEqual({});
+  });
+
+  it('error: a trip with no travellers still persists', async () => {
+    await service.createTrip(OWNER_ID, { ...BASE_INPUT, preferences: { pace: 'high' } } as never);
+
+    expect(createdTravellers()).toHaveLength(0);
+    expect(createdTrip().preferences).toEqual({ pace: 'high' });
   });
 });

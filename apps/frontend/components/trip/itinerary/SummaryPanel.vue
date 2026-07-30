@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import type { BudgetBreakdown } from '~/types/index'
+import type { BudgetBreakdown, TravellerScore } from '~/types/index'
 import type { DayVM } from '~/utils/itineraryViewModel'
 import TripItineraryPriceSummary from './PriceSummary.vue'
 import TripItineraryCostByDayChart from './CostByDayChart.vue'
 import TripItineraryNegotiationQuality from './NegotiationQuality.vue'
+import TripItineraryTravellerSatisfaction from './TravellerSatisfaction.vue'
 import TripItineraryAgentChips from './AgentChips.vue'
 import TripItinerarySummaryFooter from './SummaryFooter.vue'
 
@@ -17,6 +18,7 @@ const props = defineProps<{
   selectedDay: number
   fairnessScore: number | null
   satisfactionScore: number | null
+  travellerScores: TravellerScore[]
   constraintsPassed: boolean | null
   timingConflicts: number
   rounds: number | null
@@ -52,6 +54,8 @@ defineEmits<{ select: [index: number]; export: []; share: [] }>()
       :timing-conflicts="props.timingConflicts"
       :rounds="props.rounds"
     />
+
+    <TripItineraryTravellerSatisfaction :scores="props.travellerScores" />
 
     <TripItineraryAgentChips :agent-names="props.agentNames" />
 

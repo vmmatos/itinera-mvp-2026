@@ -1148,7 +1148,7 @@ describe('WorkflowEngine — parallel per-city merge calls (Part B)', () => {
 
     // satisfactionEstimates is computed deterministically in code now, not
     // read off either per-city LLM response (both fixtures carry none).
-    expect(mergedProposalContent()['satisfactionEstimates']).toBeDefined();
+    expect(mergedProposalContent()['agentWinRates']).toBeDefined();
   });
 
   it('happy path: streams per city — a fast city is processed/logged without waiting for a slower sibling still in flight', async () => {
@@ -1235,8 +1235,17 @@ describe('WorkflowEngine — parallel per-city merge calls (Part B)', () => {
 });
 
 describe('WorkflowEngine — group preferences reach the agents (pace / must-haves / avoids)', () => {
+  // MOCK_TRIP has no trip-level `preferences`, so these cases exercise the
+  // legacy path: the brief duplicated inside every traveller's own blob.
   function tripWithTravellers(travellers: Array<Record<string, unknown>>): typeof MOCK_TRIP {
     return { ...MOCK_TRIP, travellers } as unknown as typeof MOCK_TRIP;
+  }
+
+  function tripWithPreferences(
+    preferences: Record<string, unknown>,
+    travellers: Array<Record<string, unknown>> = [{ id: 't1' }],
+  ): typeof MOCK_TRIP {
+    return { ...MOCK_TRIP, preferences, travellers } as unknown as typeof MOCK_TRIP;
   }
 
   async function runThroughMerge(trip: typeof MOCK_TRIP): Promise<void> {
@@ -1268,7 +1277,58 @@ describe('WorkflowEngine — group preferences reach the agents (pace / must-hav
     await engine.run(TRIP_ID);
   }
 
-  it('happy path: reads pace/mustHaves/avoids from the travellers into every tourist slot', async () => {
+  it('happy path: reads the trip-level brief into every tourist slot', async () => {
+    await runThroughMerge(
+      tripWithPreferences({ pace: 'low', mustHaves: ['museus'], avoids: ['discotecas'] }),
+    );
+
+    const slots = vi.mocked(agentCaller.callPreferenceAgentSlots).mock.calls[0]![2];
+    expect(slots).not.toHaveLength(0);
+    for (const slot of slots) {
+      expect(slot.pace).toBe('low');
+      expect(slot.mustHaves).toEqual(['museus']);
+      expect(slot.avoids).toEqual(['discotecas']);
+    }
+  });
+
+  it('happy path: forwards the trip-level brief to the merge call', async () => {
+    await runThroughMerge(tripWithPreferences({ pace: 'high', mustHaves: ['praias'], avoids: [] }));
+
+    const preferences = vi.mocked(agentCaller.callOrchestratorMerge).mock.calls[0]![7];
+    expect(preferences).toEqual({ pace: 'high', mustHaves: ['praias'], avoids: [] });
+  });
+
+  it('the trip-level brief wins over stale per-traveller copies', async () => {
+    await runThroughMerge(
+      tripWithPreferences({ pace: 'low', mustHaves: ['museus'], avoids: ['discotecas'] }, [
+        { id: 't1', preferences: { pace: 'high', mustHaves: ['bares'], avoids: ['museus'] } },
+      ]),
+    );
+
+    const slots = vi.mocked(agentCaller.callPreferenceAgentSlots).mock.calls[0]![2];
+    expect(slots[0]!.pace).toBe('low');
+    expect(slots[0]!.mustHaves).toEqual(['museus']);
+    expect(slots[0]!.avoids).toEqual(['discotecas']);
+  });
+
+  it('maps a trip-level dealBreakers key onto avoids', async () => {
+    await runThroughMerge(tripWithPreferences({ dealBreakers: ['casinos'] }));
+
+    const slots = vi.mocked(agentCaller.callPreferenceAgentSlots).mock.calls[0]![2];
+    expect(slots[0]!.avoids).toEqual(['casinos']);
+  });
+
+  it('error: an empty trip-level blob falls back to the travellers (legacy trip)', async () => {
+    await runThroughMerge(
+      tripWithPreferences({}, [{ id: 't1', preferences: { pace: 'high', mustHaves: ['bares'] } }]),
+    );
+
+    const slots = vi.mocked(agentCaller.callPreferenceAgentSlots).mock.calls[0]![2];
+    expect(slots[0]!.pace).toBe('high');
+    expect(slots[0]!.mustHaves).toEqual(['bares']);
+  });
+
+  it('legacy: reads pace/mustHaves/avoids from the travellers into every tourist slot', async () => {
     await runThroughMerge(
       tripWithTravellers([
         { id: 't1', preferences: { pace: 'low', mustHaves: ['museus'], avoids: ['discotecas'] } },
@@ -1320,5 +1380,152 @@ describe('WorkflowEngine — group preferences reach the agents (pace / must-hav
     expect(agentCaller.callPreferenceAgentSlots).toHaveBeenCalledOnce();
     const slots = vi.mocked(agentCaller.callPreferenceAgentSlots).mock.calls[0]![2];
     expect(slots[0]!.pace).toBe('medium');
+  });
+});
+
+describe('WorkflowEngine — activity category backfill and validator hand-off', () => {
+  const SLOT_PROPOSALS = {
+    slotProposals: [
+      {
+        id: 'p1',
+        city: 'Barcelona',
+        date: '2026-08-10',
+        slot: 'morning',
+        activity: 'Museu Picasso',
+        estimatedCostPerPerson: 12,
+        category: 'museum',
+      },
+      {
+        id: 'p2',
+        city: 'Barcelona',
+        date: '2026-08-11',
+        slot: 'afternoon',
+        activity: 'Barceloneta',
+        estimatedCostPerPerson: 0,
+        // No category on the source proposal.
+      },
+    ],
+  };
+
+  const MERGED_WITH_IDS = {
+    itinerary: [
+      {
+        day: 1,
+        city: 'Barcelona',
+        activities: [
+          { activity: 'Museu Picasso', venue: 'Museu Picasso', proposalIds: ['p1'] },
+          { activity: 'Barceloneta', venue: 'Praia', proposalIds: ['p2'] },
+          { activity: 'Unknown source', venue: 'Somewhere', proposalIds: ['p-missing'] },
+          { activity: 'No link at all', venue: 'Elsewhere' },
+          { activity: 'Already categorised', venue: 'Bar', proposalIds: ['p1'], category: 'nightlife' },
+        ],
+      },
+    ],
+    accommodation: [],
+    _financeApproved: true,
+    _budgetFeasible: true,
+  };
+
+  async function runWithSlotProposals(trip: typeof MOCK_TRIP = MOCK_TRIP): Promise<void> {
+    setupCommonMocks(stateManager, eventPublisher);
+    vi.mocked(stateManager.getTrip).mockResolvedValue(trip as never);
+    vi.mocked(agentCaller.callLogisticsPlan).mockResolvedValue(ROUTE_GRAPH);
+    vi.mocked(agentCaller.callFinanceEstimate).mockResolvedValue(BUDGET_PLAN);
+    vi.mocked(agentCaller.callPreferenceAgentSlots).mockResolvedValue([
+      { content: SLOT_PROPOSALS, latencyMs: 10, tokensUsed: 1 },
+      { content: {}, latencyMs: 10, tokensUsed: 1 },
+      { content: {}, latencyMs: 10, tokensUsed: 1 },
+      { content: {}, latencyMs: 10, tokensUsed: 1 },
+    ]);
+    vi.mocked(agentCaller.callOrchestratorMerge).mockResolvedValue({
+      content: MERGED_WITH_IDS,
+      latencyMs: 20,
+      tokensUsed: 20,
+    });
+    vi.mocked(agentCaller.callFinanceAgent).mockResolvedValue({
+      content: { verdict: { approved: true, budgetFeasible: true, issues: [] } },
+      latencyMs: 10,
+      tokensUsed: 10,
+    });
+    vi.mocked(agentCaller.callValidatorAgent).mockResolvedValue({
+      content: { scoring: { overallScore: 80 } },
+      latencyMs: 10,
+      tokensUsed: 10,
+    });
+    driveHappyPath();
+
+    await engine.run(TRIP_ID);
+  }
+
+  function mergedActivities(): Array<Record<string, unknown>> {
+    const itinerary = mergedProposalContent()['itinerary'] as Array<Record<string, unknown>>;
+    return itinerary.flatMap((d) => (d['activities'] as Array<Record<string, unknown>>) ?? []);
+  }
+
+  it('happy path: stamps the source slot proposal category onto the merged activity', async () => {
+    await runWithSlotProposals();
+
+    const museum = mergedActivities().find((a) => a['activity'] === 'Museu Picasso');
+    expect(museum!['category']).toBe('museum');
+  });
+
+  it('leaves an activity whose source proposal has no category untouched', async () => {
+    await runWithSlotProposals();
+
+    const beach = mergedActivities().find((a) => a['activity'] === 'Barceloneta');
+    expect(beach!['category']).toBeUndefined();
+  });
+
+  it('error: an unknown or absent proposalId does not crash the merge', async () => {
+    await runWithSlotProposals();
+
+    const activities = mergedActivities();
+    expect(activities.find((a) => a['activity'] === 'Unknown source')!['category']).toBeUndefined();
+    expect(activities.find((a) => a['activity'] === 'No link at all')!['category']).toBeUndefined();
+  });
+
+  it('never overwrites a category the merge already produced', async () => {
+    await runWithSlotProposals();
+
+    const already = mergedActivities().find((a) => a['activity'] === 'Already categorised');
+    expect(already!['category']).toBe('nightlife');
+  });
+
+  it('happy path: forwards the trip-level must-haves and avoids to the validator', async () => {
+    await runWithSlotProposals({
+      ...MOCK_TRIP,
+      preferences: { pace: 'low', mustHaves: ['museus'], avoids: ['discotecas'] },
+    } as unknown as typeof MOCK_TRIP);
+
+    expect(agentCaller.callValidatorAgent).toHaveBeenCalledWith(
+      TRIP_ID,
+      2,
+      expect.any(Object),
+      { mustHaves: ['museus'], avoids: ['discotecas'] },
+    );
+  });
+
+  it('error: a validator failure still finalises the run instead of throwing', async () => {
+    setupCommonMocks(stateManager, eventPublisher);
+    vi.mocked(stateManager.getTrip).mockResolvedValue(MOCK_TRIP as never);
+    vi.mocked(agentCaller.callLogisticsPlan).mockResolvedValue(ROUTE_GRAPH);
+    vi.mocked(agentCaller.callFinanceEstimate).mockResolvedValue(BUDGET_PLAN);
+    vi.mocked(agentCaller.callPreferenceAgentSlots).mockResolvedValue([
+      { content: SLOT_PROPOSALS, latencyMs: 10, tokensUsed: 1 },
+    ]);
+    vi.mocked(agentCaller.callOrchestratorMerge).mockResolvedValue({
+      content: MERGED_WITH_IDS,
+      latencyMs: 20,
+      tokensUsed: 20,
+    });
+    vi.mocked(agentCaller.callFinanceAgent).mockResolvedValue({
+      content: { verdict: { approved: true, budgetFeasible: true, issues: [] } },
+      latencyMs: 10,
+      tokensUsed: 10,
+    });
+    vi.mocked(agentCaller.callValidatorAgent).mockRejectedValue(new Error('validator down'));
+    driveHappyPath();
+
+    await expect(engine.run(TRIP_ID)).resolves.toBeUndefined();
   });
 });

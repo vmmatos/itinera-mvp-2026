@@ -184,7 +184,7 @@ describe('POST /api/v1/validate/itinerary', () => {
 
   it('uses provided travellers without DB query', async () => {
     const travellers = [
-      { userId: VALID_UUID, preferences: { categories: ['culture'] } },
+      { travellerId: 'trav-1', label: 'Ana', preferences: { categories: ['culture'] } },
     ];
     const res = await request(buildApp())
       .post('/api/v1/validate/itinerary')
@@ -196,7 +196,7 @@ describe('POST /api/v1/validate/itinerary', () => {
 
   it('normalises the legacy dealBreakers key from the DB onto avoids', async () => {
     mockFind.mockResolvedValue([
-      { userId: VALID_UUID, preferences: { mustHaves: ['museus'], dealBreakers: ['discotecas'] } },
+      { id: 'trav-1', userId: VALID_UUID, name: 'Ana', preferences: { mustHaves: ['museus'], dealBreakers: ['discotecas'] } },
     ]);
 
     const res = await request(buildApp())
@@ -216,7 +216,9 @@ describe('POST /api/v1/validate/itinerary', () => {
   });
 
   it('scores a DB traveller against their must-haves rather than defaulting to 100', async () => {
-    mockFind.mockResolvedValue([{ userId: VALID_UUID, preferences: { mustHaves: ['museus'] } }]);
+    mockFind.mockResolvedValue([
+      { id: 'trav-1', userId: VALID_UUID, name: 'Ana', preferences: { mustHaves: ['museus'] } },
+    ]);
 
     const res = await request(buildApp())
       .post('/api/v1/validate/itinerary')
@@ -229,6 +231,211 @@ describe('POST /api/v1/validate/itinerary', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.scoring.overallScore).toBe(0);
+  });
+});
+
+describe('POST /api/v1/validate — traveller mapping', () => {
+  const CULTURE = { id: 'trav-1', userId: VALID_UUID, name: 'Ana', preferences: { persona: 'culture' } };
+  const ACTION  = { id: 'trav-2', userId: null, name: null, preferences: { persona: 'action' } };
+
+  // `POST /` delegates to a mocked ValidationService, so what matters here is the
+  // traveller shape the route hands it. Real scoring is asserted on /itinerary.
+  const travellersPassedToValidate = (): Array<{
+    travellerId: string;
+    label: string;
+    preferences: { mustHaves?: string[]; avoids?: string[]; categories?: string[] };
+  }> => mockValidate.mock.calls[0]![4];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFind.mockResolvedValue([]);
+    mockValidate.mockResolvedValue(validationResult);
+  });
+
+  it('happy path: derives each traveller categories from their persona', async () => {
+    mockFind.mockResolvedValue([CULTURE, ACTION]);
+
+    const res = await request(buildApp())
+      .post('/api/v1/validate')
+      .send({ tripId: VALID_UUID, round: 2, proposal: {} });
+
+    expect(res.status).toBe(200);
+    const travellers = travellersPassedToValidate();
+    expect(travellers[0]).toMatchObject({ travellerId: 'trav-1', label: 'Ana' });
+    expect(travellers[0]!.preferences.categories).toEqual(['culture', 'museum', 'history']);
+    expect(travellers[1]!.preferences.categories).toEqual(['hiking', 'adventure', 'outdoor']);
+  });
+
+  it('happy path: applies the trip-level brief to every traveller', async () => {
+    mockFind.mockResolvedValue([CULTURE, ACTION]);
+
+    await request(buildApp())
+      .post('/api/v1/validate')
+      .send({
+        tripId: VALID_UUID,
+        round: 2,
+        proposal: {},
+        groupPreferences: { mustHaves: ['museus'], avoids: ['discotecas'] },
+      });
+
+    for (const traveller of travellersPassedToValidate()) {
+      expect(traveller.preferences.mustHaves).toEqual(['museus']);
+      expect(traveller.preferences.avoids).toEqual(['discotecas']);
+    }
+  });
+
+  it('legacy: without groupPreferences it reads each traveller own brief', async () => {
+    mockFind.mockResolvedValue([
+      { ...CULTURE, preferences: { persona: 'culture', mustHaves: ['praias'], dealBreakers: ['casinos'] } },
+    ]);
+
+    await request(buildApp())
+      .post('/api/v1/validate')
+      .send({ tripId: VALID_UUID, round: 2, proposal: {} });
+
+    const traveller = travellersPassedToValidate()[0]!;
+    expect(traveller.preferences.mustHaves).toEqual(['praias']);
+    expect(traveller.preferences.avoids).toEqual(['casinos']);
+  });
+
+  it('labels a traveller with no name by their persona', async () => {
+    mockFind.mockResolvedValue([ACTION]);
+
+    await request(buildApp())
+      .post('/api/v1/validate')
+      .send({ tripId: VALID_UUID, round: 2, proposal: {} });
+
+    expect(travellersPassedToValidate()[0]!.label).toBe('Action & Hiking');
+  });
+
+  it('falls back to a positional label when there is neither name nor persona', async () => {
+    mockFind.mockResolvedValue([{ id: 'trav-9', userId: null, name: '  ', preferences: {} }]);
+
+    await request(buildApp())
+      .post('/api/v1/validate')
+      .send({ tripId: VALID_UUID, round: 2, proposal: {} });
+
+    expect(travellersPassedToValidate()[0]!.label).toBe('Traveller 1');
+  });
+
+  it('keys rows by traveller id, so a null user_id is still scored', async () => {
+    mockFind.mockResolvedValue([ACTION]);
+
+    await request(buildApp())
+      .post('/api/v1/validate')
+      .send({ tripId: VALID_UUID, round: 2, proposal: {} });
+
+    expect(travellersPassedToValidate()[0]!.travellerId).toBe('trav-2');
+  });
+
+  it('reads travellers in creation order so positional labels are stable', async () => {
+    mockFind.mockResolvedValue([CULTURE]);
+
+    await request(buildApp())
+      .post('/api/v1/validate')
+      .send({ tripId: VALID_UUID, round: 2, proposal: {} });
+
+    expect(mockFind).toHaveBeenCalledWith({ where: { tripId: VALID_UUID }, order: { createdAt: 'ASC' } });
+  });
+
+  it('error: a malformed preferences blob yields empty categories instead of throwing', async () => {
+    mockFind.mockResolvedValue([{ id: 'trav-1', userId: null, name: null, preferences: { categories: 3 } }]);
+
+    const res = await request(buildApp())
+      .post('/api/v1/validate')
+      .send({ tripId: VALID_UUID, round: 2, proposal: {} });
+
+    expect(res.status).toBe(200);
+    expect(travellersPassedToValidate()[0]!.preferences.categories).toEqual([]);
+  });
+
+  it('error: no travellers on the trip passes an empty list', async () => {
+    const res = await request(buildApp())
+      .post('/api/v1/validate')
+      .send({ tripId: VALID_UUID, round: 2, proposal: {} });
+
+    expect(res.status).toBe(200);
+    expect(travellersPassedToValidate()).toEqual([]);
+  });
+
+  it('error: 400 when groupPreferences is not an object', async () => {
+    const res = await request(buildApp())
+      .post('/api/v1/validate')
+      .send({ tripId: VALID_UUID, round: 2, proposal: {}, groupPreferences: 'nope' });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('error: 400 when groupPreferences carries more terms than allowed', async () => {
+    const res = await request(buildApp())
+      .post('/api/v1/validate')
+      .send({
+        tripId: VALID_UUID,
+        round: 2,
+        proposal: {},
+        groupPreferences: { mustHaves: Array.from({ length: 21 }, (_, i) => `t${i}`) },
+      });
+
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('POST /api/v1/validate/itinerary — per-traveller scores', () => {
+  const MIXED_PROPOSAL = {
+    itinerary: [
+      {
+        day: 1,
+        activities: [
+          { activity: 'Museu Nacional', venue: 'Museu Nacional', category: 'museum' },
+          { activity: 'Historic centre walk', venue: 'Ribeira', category: 'history' },
+        ],
+      },
+    ],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFind.mockResolvedValue([]);
+  });
+
+  it('happy path: two personas score differently against the same itinerary', async () => {
+    mockFind.mockResolvedValue([
+      { id: 'trav-1', userId: null, name: 'Ana', preferences: { persona: 'culture' } },
+      { id: 'trav-2', userId: null, name: 'Bruno', preferences: { persona: 'action' } },
+    ]);
+
+    const res = await request(buildApp())
+      .post('/api/v1/validate/itinerary')
+      .send({ tripId: VALID_UUID, proposal: MIXED_PROPOSAL });
+
+    const scores = res.body.scoring.scores;
+    expect(res.status).toBe(200);
+    expect(scores).toHaveLength(2);
+    expect(scores[0]).toMatchObject({ travellerId: 'trav-1', label: 'Ana', score: 100 });
+    expect(scores[1].score).toBe(0);
+    expect(res.body.fairness.stdDev).toBeGreaterThan(0);
+  });
+
+  it('accepts a legacy body traveller keyed by userId', async () => {
+    const res = await request(buildApp())
+      .post('/api/v1/validate/itinerary')
+      .send({
+        tripId: VALID_UUID,
+        proposal: MIXED_PROPOSAL,
+        travellers: [{ userId: 'user-7', preferences: { categories: ['culture'] } }],
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.scoring.scores[0].travellerId).toBe('user-7');
+    expect(res.body.scoring.scores[0].label).toBe('Traveller');
+  });
+
+  it('error: 400 when a body traveller has no id at all', async () => {
+    const res = await request(buildApp())
+      .post('/api/v1/validate/itinerary')
+      .send({ tripId: VALID_UUID, proposal: MIXED_PROPOSAL, travellers: [{ preferences: {} }] });
+
+    expect(res.status).toBe(400);
   });
 });
 
