@@ -59,3 +59,30 @@ globalThis.useTripPlannerStore = vi.fn(() => tripStoreMock)
 export const agentStreamMock = { events: { value: [] }, connected: { value: false } }
 // @ts-expect-error global shim
 globalThis.useAgentStream = vi.fn(() => agentStreamMock)
+
+// ── matchMedia stub ─────────────────────────────────────────────
+// happy-dom has no matchMedia implementation; VueUse's useColorMode
+// references it internally even though our store only uses the
+// 'dark'/'light' modes (no 'auto'), so it must exist to avoid a throw.
+if (!window.matchMedia) {
+  window.matchMedia = vi.fn().mockImplementation((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  })) as unknown as typeof window.matchMedia
+}
+
+// ── Theme store mock (overridable per test) ─────────────────────
+export const mockToggleTheme = vi.fn()
+export const themeStoreMock = {
+  mode: { value: 'dark' as 'dark' | 'light' },
+  isLight: false,
+  toggle: mockToggleTheme,
+}
+// @ts-expect-error global shim
+globalThis.useThemeStore = vi.fn(() => themeStoreMock)
