@@ -169,7 +169,9 @@ describe('useNegotiationStore — proposals backfill on connect()', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     expect(mockApiGet).toHaveBeenCalledWith('/api/v1/trips/trip-1/proposals')
-    expect(store.state.agents.find((a) => a.id === 'logistics')!.lastAction).toBe('sent route plan')
+    // Single cityStay (Dublin only) — matches negotiationReducer.test.ts's
+    // dedicated single-destination case, not the generic multi-city phrasing.
+    expect(store.state.agents.find((a) => a.id === 'logistics')!.lastAction).toBe('no inter-city transfers needed')
     expect(store.state.slots.length).toBeGreaterThan(0)
   })
 

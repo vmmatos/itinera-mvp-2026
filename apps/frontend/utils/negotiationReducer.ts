@@ -239,7 +239,8 @@ function handleWorkflowEvent(state: NegotiationState, event: AgentStreamEvent): 
 // a plan applied late (see seedLogisticsPlanIfMissing) looks identical to one
 // applied live.
 function applyLogisticsPlan(state: NegotiationState, cityStays: PlanCityStay[], timestamp: string): void {
-  setAgentState(state, 'logistics', 'idle', 'sent route plan')
+  const singleDestination = cityStays.length === 1
+  setAgentState(state, 'logistics', 'idle', singleDestination ? 'no inter-city transfers needed' : 'sent route plan')
   if (cityStays.length) {
     state.slots = buildDraftDays(cityStays)
   }
