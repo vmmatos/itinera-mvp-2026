@@ -1,19 +1,42 @@
+import { matchesPreferenceTerm } from '@itinera/shared';
+
+/**
+ * `pace` is deliberately absent here. It is generative guidance handed to the
+ * tourist agents and the merger — how densely to fill each day — not something a
+ * finished itinerary can be scored against. Do not add it as a scoring dimension.
+ */
 export interface TravellerPreference {
   userId: string;
   preferences: {
+    /** Explicitly requested themes — weighted double a plain category match. */
+    mustHaves?: string[];
+    /** Hard exclusions — one match vetoes this traveller's score outright. */
+    avoids?: string[];
+    /** Soft category interests. Not currently collected by the UI. */
     categories?: string[];
-    avoid?: string[];
   };
 }
 
 export interface TravellerScore {
   userId: string;
   score: number;
+  /** Which avoids were found in the itinerary. Absent when nothing was vetoed. */
+  vetoedBy?: string[];
 }
 
 export interface ScoringResult {
   scores: TravellerScore[];
   overallScore: number;
+}
+
+const MUST_HAVE_WEIGHT = 2;
+const CATEGORY_WEIGHT = 1;
+
+interface ItineraryTerms {
+  /** category + name + venue + description. */
+  forMustHaves: string[];
+  /** category + name + venue only — a passing mention in prose must not veto a trip. */
+  forAvoids: string[];
 }
 
 export class ScoringEngine {
@@ -22,27 +45,32 @@ export class ScoringEngine {
       return { scores: [], overallScore: 100 };
     }
 
-    const activityCategories = this.extractCategories(proposal);
+    const terms = this.extractTerms(proposal);
 
     const scores: TravellerScore[] = travellers.map((t) => {
-      const { categories = [], avoid = [] } = t.preferences;
-      const total = categories.length + avoid.length;
-      if (total === 0) {
+      const { mustHaves = [], categories = [], avoids = [] } = t.preferences;
+
+      const vetoedBy = avoids.filter((a) => terms.forAvoids.some((h) => matchesPreferenceTerm(a, h)));
+      if (vetoedBy.length > 0) {
+        return { userId: t.userId, score: 0, vetoedBy };
+      }
+
+      const denominator = mustHaves.length * MUST_HAVE_WEIGHT + categories.length * CATEGORY_WEIGHT;
+      if (denominator === 0) {
         return { userId: t.userId, score: 100 };
       }
 
-      const matched = categories.filter((c) =>
-        activityCategories.some((a) => a.toLowerCase() === c.toLowerCase()),
+      const matchedMustHaves = mustHaves.filter((m) =>
+        terms.forMustHaves.some((h) => matchesPreferenceTerm(m, h)),
+      ).length;
+      const matchedCategories = categories.filter((c) =>
+        terms.forMustHaves.some((h) => matchesPreferenceTerm(c, h)),
       ).length;
 
-      const avoided = avoid.filter((c) =>
-        activityCategories.some((a) => a.toLowerCase() === c.toLowerCase()),
-      ).length;
+      const earned = matchedMustHaves * MUST_HAVE_WEIGHT + matchedCategories * CATEGORY_WEIGHT;
+      const score = Math.max(0, Math.min(100, Math.round((earned / denominator) * 100)));
 
-      const raw = ((matched - avoided) / total) * 100;
-      const clamped = Math.max(0, Math.min(100, Math.round(raw)));
-
-      return { userId: t.userId, score: clamped };
+      return { userId: t.userId, score };
     });
 
     const overallScore = Math.round(
@@ -52,28 +80,37 @@ export class ScoringEngine {
     return { scores, overallScore };
   }
 
-  private extractCategories(proposal: Record<string, unknown>): string[] {
-    const categories: string[] = [];
+  private extractTerms(proposal: Record<string, unknown>): ItineraryTerms {
+    const forMustHaves: string[] = [];
+    const forAvoids: string[] = [];
+
     const itinerary = proposal['itinerary'];
-    if (!Array.isArray(itinerary)) return categories;
+    if (!Array.isArray(itinerary)) return { forMustHaves, forAvoids };
 
     for (const day of itinerary) {
       if (typeof day !== 'object' || day === null) continue;
-      const d = day as Record<string, unknown>;
-      const activities = d['activities'];
+      const activities = (day as Record<string, unknown>)['activities'];
       if (!Array.isArray(activities)) continue;
+
       for (const activity of activities) {
         if (typeof activity !== 'object' || activity === null) continue;
         const a = activity as Record<string, unknown>;
-        if (typeof a['category'] === 'string') {
-          categories.push(a['category']);
+
+        for (const key of ['category', 'name', 'activity', 'venue']) {
+          const value = a[key];
+          if (typeof value === 'string' && value.length > 0) {
+            forMustHaves.push(value);
+            forAvoids.push(value);
+          }
         }
-        if (typeof a['name'] === 'string') {
-          categories.push(a['name']);
+
+        const description = a['description'];
+        if (typeof description === 'string' && description.length > 0) {
+          forMustHaves.push(description);
         }
       }
     }
 
-    return categories;
+    return { forMustHaves, forAvoids };
   }
 }

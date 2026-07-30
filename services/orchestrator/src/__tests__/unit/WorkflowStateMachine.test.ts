@@ -10,6 +10,7 @@ const BASE_CONTEXT: WorkflowContext = {
   budgetTotal: 1800,
   budgetCurrency: 'EUR',
   preferredTransport: 'flight',
+  pace: 'medium',
   mustHaves: [],
   avoids: [],
   groupSize: 2,

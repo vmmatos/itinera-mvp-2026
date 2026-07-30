@@ -42,10 +42,11 @@ const MOCK_INPUT: CreateTripInput = {
       preferences: {
         persona: 'culture',
         flexibility: 'medium',
+        pace: 'medium',
         dietary: [],
         constraints: [],
         mustHaves: [],
-        dealBreakers: [],
+        avoids: [],
       },
     },
   ],

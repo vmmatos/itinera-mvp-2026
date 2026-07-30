@@ -1,6 +1,7 @@
 import path from 'path';
 import fs from 'fs';
-import type { AgentEvent, AgentName, AIMessage, IAIProvider, RouteGraph, BudgetPlan } from '@itinera/shared';
+import type { AgentEvent, AgentName, AIMessage, IAIProvider, RouteGraph, BudgetPlan, TravellerPreferences } from '@itinera/shared';
+import { DEFAULT_PREFERENCES } from '@itinera/shared';
 import { BaseOrchestratorAgent, ITINERARY_MAX_TOKENS } from '@/agents/BaseOrchestratorAgent';
 import { config } from '@/config';
 import { RabbitMQPublisher } from '@/services/RabbitMQPublisher';
@@ -32,6 +33,7 @@ export class ItineraryMerger extends BaseOrchestratorAgent {
     budgetPlan: BudgetPlan,
     context: string,
     targetCity: string,
+    preferences: TravellerPreferences = DEFAULT_PREFERENCES,
   ): Promise<AgentEvent> {
     return this.handleAsync(async () => {
       const cacheKey = `orch:${tripId}:merger:${round}:merge:${targetCity}`;
@@ -54,6 +56,9 @@ export class ItineraryMerger extends BaseOrchestratorAgent {
             '',
             'BUDGET PLAN (per-block allocations — stay within these limits):',
             JSON.stringify(budgetPlan, null, 2),
+            '',
+            'GROUP PREFERENCES (pace, must-haves, hard exclusions — see GROUP PREFERENCE RULES in the system prompt):',
+            JSON.stringify(preferences, null, 2),
             '',
             'TOURIST AGENT PROPOSALS (slot-based experiences to merge; only use the ones whose city matches the target city):',
             JSON.stringify(touristOutputs, null, 2),

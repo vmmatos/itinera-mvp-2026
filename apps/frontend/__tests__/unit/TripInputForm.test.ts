@@ -232,7 +232,7 @@ describe('TripInputForm — pre-fill from lastInput', () => {
           dietary:      [],
           constraints:  [],
           mustHaves:    ['sunset views'],
-          dealBreakers: ['crowded tours'],
+          avoids:       ['crowded tours'],
         },
       },
     ],
@@ -274,6 +274,38 @@ describe('TripInputForm — pre-fill from lastInput', () => {
     const cards = wrapper.findAll('.persona-card')
     const cultureCard = cards.find((c) => c.text().includes('Culture'))
     expect(cultureCard?.classes().some((c) => c.startsWith('selected-'))).toBe(true)
+  })
+
+  it('pre-fills the pace, must-have and avoid chips from lastInput', async () => {
+    tripStoreMock.lastInput = LAST_INPUT
+
+    const wrapper = mountForm()
+    await wrapper.vm.$nextTick()
+    await wrapper.find('[class*="btn-primary"]').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.findAll('[data-testid="must-have-chip"]').map((c) => c.text()).join(' ')).toContain('sunset views')
+    expect(wrapper.findAll('[data-testid="avoid-chip"]').map((c) => c.text()).join(' ')).toContain('crowded tours')
+  })
+
+  it('still pre-fills avoids from the legacy dealBreakers key', async () => {
+    const legacy = {
+      ...LAST_INPUT,
+      travellers: [
+        {
+          ...LAST_INPUT.travellers[0],
+          preferences: { ...LAST_INPUT.travellers[0].preferences, avoids: [], dealBreakers: ['casinos'] },
+        },
+      ],
+    }
+    tripStoreMock.lastInput = legacy
+
+    const wrapper = mountForm()
+    await wrapper.vm.$nextTick()
+    await wrapper.find('[class*="btn-primary"]').trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.findAll('[data-testid="avoid-chip"]').map((c) => c.text()).join(' ')).toContain('casinos')
   })
 
   it('does not pre-fill when lastInput is null', async () => {

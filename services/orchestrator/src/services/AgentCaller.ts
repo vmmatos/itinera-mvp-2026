@@ -1,5 +1,5 @@
 import { BaseService } from '@itinera/shared';
-import type { DateInput, TransportMode, RouteGraph, BudgetPlan, TouristSlotInput, RestrictionWarning } from '@itinera/shared';
+import type { DateInput, TransportMode, RouteGraph, BudgetPlan, TouristSlotInput, RestrictionWarning, TravellerPreferences } from '@itinera/shared';
 import jwt from 'jsonwebtoken';
 import { config } from '@/config';
 
@@ -193,12 +193,13 @@ export class AgentCaller extends BaseService {
     budgetPlan: BudgetPlan,
     context: string,
     targetCity: string,
+    preferences: TravellerPreferences,
   ): Promise<AgentCallResult> {
     const start = Date.now();
     const resp = await this.post<{ merged: AgentEventLike }>(
       'orchestrator-agent',
       '/merge',
-      { tripId, round, routeGraph, touristOutputs, budgetPlan, context, targetCity },
+      { tripId, round, routeGraph, touristOutputs, budgetPlan, context, targetCity, preferences },
     );
     return toAgentCallResult(resp.merged, Date.now() - start);
   }

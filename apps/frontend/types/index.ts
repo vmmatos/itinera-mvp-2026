@@ -177,12 +177,14 @@ export interface TravellerInput {
   preferences: {
     persona:      Persona
     flexibility:  Flexibility
-    pace?:        Flexibility
+    pace:         Flexibility
     budgetLimit?: number
     dietary:      string[]
     constraints:  string[]
     mustHaves:    string[]
-    dealBreakers: string[]
+    avoids:       string[]
+    /** @deprecated legacy name for `avoids` — only read when restoring old lastInput. */
+    dealBreakers?: string[]
   }
 }
 

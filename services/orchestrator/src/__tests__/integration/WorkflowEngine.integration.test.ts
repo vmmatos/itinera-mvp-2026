@@ -169,7 +169,7 @@ describe('WorkflowEngine integration — process restart recovery', () => {
       destinations: [{ country: 'Portugal', city: 'Porto', nights: 3 }, { country: 'Portugal', city: 'Lisbon', nights: 3 }],
       dates: { mode: 'fixed', startDate: '2026-09-10', endDate: '2026-09-16' },
       budgetTotal: 2400, budgetCurrency: 'EUR', preferredTransport: 'train',
-      mustHaves: [], avoids: [], groupSize: 4,
+      pace: 'medium', mustHaves: [], avoids: [], groupSize: 4,
       currentState: 'MERGE_AND_SCORE',
       routeGraph: ROUTE_GRAPH_NO_LEGS,
       budgetPlan: BUDGET_PLAN_FEASIBLE,

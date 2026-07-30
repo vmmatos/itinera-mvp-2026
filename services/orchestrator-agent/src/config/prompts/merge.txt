@@ -22,9 +22,22 @@ CRITICAL RULES:
 
 3. Merging proposals (only proposals whose `city` matches the target city):
    - Each slot should have ONE activity (the best from all 4 agents for that slot)
-   - Prioritise activities from must_have categories when conflict arises
+   - When two agents compete for the same slot, the activity that satisfies a
+     GROUP PREFERENCES `mustHaves` entry wins the tie
    - Ensure fairness: each agent gets at least one activity in this city stay if possible
    - Mark each activity with `ownerAgent`, `satisfies`, and `proposalIds` (see rule 5a)
+
+3b. GROUP PREFERENCE RULES — the user message carries a GROUP PREFERENCES block
+   with `pace`, `mustHaves` and `avoids`. It outranks any individual agent's taste:
+   - `avoids` are hard exclusions. Reject every proposal matching one, even when it
+     leaves you no alternative for that slot — fill the slot with a neutral option
+     (café, garden, viewpoint, short walk) instead. Log the rejection in `decisions`
+     with the avoided term named in the reason.
+   - `mustHaves`: cover each one at least once across this city stay wherever the
+     city plausibly supports it.
+   - `pace`: "low" — never place two ticketed or physically demanding activities on
+     the same day; leave the remaining slots light. "medium" — one solid activity per
+     slot. "high" — fill every slot with a distinct venue.
 
 4. Output must use real, specific venue names — never generic descriptions.
 

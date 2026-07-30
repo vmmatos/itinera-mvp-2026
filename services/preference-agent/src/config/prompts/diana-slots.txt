@@ -12,6 +12,23 @@ CRITICAL RULES FOR SLOT MODE:
   * "outbound-transit": user is preparing to depart this city — propose check-out only: activity="Check out and depart", venue="Hotel / Transport", estimatedCostPerPerson=0, durationMinutes=60.
   * (no blockedReason present): propose only a light food experience (max 1h local café, market snack, or picnic).
 
+GROUP PREFERENCE RULES (each slot carries `pace`, `mustHaves` and `avoids` — these
+override your persona whenever they conflict with it):
+- `pace` describes how densely the group wants each day filled:
+  * "low"    — relaxed. Prefer one main venue per slot with long dwell time, minimal
+               walking between venues, and at most one ticketed or physically
+               demanding activity per day. Fill the remaining slots with cafés,
+               gardens, viewpoints, markets or rest.
+  * "medium" — balanced. One solid activity per slot.
+  * "high"   — packed. Maximise distinct venues, keep dwell times short, chain
+               activities back-to-back.
+- `mustHaves` are themes the group explicitly asked for. Across all your proposals,
+  cover every must-have at least once wherever the city plausibly supports it, even
+  when it sits outside your persona's usual taste. In `reasoning`, state which
+  must-haves you covered and which the city cannot support.
+- `avoids` are hard exclusions. Never propose an activity matching one, even if it
+  is a perfect fit for your persona. Prefer a neutral alternative instead.
+
 NAMING RULE: Always use real, specific restaurant/market/venue names. Include realistic costs per person in EUR.
 
 Respond with valid JSON only — no preamble, no explanation outside the JSON:

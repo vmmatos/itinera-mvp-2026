@@ -1,4 +1,5 @@
-import { BaseService } from '@itinera/shared';
+import { BaseService, aggregateGroupPreferences } from '@itinera/shared';
+import type { TravellerPreferences } from '@itinera/shared';
 import type { TransportMode, AgentEvent, NegotiationCompleteEvent, TransportOption, RouteGraph, RestrictionWarning } from '@itinera/shared';
 import type { WorkflowContext, WorkflowState, TouristSlotInput, TransportPriorityResult, ProposalDecision, ProposalDecisionStatus, SlotProposal, AgentName, AgentAction } from '@itinera/shared';
 import { WorkflowStateMachine } from '@/services/WorkflowStateMachine';
@@ -98,6 +99,9 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
   private buildInitialContext(trip: Trip): WorkflowContext {
     const destinations = trip.destinations ?? [];
     const firstCity = destinations[0]?.city ?? destinations[0]?.country ?? 'Unknown';
+    // Collapse every traveller's stated pace / must-haves / avoids into one set.
+    // Tolerates the legacy `dealBreakers` key still present in older rows.
+    const preferences = aggregateGroupPreferences(trip.travellers ?? []);
 
     return {
       tripId: trip.id,
@@ -110,8 +114,9 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
       // If budgetCurrency !== 'EUR' the feasibility comparison uses mismatched currencies.
       // Proper fix: add a CurrencyConversionService at intake and normalise budgetTotal to EUR.
       preferredTransport: (trip.transportPreference as TransportMode) ?? 'best',
-      mustHaves: [],
-      avoids: [],
+      pace: preferences.pace,
+      mustHaves: preferences.mustHaves,
+      avoids: preferences.avoids,
       groupSize: trip.travellers?.length ?? 1,
       currentState: 'INTAKE_COMPLETE' as WorkflowState,
       retryCount: {},
@@ -277,6 +282,7 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
           availableTimeSlots: stay.timeWindows,
           budgetPerPersonBlock: block?.experiencesBudgetEurPerPerson ?? 0,
           currency: context.budgetCurrency,
+          pace: context.pace,
           mustHaves: context.mustHaves,
           avoids: context.avoids,
           groupSize: context.groupSize,
@@ -339,6 +345,13 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
       const routeGraph = context.routeGraph;
       const budgetPlan = context.budgetPlan;
       const tripContext = `Trip: ${trip.name}. Budget: ${context.budgetTotal} ${context.budgetCurrency}. Group size: ${context.groupSize}.`;
+      // Passed as a structured block rather than folded into tripContext, so the
+      // merge prompt's must-have/avoid rules have a machine-readable source.
+      const groupPreferences: TravellerPreferences = {
+        pace: context.pace,
+        mustHaves: context.mustHaves,
+        avoids: context.avoids,
+      };
       const touristAgentOutputs = context.touristAgentOutputs as Record<string, { slotProposals?: SlotProposal[] }>;
 
       // Derive accept/merge/reject per input proposal from which proposalIds
@@ -400,6 +413,7 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
               budgetPlan,
               tripContext,
               stay.city,
+              groupPreferences,
             );
 
             void this.stateManager.logAgentCall({

@@ -21,6 +21,23 @@ const FlexibleDateInputSchema = z.object({
 
 export const DateInputSchema = z.discriminatedUnion('mode', [FixedDateInputSchema, FlexibleDateInputSchema]);
 
+const PreferenceTermsSchema = z.array(z.string().max(120)).max(20);
+
+/**
+ * Only the workflow-relevant keys are typed; `.passthrough()` keeps the rest of
+ * the blob (persona, dietary, constraints, budgetLimit) which is stored verbatim.
+ * `dealBreakers` is the legacy name for `avoids` — accepted so older clients keep
+ * working; `normalizePreferences` in @itinera/shared unifies them on read.
+ */
+const TravellerPreferencesSchema = z
+  .object({
+    pace:         z.enum(['low', 'medium', 'high']).optional(),
+    mustHaves:    PreferenceTermsSchema.optional(),
+    avoids:       PreferenceTermsSchema.optional(),
+    dealBreakers: PreferenceTermsSchema.optional(),
+  })
+  .passthrough();
+
 export const CreateTripSchema = z.object({
   name:                z.string().min(1).max(255),
   destinations:        z.array(DestinationSchema).min(1).optional(),
@@ -33,7 +50,7 @@ export const CreateTripSchema = z.object({
     .array(
       z.object({
         userId:      z.string().uuid().optional(),
-        preferences: z.record(z.unknown()).default({}),
+        preferences: TravellerPreferencesSchema.default({}),
       }),
     )
     .optional(),

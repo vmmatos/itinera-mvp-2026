@@ -193,6 +193,43 @@ describe('POST /api/v1/validate/itinerary', () => {
     expect(res.status).toBe(200);
     expect(mockFind).not.toHaveBeenCalled();
   });
+
+  it('normalises the legacy dealBreakers key from the DB onto avoids', async () => {
+    mockFind.mockResolvedValue([
+      { userId: VALID_UUID, preferences: { mustHaves: ['museus'], dealBreakers: ['discotecas'] } },
+    ]);
+
+    const res = await request(buildApp())
+      .post('/api/v1/validate/itinerary')
+      .send({
+        tripId: VALID_UUID,
+        proposal: {
+          itinerary: [
+            { day: 1, activities: [{ activity: 'Night out', venue: 'Discotecas do Porto', category: 'nightlife' }] },
+          ],
+        },
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.scoring.scores[0].score).toBe(0);
+    expect(res.body.scoring.scores[0].vetoedBy).toEqual(['discotecas']);
+  });
+
+  it('scores a DB traveller against their must-haves rather than defaulting to 100', async () => {
+    mockFind.mockResolvedValue([{ userId: VALID_UUID, preferences: { mustHaves: ['museus'] } }]);
+
+    const res = await request(buildApp())
+      .post('/api/v1/validate/itinerary')
+      .send({
+        tripId: VALID_UUID,
+        proposal: {
+          itinerary: [{ day: 1, activities: [{ activity: 'Hike', venue: 'Serra da Estrela', category: 'outdoor' }] }],
+        },
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.scoring.overallScore).toBe(0);
+  });
 });
 
 describe('POST /api/v1/validate/constraints', () => {
