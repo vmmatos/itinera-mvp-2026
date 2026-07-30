@@ -24,7 +24,7 @@ watch(
     <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:var(--hair);min-height:40px" class="mono">
       <span style="font-size:11px;color:var(--fg-2);text-transform:uppercase;letter-spacing:.08em">decision stream · orchestrator + proposals</span>
       <span style="color:var(--green);display:flex;align-items:center;gap:6px;font-size:11px;text-transform:uppercase;letter-spacing:.08em">
-        <span style="width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green)" class="pulse-green" />
+        <span style="width:6px;height:6px;border-radius:50%;background:var(--lime);box-shadow:0 0 8px var(--lime)" class="pulse-green" />
         live
       </span>
     </div>

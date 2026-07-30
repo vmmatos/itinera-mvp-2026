@@ -70,7 +70,7 @@ defineEmits<{ select: [index: number] }>()
 .rail { display: flex; gap: 0; min-width: min-content; position: relative; }
 .seg-group { display: flex; flex-direction: column; position: relative; padding-top: 20px; }
 .seg-label { position: absolute; top: 0; left: 0; right: 8px; display: flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 10px; color: var(--fg-2); text-transform: uppercase; letter-spacing: .08em; white-space: nowrap; }
-.seg-label::before { content: ""; width: 5px; height: 5px; background: var(--green); border-radius: 50%; }
+.seg-label::before { content: ""; width: 5px; height: 5px; background: var(--lime); border-radius: 50%; }
 .seg-label .bracket { flex: 1; height: 1px; background: var(--line-2); margin-left: 2px; }
 .days-row { display: flex; gap: 6px; }
 .transit-gap { align-self: stretch; display: flex; align-items: center; padding-top: 20px; }

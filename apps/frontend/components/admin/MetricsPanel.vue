@@ -290,7 +290,7 @@ const agentAutonomy = computed(() => {
   background: var(--fg-3);
   transition: width 0.4s ease;
 }
-.mb-row[data-c="g"] .f { background: var(--green); }
+.mb-row[data-c="g"] .f { background: var(--lime); }
 .mb-row[data-c="a"] .f { background: var(--amber); }
 .mb-row[data-c="b"] .f { background: var(--blue); }
 .mb-row[data-c="m"] .f { background: var(--magenta); }

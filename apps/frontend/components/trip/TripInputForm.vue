@@ -866,6 +866,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
         <span>{{ step <= 2 ? 'draft' : step === 3 ? 'negotiating' : step === 4 ? 'review' : 'confirmed' }}</span>
       </div>
       <div style="display:flex;gap:8px;align-items:center">
+        <ThemeToggle />
         <button v-if="step <= 2" class="btn" @click="emit('cancel')">Cancel</button>
         <div class="avatar">{{ initials(currentUserName) }}</div>
       </div>

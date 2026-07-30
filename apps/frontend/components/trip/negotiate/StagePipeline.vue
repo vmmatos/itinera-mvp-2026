@@ -54,11 +54,11 @@ const stageLabel = computed(() => {
         <div style="height:2px;background:var(--bg-3);margin-top:8px;position:relative;overflow:hidden">
           <div
             v-if="stage.status === 'done'"
-            style="position:absolute;inset:0;background:var(--green)"
+            style="position:absolute;inset:0;background:var(--lime)"
           />
           <div
             v-else-if="stage.status === 'running'"
-            style="position:absolute;top:0;bottom:0;left:-40%;width:40%;background:var(--green);animation:indet 1.6s ease-in-out infinite"
+            style="position:absolute;top:0;bottom:0;left:-40%;width:40%;background:var(--lime);animation:indet 1.6s ease-in-out infinite"
           />
         </div>
       </div>

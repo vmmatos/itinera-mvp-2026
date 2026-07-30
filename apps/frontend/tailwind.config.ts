@@ -12,50 +12,53 @@ export default {
     extend: {
       // ── Colours (from design system) ──────────────────────────
       colors: {
-        // Backgrounds
-        'bg-0': '#0a0a0a',
-        'bg-1': '#111111',
-        'bg-2': '#161616',
-        'bg-3': '#1c1c1c',
+        // Backgrounds — reference the runtime CSS custom properties (see
+        // assets/css/globals.css) so utility classes track the active
+        // [data-theme] instead of a hex baked in at build time.
+        'bg-0': 'var(--bg-0)',
+        'bg-1': 'var(--bg-1)',
+        'bg-2': 'var(--bg-2)',
+        'bg-3': 'var(--bg-3)',
 
         // Foregrounds
-        'fg-0': '#f2f2f2',
-        'fg-1': '#c9c9c9',
-        'fg-2': '#a1a1a1',
-        'fg-3': '#666666',
-        'fg-4': '#3a3a3a',
+        'fg-0': 'var(--fg-0)',
+        'fg-1': 'var(--fg-1)',
+        'fg-2': 'var(--fg-2)',
+        'fg-3': 'var(--fg-3)',
+        'fg-4': 'var(--fg-4)',
 
         // Lines / borders
-        'line-1': '#1f1f1f',
-        'line-2': '#272727',
-        'line-3': '#333333',
+        'line-1': 'var(--line-1)',
+        'line-2': 'var(--line-2)',
+        'line-3': 'var(--line-3)',
 
-        // Accent — electric green
+        // Accent — electric green (text/icon/border role; --lime/--lime-2
+        // in globals.css hold the always-bright fill role)
         green: {
-          DEFAULT: '#00ff88',
-          dim:     '#00cc6e',
-          dark:    '#00b85f',
-          bg:      'rgba(0,255,136,0.08)',
-          line:    'rgba(0,255,136,0.32)',
+          DEFAULT: 'var(--green)',
+          dim:     'var(--green-dim)',
+          dark:    'var(--green-dark)',
+          bg:      'var(--green-bg)',
+          line:    'var(--green-line)',
         },
 
         // Agent colours (each agent has a distinct accent)
         amber: {
-          DEFAULT: '#ffb547',
-          bg:      'rgba(255,181,71,0.08)',
-          line:    'rgba(255,181,71,0.32)',
+          DEFAULT: 'var(--amber)',
+          bg:      'var(--amber-bg)',
+          line:    'var(--amber-line)',
         },
         blue: {
-          DEFAULT: '#5b9dff',
-          bg:      'rgba(91,157,255,0.08)',
-          line:    'rgba(91,157,255,0.32)',
+          DEFAULT: 'var(--blue)',
+          bg:      'var(--blue-bg)',
+          line:    'var(--blue-line)',
         },
         magenta: {
-          DEFAULT: '#d36bff',
-          bg:      'rgba(211,107,255,0.08)',
-          line:    'rgba(211,107,255,0.32)',
+          DEFAULT: 'var(--magenta)',
+          bg:      'var(--magenta-bg)',
+          line:    'var(--magenta-line)',
         },
-        red: '#ff5d5d',
+        red: 'var(--red)',
       },
 
       // ── Typography ────────────────────────────────────────────
