@@ -84,6 +84,7 @@ const AGENTS = [
     <header class="border-b border-line-2 px-6 py-4 flex items-center justify-between">
       <AppLogo :size="20" />
       <div class="flex items-center gap-4">
+        <ThemeToggle />
         <span class="text-fg-2 text-13">{{ authStore.user?.email }}</span>
         <NuxtLink
           v-if="authStore.isAdmin"

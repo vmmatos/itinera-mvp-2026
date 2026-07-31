@@ -36,7 +36,7 @@ const max = computed(() => dayCostMax(props.days))
 <style scoped>
 .daycost { display: flex; align-items: flex-end; gap: 4px; height: 52px; margin-top: 6px; }
 .daycost .b { flex: 1; background: var(--bg-3); border-top: 1px solid var(--line-3); position: relative; cursor: pointer; min-height: 4px; }
-.daycost .b.sel { background: var(--green); border-color: var(--green); }
+.daycost .b.sel { background: var(--lime); border-color: var(--lime); }
 .daycost .b:hover { background: var(--line-3); }
 .daycost .b.sel:hover { background: var(--green-dim); }
 .daycost-x { display: flex; gap: 4px; margin-top: 4px; }

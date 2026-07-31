@@ -97,6 +97,108 @@
   --tangerine-bg: rgba(255, 140, 66, 0.08);
   --tangerine-line: rgba(255, 140, 66, 0.32);
 
+  /* Fill-only accent (always bright, both themes) — CTAs, bars, dots */
+  --lime: #00ff88;
+  --lime-2: #00e879;
+  --on-lime: #00301a;
+
+  /* Elevation — dark mode uses none, depth comes from surface steps */
+  --shadow: none;
+  --shadow-lift: none;
+}
+
+/* ── Light theme overrides ──────────────────────────────────── */
+[data-theme='light'] {
+  --bg-0: #f7f7f4;
+  --bg-1: #ffffff;
+  --bg-2: #f0f0ec;
+  --bg-3: #e6e6e0;
+
+  --fg-0: #141413;
+  --fg-1: #3b3b38;
+  --fg-2: #6a6a64;
+  --fg-3: #9a9a92;
+  --fg-4: #c2c2b8;
+
+  --line-1: #ececE6;
+  --line-2: #deded7;
+  --line-3: #cbcbc2;
+
+  /* --green now means "ink" — text/icon/border role — not the bright fill */
+  --green: #017a43;
+  --green-dim: var(--lime-2);
+  --green-ink: #017a43;
+  --green-ink-2: #016638;
+  --green-bg: rgba(0, 200, 110, 0.14);
+  --green-line: rgba(1, 122, 67, 0.38);
+
+  --amber: #a9670a;
+  --amber-bg: rgba(226, 150, 12, 0.14);
+  --amber-line: rgba(169, 103, 10, 0.36);
+
+  --blue: #1e5bbd;
+  --blue-bg: rgba(47, 111, 214, 0.12);
+  --blue-line: rgba(30, 91, 189, 0.34);
+
+  --magenta: #b23bd0;
+  --magenta-bg: rgba(178, 59, 208, 0.12);
+  --magenta-line: rgba(178, 59, 208, 0.34);
+
+  --red: #d63a3a;
+
+  --shadow: 0 1px 2px rgba(20, 20, 19, 0.04), 0 2px 8px rgba(20, 20, 19, 0.05);
+  --shadow-lift: 0 2px 4px rgba(20, 20, 19, 0.05), 0 8px 24px rgba(20, 20, 19, 0.08);
+}
+
+/* ── Forced-dark subtree — unauthenticated pages (login/callback) stay
+   dark regardless of the visitor's persisted theme choice. Custom
+   properties resolve by nearest DOM ancestor, so redeclaring the full
+   dark set here overrides [data-theme="light"] for this subtree only,
+   without touching the persisted 'itn-theme' value. ─────────────── */
+.theme-force-dark {
+  --bg-0: #0a0a0a;
+  --bg-1: #111111;
+  --bg-2: #161616;
+  --bg-3: #1c1c1c;
+
+  --fg-0: #f2f2f2;
+  --fg-1: #c9c9c9;
+  --fg-2: #a1a1a1;
+  --fg-3: #666666;
+  --fg-4: #3a3a3a;
+
+  --line-1: #1f1f1f;
+  --line-2: #272727;
+  --line-3: #333333;
+
+  --green: #00ff88;
+  --green-dim: #00cc6e;
+  --green-bg: rgba(0, 255, 136, 0.08);
+  --green-line: rgba(0, 255, 136, 0.32);
+
+  --amber: #ffb547;
+  --amber-bg: rgba(255, 181, 71, 0.08);
+  --amber-line: rgba(255, 181, 71, 0.32);
+
+  --blue: #5b9dff;
+  --blue-bg: rgba(91, 157, 255, 0.08);
+  --blue-line: rgba(91, 157, 255, 0.32);
+
+  --magenta: #d36bff;
+  --magenta-bg: rgba(211, 107, 255, 0.08);
+  --magenta-line: rgba(211, 107, 255, 0.32);
+
+  --red: #ff5d5d;
+
+  --shadow: none;
+  --shadow-lift: none;
+}
+
+/* ── Theme swap transition — narrowly scoped, avoids fighting the
+   pulse/spin/shimmer keyframe animations declared later ─────── */
+body, .card, .card-sm, .gcard, .summary-card, .suggest, .persona-card,
+.btn, .input, .badge, .daycell, header, .app-bar {
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
 }
 
 /* ── Base reset ─────────────────────────────────────────────── */
@@ -198,6 +300,7 @@ html, body {
   border: var(--hair);
   border-radius: var(--r-3);
   padding: var(--s-4) var(--s-5);
+  box-shadow: var(--shadow);
 }
 
 .card-sm {
@@ -205,6 +308,7 @@ html, body {
   border: var(--hair);
   border-radius: var(--r-2);
   padding: var(--s-3) var(--s-4);
+  box-shadow: var(--shadow);
 }
 
 /* Button */
@@ -234,16 +338,16 @@ html, body {
 .btn:active { opacity: 0.8; }
 
 .btn-primary {
-  background: var(--green);
-  color: #000;
-  border-color: var(--green);
+  background: var(--lime);
+  color: var(--on-lime);
+  border-color: var(--lime);
   font-weight: 600;
 }
 
 .btn-primary:hover {
   background: var(--green-dim);
   border-color: var(--green-dim);
-  color: #000;
+  color: var(--on-lime);
 }
 
 /* Input */
@@ -350,7 +454,7 @@ html, body {
 
 .score-bar-fill {
   height: 100%;
-  background: var(--green);
+  background: var(--lime);
   border-radius: 2px;
   transition: width 0.6s ease;
 }
@@ -617,7 +721,7 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   left: 0;
   top: 0;
   bottom: 0;
-  background: var(--green);
+  background: var(--lime);
 }
 
 .budget .fill::after {
@@ -627,7 +731,7 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   top: -4px;
   width: 2px;
   height: 12px;
-  background: var(--green);
+  background: var(--lime);
 }
 
 .budget .val {
@@ -673,6 +777,7 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   padding: 8px 10px;
   border: var(--hair);
   background: var(--bg-1);
+  box-shadow: var(--shadow);
 }
 
 .gcard .gav {
@@ -740,8 +845,8 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--green);
-  box-shadow: 0 0 8px var(--green);
+  background: var(--lime);
+  box-shadow: 0 0 8px var(--lime);
 }
 
 .summary-card {
@@ -749,6 +854,7 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   background: var(--bg-2);
   padding: var(--s-6);
   margin-bottom: var(--s-5);
+  box-shadow: var(--shadow);
 }
 
 .summary-card h3 {
@@ -785,6 +891,7 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   background: var(--bg-2);
   padding: var(--s-5);
   margin-bottom: var(--s-5);
+  box-shadow: var(--shadow);
 }
 
 .suggest h4 {
@@ -833,6 +940,7 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   transition: background 0.1s, border-color 0.1s;
   flex: 1;
   min-width: 0;
+  box-shadow: var(--shadow);
 }
 
 .persona-card:hover { background: var(--bg-2); }

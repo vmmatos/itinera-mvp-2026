@@ -163,8 +163,8 @@ function toggleRound(round: number): void {
 .live { color: var(--green); display: flex; align-items: center; gap: 6px; }
 .pulse {
   width: 6px; height: 6px; border-radius: 50%;
-  background: var(--green);
-  box-shadow: 0 0 8px var(--green);
+  background: var(--lime);
+  box-shadow: 0 0 8px var(--lime);
   animation: pulse 1.4s infinite;
 }
 .feed {
