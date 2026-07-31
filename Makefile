@@ -1,4 +1,4 @@
-.PHONY: dev infra up stop logs shell kong-config db-migrate db-seed test test-unit test-local test-scenarios test-smoke flush-transport-cache help
+.PHONY: dev infra up stop logs shell kong-config build-shared db-migrate db-seed test test-unit test-local test-scenarios test-smoke flush-transport-cache help
 
 DC := docker compose \
 	-f dev/docker-compose.yaml \
@@ -9,7 +9,7 @@ DC := docker compose \
 .DEFAULT_GOAL := help
 
 ## Start all infrastructure, run DB migrations + seed, apply Kong config
-dev:
+dev: build-shared
 	$(DC) --profile services up -d
 	@echo "Waiting for PostgreSQL to be ready..."
 	@until docker inspect --format='{{.State.Health.Status}}' itinera-postgres-db 2>/dev/null | grep -q healthy; do sleep 2; done
@@ -22,7 +22,7 @@ infra:
 	$(DC) up -d postgres redis rabbitmq
 
 ## Start one service:  make up s=orchestrator
-up:
+up: build-shared
 	$(DC) up -d $(s)
 
 ## Stop one service:   make stop s=orchestrator
@@ -42,12 +42,18 @@ kong-config:
 	@set -a && source dev/.dev.env && source dev/.secrets.env && set +a && \
 		./infrastructure/kong/configure.sh
 
+## Build @itinera/shared on the host (every service bind-mounts services/shared/dist read-only;
+## on a fresh clone that dir doesn't exist yet, so Docker mounts it empty and breaks all services)
+build-shared:
+	yarn install
+	yarn workspace @itinera/shared build
+
 ## Run TypeORM migrations (spins up a temporary orchestrator container)
-db-migrate:
+db-migrate: build-shared
 	$(DC) run --rm orchestrator yarn migration:run
 
 ## Seed test data (spins up a temporary orchestrator container)
-db-seed:
+db-seed: build-shared
 	$(DC) run --rm orchestrator yarn seed
 
 ## Run tests — all or one service:  make test s=validator
@@ -63,7 +69,7 @@ else
 endif
 
 ## Unit tests only (Docker)
-test-unit:
+test-unit: build-shared
 	$(DC) run --rm orchestrator yarn test:unit
 
 ## Run tests locally without Docker — all or one service:  make test-local s=preference-agent
