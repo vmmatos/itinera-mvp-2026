@@ -12,7 +12,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@nuxtjs/i18n": "^8.5.0",
+    "@nuxtjs/i18n": "^10.6.0",
     "@pinia/nuxt": "^0.5.1",
     "@vueuse/nuxt": "^10.11.0",
     "axios": "^1.7.2",
