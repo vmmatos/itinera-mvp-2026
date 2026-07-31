@@ -2,6 +2,8 @@
 import { agentColorToken } from '~/utils/agentColorTokens'
 import { AGENT_COLOURS, type AgentName } from '~/types/index'
 
+const { t } = useI18n()
+
 const props = defineProps<{
   agentNames: string[]
 }>()
@@ -14,7 +16,7 @@ function colorFor(name: string): string {
 
 <template>
   <div class="sum-sec">
-    <h4>Agents involved</h4>
+    <h4>{{ t('trip.itinerary.agentChips.title') }}</h4>
     <div class="agents">
       <span
         v-for="name in props.agentNames"

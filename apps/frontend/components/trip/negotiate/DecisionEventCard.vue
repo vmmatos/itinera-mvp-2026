@@ -3,12 +3,14 @@ import { computed } from 'vue'
 import type { DecisionStreamEvent } from '~/types/index'
 import { agentColorToken } from '~/utils/agentColorTokens'
 
+const { t } = useI18n()
+
 const props = defineProps<{ event: DecisionStreamEvent }>()
 
 const colorVar = computed(() => agentColorToken(props.event.color))
 const isOrchestrator = computed(() => props.event.kind === 'workflow')
 
-const chipLabel = computed(() => (props.event.chip === 'pending' ? 'awaiting orchestrator' : props.event.chip))
+const chipLabel = computed(() => (props.event.chip === 'pending' ? t('trip.negotiate.decisionEventCard.awaitingOrchestrator') : props.event.chip))
 const chipColor = computed(() => {
   switch (props.event.chip) {
     case 'accepted':
@@ -50,7 +52,7 @@ const time = computed(() => {
       <span v-for="[k, v] in event.facts" :key="k">{{ k }} <b style="color:var(--fg-0);font-weight:500">{{ v }}</b></span>
     </div>
     <div v-if="event.decisionReason" style="margin-top:6px;font-size:12px;color:var(--fg-3);border-top:1px dashed var(--line-1);padding-top:6px">
-      <b style="color:var(--tangerine);font-weight:500">orchestrator</b> · {{ event.decisionReason }}
+      <b style="color:var(--tangerine);font-weight:500">{{ t('trip.negotiate.decisionEventCard.orchestrator') }}</b> · {{ event.decisionReason }}
     </div>
   </div>
 </template>

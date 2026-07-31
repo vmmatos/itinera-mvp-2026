@@ -1,4 +1,6 @@
 <script setup lang="ts">
+const { t } = useI18n()
+
 const props = defineProps<{
   fairnessScore: number | null
   satisfactionScore: number | null
@@ -10,27 +12,27 @@ const props = defineProps<{
 
 <template>
   <div class="sum-sec">
-    <h4>Negotiation quality</h4>
+    <h4>{{ t('trip.itinerary.negotiationQuality.title') }}</h4>
 
     <div v-if="props.fairnessScore !== null" class="q-row">
-      <div class="qt"><span>Fairness</span><b>{{ Math.round(props.fairnessScore) }}%</b></div>
+      <div class="qt"><span>{{ t('trip.itinerary.negotiationQuality.fairness') }}</span><b>{{ Math.round(props.fairnessScore) }}%</b></div>
       <div class="qbar"><div class="f" :style="{ width: Math.round(props.fairnessScore) + '%' }" /></div>
     </div>
     <div v-if="props.satisfactionScore !== null" class="q-row">
-      <div class="qt"><span>Satisfaction</span><b>{{ Math.round(props.satisfactionScore) }}%</b></div>
+      <div class="qt"><span>{{ t('trip.itinerary.negotiationQuality.satisfaction') }}</span><b>{{ Math.round(props.satisfactionScore) }}%</b></div>
       <div class="qbar"><div class="f" :style="{ width: Math.round(props.satisfactionScore) + '%' }" /></div>
     </div>
 
     <div v-if="props.constraintsPassed !== null" class="q-meta">
-      <span>Constraints</span>
-      <span class="v" :class="{ ok: props.constraintsPassed }">{{ props.constraintsPassed ? '✓ passed' : '✗ failed' }}</span>
+      <span>{{ t('trip.itinerary.negotiationQuality.constraints') }}</span>
+      <span class="v" :class="{ ok: props.constraintsPassed }">{{ props.constraintsPassed ? t('trip.itinerary.negotiationQuality.passed') : t('trip.itinerary.negotiationQuality.failed') }}</span>
     </div>
     <div class="q-meta">
-      <span>Timing conflicts</span>
-      <span class="v" :class="{ ok: props.timingConflicts === 0 }">{{ props.timingConflicts }} detected</span>
+      <span>{{ t('trip.itinerary.negotiationQuality.timingConflicts') }}</span>
+      <span class="v" :class="{ ok: props.timingConflicts === 0 }">{{ props.timingConflicts }} {{ t('trip.itinerary.negotiationQuality.detected') }}</span>
     </div>
     <div v-if="props.rounds !== null" class="q-meta">
-      <span>Negotiation rounds</span>
+      <span>{{ t('trip.itinerary.negotiationQuality.negotiationRounds') }}</span>
       <span class="v">{{ props.rounds }}</span>
     </div>
   </div>

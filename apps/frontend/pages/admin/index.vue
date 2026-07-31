@@ -7,6 +7,7 @@ definePageMeta({
   middleware: 'auth',
 })
 
+const { t } = useI18n()
 const authStore = useAuthStore()
 const api = useApi()
 
@@ -40,7 +41,7 @@ const fetchTrips = async (): Promise<void> => {
     const res = await api.get<{ success: true; data: Trip[] }>('/api/v1/trips?view=admin')
     trips.value = res.data.data ?? []
   } catch (e: unknown) {
-    error.value = e instanceof Error ? e.message : 'Failed to load trips'
+    error.value = e instanceof Error ? e.message : t('admin.index.loadTripsFailed')
   } finally {
     loading.value = false
   }
@@ -57,25 +58,26 @@ onMounted(() => {
       <AppLogo :size="20" />
       <div class="flex items-center gap-4">
         <ThemeToggle />
+        <LanguageSwitcher />
         <span class="text-fg-2 text-13">{{ authStore.user?.email }}</span>
         <NuxtLink
           to="/dashboard"
           class="btn text-13"
           style="font-family:var(--mono);color:var(--amber);border-color:var(--amber-line)">
-          ← Dashboard
+          {{ t('admin.index.backToDashboard') }}
         </NuxtLink>
-        <button class="btn text-13" @click="authStore.logout()">Sign out</button>
+        <button class="btn text-13" @click="authStore.logout()">{{ t('nav.signOut') }}</button>
       </div>
     </header>
 
   <div class="admin-index">
     <div class="admin-index-head">
-      <span class="role">admin</span>
-      <h1>debug dashboard</h1>
-      <p class="sub">select a trip to inspect its negotiation internals</p>
+      <span class="role">{{ t('admin.adminBar.role') }}</span>
+      <h1>{{ t('admin.index.debugDashboard') }}</h1>
+      <p class="sub">{{ t('admin.index.selectTripHint') }}</p>
     </div>
 
-    <div v-if="loading" class="state">loading trips…</div>
+    <div v-if="loading" class="state">{{ t('admin.index.loadingTrips') }}</div>
     <div v-else-if="error" class="state error">{{ error }}</div>
 
     <template v-else>
@@ -84,16 +86,16 @@ onMounted(() => {
           v-model="search"
           type="text"
           class="search-input"
-          placeholder="search by user name or email…"
+          :placeholder="t('admin.index.searchPlaceholder')"
           autocomplete="off"
           maxlength="200"
         />
         <span class="search-count helper">
-          {{ filteredTrips.length }} / {{ trips.length }} trips
+          {{ t('admin.index.tripsCount', { filtered: filteredTrips.length, total: trips.length }) }}
         </span>
       </div>
 
-      <div v-if="filteredTrips.length === 0" class="state">no trips found</div>
+      <div v-if="filteredTrips.length === 0" class="state">{{ t('admin.index.noTripsFound') }}</div>
 
       <div v-else class="trip-list">
         <NuxtLink

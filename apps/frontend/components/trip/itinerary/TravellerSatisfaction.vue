@@ -2,6 +2,8 @@
 import { computed } from 'vue'
 import type { TravellerScore } from '~/types/index'
 
+const { t } = useI18n()
+
 const props = defineProps<{ scores: TravellerScore[] }>()
 
 const rows = computed(() =>
@@ -16,7 +18,7 @@ const rows = computed(() =>
   <div v-if="rows.length > 0" class="sum-sec" data-testid="traveller-satisfaction">
     <!-- "Preference match", not "satisfaction": the number is a keyword match
          between what each traveller asked for and what the itinerary contains. -->
-    <h4>Preference match</h4>
+    <h4>{{ t('trip.itinerary.travellerSatisfaction.title') }}</h4>
 
     <div v-for="row in rows" :key="row.travellerId" class="q-row" data-testid="traveller-satisfaction-row">
       <div class="qt">

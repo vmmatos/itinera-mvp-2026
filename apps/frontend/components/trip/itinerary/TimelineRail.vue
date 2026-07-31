@@ -2,6 +2,8 @@
 import type { SegmentVM, DayVM } from '~/utils/itineraryViewModel'
 import { formatMoney } from '~/utils/itineraryViewModel'
 
+const { t } = useI18n()
+
 const props = defineProps<{
   segments: SegmentVM[]
   days: DayVM[]
@@ -18,8 +20,8 @@ defineEmits<{ select: [index: number] }>()
 <template>
   <div class="rail-wrap">
     <div class="rail-top">
-      <span class="lbl">trip timeline · <b>{{ props.days.length }} days</b> · <b>{{ props.segments.length }} stop{{ props.segments.length === 1 ? '' : 's' }}</b> · click a day to focus</span>
-      <span class="dates">weather · {{ props.showWeather ? 'live forecast · fixed dates' : 'no live forecast — flexible dates' }}</span>
+      <span class="lbl">{{ t('trip.itinerary.timelineRail.label', { days: props.days.length, stops: props.segments.length, stopWord: t(props.segments.length === 1 ? 'trip.itinerary.timelineRail.stop' : 'trip.itinerary.timelineRail.stopsPlural') }) }}</span>
+      <span class="dates">{{ t('trip.itinerary.timelineRail.weather') }} · {{ props.showWeather ? t('trip.itinerary.timelineRail.liveForecast') : t('trip.itinerary.timelineRail.noLiveForecast') }}</span>
     </div>
     <div class="rail-scroll">
       <div class="rail">

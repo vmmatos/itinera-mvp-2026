@@ -3,6 +3,8 @@ import { ref, watch, computed } from 'vue'
 import type { DayVM, Phase } from '~/utils/itineraryViewModel'
 import TripItineraryDaySlot from './DaySlot.vue'
 
+const { t } = useI18n()
+
 const props = defineProps<{
   day: DayVM
   dayIndex: number
@@ -23,8 +25,8 @@ watch(() => props.day.index, () => {
 
 const riskLabel = computed(() => {
   if (!props.day.weather) return null
-  if (props.day.weather.risk === 'heat') return '▲ heat advisory'
-  if (props.day.weather.risk === 'low') return '✓ low risk'
+  if (props.day.weather.risk === 'heat') return `▲ ${t('trip.itinerary.dayPanel.heatAdvisory')}`
+  if (props.day.weather.risk === 'low') return `✓ ${t('trip.itinerary.dayPanel.lowRisk')}`
   return null
 })
 </script>
@@ -36,20 +38,20 @@ const riskLabel = computed(() => {
         <button class="arrow" :disabled="props.dayIndex === 0" data-testid="day-prev" @click="$emit('prev')">‹</button>
         <button class="arrow" :disabled="props.dayIndex === props.totalDays - 1" data-testid="day-next" @click="$emit('next')">›</button>
         <div class="title">
-          <div class="d">day {{ props.day.day }} · {{ props.day.dateLabel.toLowerCase() }}</div>
+          <div class="d">{{ t('trip.itinerary.dayPanel.day') }} {{ props.day.day }} · {{ props.day.dateLabel.toLowerCase() }}</div>
           <h2 data-testid="day-city">{{ props.day.city }}</h2>
         </div>
       </div>
       <div v-if="props.day.weather" class="wx-banner" data-testid="weather-banner">
         <span class="big">{{ props.day.weather.icon }}</span>
         <div class="col">
-          <span class="cond">{{ props.day.weather.condition ?? 'Forecast' }}</span>
+          <span class="cond">{{ props.day.weather.condition ?? t('trip.itinerary.dayPanel.forecast') }}</span>
           <span class="tmp">
             <template v-if="props.day.weather.tempHigh !== undefined">
               {{ props.day.weather.tempHigh }}° <small>/ {{ props.day.weather.tempLow }}°</small>
-              <template v-if="props.day.weather.precipitationProbability !== undefined"> · {{ props.day.weather.precipitationProbability }}% rain</template>
+              <template v-if="props.day.weather.precipitationProbability !== undefined"> · {{ props.day.weather.precipitationProbability }}{{ t('trip.itinerary.dayPanel.rainSuffix') }}</template>
             </template>
-            <template v-else>no live forecast</template>
+            <template v-else>{{ t('trip.itinerary.dayPanel.noLiveForecast') }}</template>
           </span>
         </div>
         <span v-if="riskLabel" class="risk" :class="props.day.weather.risk" data-testid="risk-chip">{{ riskLabel }}</span>
@@ -58,7 +60,7 @@ const riskLabel = computed(() => {
 
     <div ref="bodyEl" class="dp-body">
       <div v-if="props.day.weather?.risk === 'heat'" class="wx-advisory" data-testid="heat-advisory">
-        ▲ {{ props.day.weather.tempHigh }}°C peak — plan indoor/shaded activities and keep midday light
+        ▲ {{ t('trip.itinerary.dayPanel.heatAdvisoryBody', { temp: props.day.weather.tempHigh }) }}
       </div>
 
       <template v-for="phase in PHASES" :key="phase">
@@ -74,7 +76,7 @@ const riskLabel = computed(() => {
       </template>
 
       <p v-if="!PHASES.some((p) => props.day.slots[p].length > 0)" class="empty" data-testid="day-empty">
-        No activities planned for this day yet.
+        {{ t('trip.itinerary.dayPanel.noActivities') }}
       </p>
     </div>
   </div>

@@ -2,6 +2,8 @@
 import { computed } from 'vue'
 import type { StageInfo } from '~/types/index'
 
+const { t } = useI18n()
+
 const props = defineProps<{ stages: StageInfo[] }>()
 
 const currentStageIndex = computed(() => {
@@ -12,9 +14,9 @@ const currentStageIndex = computed(() => {
 })
 
 const stageLabel = computed(() => {
-  if (currentStageIndex.value === -1) return 'initialising…'
+  if (currentStageIndex.value === -1) return t('trip.negotiate.stagePipeline.initialising')
   const stage = props.stages[currentStageIndex.value]
-  return `stage ${currentStageIndex.value + 1} of ${props.stages.length} · ${stage?.label ?? ''}`
+  return t('trip.negotiate.stagePipeline.stageOf', { current: currentStageIndex.value + 1, total: props.stages.length, label: stage?.label ?? '' })
 })
 </script>
 
@@ -22,8 +24,8 @@ const stageLabel = computed(() => {
   <div style="border-bottom:var(--hair);background:var(--bg-1);padding:16px 20px 18px">
     <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:14px;gap:12px;flex-wrap:wrap">
       <h1 style="margin:0;font-size:22px;font-weight:400;letter-spacing:-0.02em">
-        Agents are building your itinerary
-        <span style="color:var(--fg-3);font-weight:300"> · orchestrator in control</span>
+        {{ t('trip.negotiate.stagePipeline.heading') }}
+        <span style="color:var(--fg-3);font-weight:300"> · {{ t('trip.negotiate.stagePipeline.orchestratorInControl') }}</span>
       </h1>
       <span class="helper" data-testid="stage-label">{{ stageLabel }}</span>
     </div>
@@ -49,7 +51,7 @@ const stageLabel = computed(() => {
           <span v-if="stage.status === 'running'" style="width:8px;height:8px;border:1.5px solid var(--green);border-top-color:transparent;border-radius:50%;display:inline-block;animation:spin .8s linear infinite" />
           <span v-else-if="stage.status === 'done'">✓</span>
           <span v-else>·</span>
-          <span>{{ stage.status === 'running' ? 'running' : stage.status === 'done' ? 'done' : 'queued' }}</span>
+          <span>{{ stage.status === 'running' ? t('trip.negotiate.stagePipeline.running') : stage.status === 'done' ? t('trip.negotiate.stagePipeline.done') : t('trip.negotiate.stagePipeline.queued') }}</span>
         </div>
         <div style="height:2px;background:var(--bg-3);margin-top:8px;position:relative;overflow:hidden">
           <div

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { TripDebugData } from '~/types/index'
 
+const { t } = useI18n()
+
 const props = defineProps<{
   trip: TripDebugData | null
   paused: boolean
@@ -20,11 +22,11 @@ const sessionId = computed(() =>
 <template>
   <div class="admin-bar">
     <div class="lhs">
-      <span class="role">admin</span>
+      <span class="role">{{ t('admin.adminBar.role') }}</span>
       <span class="session">
-        <b>{{ trip?.name ?? 'select a trip' }}</b>
+        <b>{{ trip?.name ?? t('admin.adminBar.selectTrip') }}</b>
         <span class="sep">·</span>
-        session {{ sessionId }}
+        {{ t('admin.adminBar.session') }} {{ sessionId }}
         <span class="sep">·</span>
         <span :style="{ color: trip?.status === 'negotiating' ? 'var(--green)' : 'var(--fg-3)' }">
           {{ trip?.status ?? '—' }}
@@ -34,19 +36,19 @@ const sessionId = computed(() =>
     <div class="controls">
       <span
         :class="['ctl', { on: connected }]"
-        title="SSE connection status"
+        :title="t('admin.adminBar.sseTitle')"
       >
-        {{ connected ? '● live' : '○ idle' }}
+        {{ connected ? t('admin.adminBar.live') : t('admin.adminBar.idle') }}
       </span>
       <button
         :class="['ctl', { on: paused }]"
         type="button"
         @click="emit('togglePause')"
       >
-        {{ paused ? '▶ resume' : '⏸ pause' }}
+        {{ paused ? t('admin.adminBar.resume') : t('admin.adminBar.pause') }}
       </button>
       <button class="ctl" type="button" @click="emit('snapshot')">
-        snapshot
+        {{ t('admin.adminBar.snapshot') }}
       </button>
     </div>
   </div>

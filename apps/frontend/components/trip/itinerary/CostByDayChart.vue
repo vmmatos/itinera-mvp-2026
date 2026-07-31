@@ -3,6 +3,8 @@ import { computed } from 'vue'
 import type { DayVM } from '~/utils/itineraryViewModel'
 import { dayCostMax } from '~/utils/itineraryViewModel'
 
+const { t } = useI18n()
+
 const props = defineProps<{
   days: DayVM[]
   selectedDay: number
@@ -29,7 +31,7 @@ const max = computed(() => dayCostMax(props.days))
     <div class="daycost-x">
       <span v-for="day in props.days" :key="day.index">D{{ day.day }}</span>
     </div>
-    <p class="hint">estimate — activities, transport &amp; lodging; excludes buffer split precision</p>
+    <p class="hint">{{ t('trip.itinerary.costByDayChart.hint') }}</p>
   </div>
 </template>
 

@@ -5,6 +5,8 @@ import { agentColorToken } from '~/utils/agentColorTokens'
 import { AGENT_COLOURS, type AgentName } from '~/types/index'
 import TripItineraryTransitBlock from './TransitBlock.vue'
 
+const { t } = useI18n()
+
 const props = defineProps<{
   slot: SlotItemVM
   phase: Phase
@@ -25,7 +27,7 @@ function agentColor(name?: string): string {
 <template>
   <div class="slot" data-testid="day-slot">
     <div class="when">
-      <span class="ph"><span class="ic">{{ PHASE_ICON[props.phase] }}</span>{{ props.phase }}</span>
+      <span class="ph"><span class="ic">{{ PHASE_ICON[props.phase] }}</span>{{ t(`trip.itinerary.daySlot.phase.${props.phase}`) }}</span>
     </div>
     <div class="item">
       <h3>{{ props.slot.title }}</h3>
@@ -35,7 +37,7 @@ function agentColor(name?: string): string {
           {{ formatMoney(props.slot.costPerPerson, props.priceMode, props.travellers, props.currencySymbol) }}
         </span>
         <span v-if="props.slot.agentName" class="tag by">
-          proposed by <i :style="`color:${agentColor(props.slot.agentName)}`">{{ props.slot.agentName }}</i>
+          {{ t('trip.itinerary.daySlot.proposedBy') }} <i :style="`color:${agentColor(props.slot.agentName)}`">{{ props.slot.agentName }}</i>
         </span>
       </div>
       <TripItineraryTransitBlock

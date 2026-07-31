@@ -3,6 +3,8 @@ import { ref, computed } from 'vue'
 import type { ProposalRound, AgentLogEntry, CommitEntry } from '~/types/index'
 import { AGENT_COLOURS } from '~/types/index'
 
+const { t } = useI18n()
+
 const props = defineProps<{
   proposals: ProposalRound[]
   agentLogs: AgentLogEntry[]
@@ -70,13 +72,13 @@ const timelineDays = computed((): TimelineDay[] => {
         ? (c.days as Record<string, unknown>[])
         : []
     for (const day of itinerary) {
-      const label = String(day.date ?? day.title ?? (typeof day.day === 'number' ? `Day ${day.day}` : 'Day'))
+      const label = String(day.date ?? day.title ?? (typeof day.day === 'number' ? t('admin.timelinePanel.dayN', { day: day.day }) : t('admin.timelinePanel.day')))
       const dayCity = typeof day.city === 'string' && day.city.trim() ? day.city.trim() : undefined
       const activities = Array.isArray(day.activities) ? day.activities : []
       const existing = dayMap.get(label) ?? []
       for (const act of activities as Record<string, unknown>[]) {
         existing.push({
-          name:       String(act.name ?? act.activity ?? 'Activity'),
+          name:       String(act.name ?? act.activity ?? t('admin.timelinePanel.activity')),
           agent:      String(act.agent ?? act.ownerAgent ?? p.agent),
           colourCode: colourCode(String(act.agent ?? act.ownerAgent ?? p.agent)),
           timeSlot:   String(act.time ?? 'morning'),
@@ -120,30 +122,30 @@ const traceLog = computed(() =>
         :class="['t', { on: activeTab === 'timeline' }]"
         type="button"
         @click="activeTab = 'timeline'"
-      >annotated timeline</button>
+      >{{ t('admin.timelinePanel.annotatedTimeline') }}</button>
       <button
         :class="['t', { on: activeTab === 'commits' }]"
         type="button"
         @click="activeTab = 'commits'"
-      >commit log</button>
+      >{{ t('admin.timelinePanel.commitLog') }}</button>
       <button
         :class="['t', { on: activeTab === 'trace' }]"
         type="button"
         @click="activeTab = 'trace'"
-      >trace</button>
+      >{{ t('admin.timelinePanel.trace') }}</button>
       <span class="spacer" />
-      <span class="x">trip · <b>{{ tripName || '—' }}</b></span>
+      <span class="x">{{ t('admin.timelinePanel.tripLabel') }} · <b>{{ tripName || '—' }}</b></span>
     </div>
 
     <!-- TIMELINE TAB -->
     <div v-if="activeTab === 'timeline'" class="atimeline">
       <div class="atl-head">
-        <h2>{{ tripName }} · annotated</h2>
-        <span class="meta">{{ proposals.length }} proposals · {{ agentLogs.length }} log entries</span>
+        <h2>{{ tripName }} · {{ t('admin.timelinePanel.annotated') }}</h2>
+        <span class="meta">{{ t('admin.timelinePanel.proposalsAndLogs', { proposals: proposals.length, logs: agentLogs.length }) }}</span>
       </div>
 
       <div v-if="timelineDays.length === 0" class="empty-state">
-        no committed activities yet — waiting for accepted proposals
+        {{ t('admin.timelinePanel.noCommittedActivities') }}
       </div>
 
       <div v-else class="atl-rows">
@@ -198,7 +200,7 @@ const traceLog = computed(() =>
 
     <!-- COMMIT LOG TAB -->
     <div v-else-if="activeTab === 'commits'" class="log-scroll">
-      <div v-if="commitLog.length === 0" class="empty-state">no commits yet</div>
+      <div v-if="commitLog.length === 0" class="empty-state">{{ t('admin.timelinePanel.noCommits') }}</div>
       <div
         v-for="c in commitLog"
         :key="c.id"
@@ -209,7 +211,7 @@ const traceLog = computed(() =>
         <span class="lvl commit">{{ c.action }}</span>
         <span class="ag">{{ c.agent }}</span>
         <span class="msg">
-          round {{ c.round }}
+          {{ t('admin.negotiationPanel.round', { round: c.round }) }}
           <template v-if="c.activity"> · {{ c.activity }}</template>
           <template v-if="c.city"> · {{ c.city }}</template>
           <span v-if="c.reason" class="reasoning"> — {{ c.reason.slice(0, 60) }}</span>
@@ -219,7 +221,7 @@ const traceLog = computed(() =>
 
     <!-- TRACE TAB -->
     <div v-else-if="activeTab === 'trace'" class="log-scroll">
-      <div v-if="traceLog.length === 0" class="empty-state">no trace entries yet</div>
+      <div v-if="traceLog.length === 0" class="empty-state">{{ t('admin.timelinePanel.noTraceEntries') }}</div>
       <div
         v-for="entry in traceLog"
         :key="entry.id"
