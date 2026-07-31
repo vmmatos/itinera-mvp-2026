@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { DataSource, Repository } from 'typeorm';
 import { AuthService } from '@/services/AuthService';
-import { UnauthorizedError, ConflictError } from '@itinera/shared';
+import { UnauthorizedError, ConflictError, NotFoundError, ValidationError } from '@itinera/shared';
 import type { User } from '@/entities/User';
 
 vi.mock('bcrypt', () => ({
@@ -34,6 +34,7 @@ const buildUser = (overrides: Partial<User> = {}): User =>
     name: 'Alice',
     passwordHash: '$2b$12$validbcrypthashXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
     role: 'user',
+    language: 'en',
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -71,7 +72,13 @@ describe('AuthService', () => {
       const result = await authService.login('alice@example.com', 'correct-password');
 
       expect(result.token).toBe('mocked.jwt.token');
-      expect(result.user).toEqual({ id: user.id, email: user.email, name: user.name, role: user.role });
+      expect(result.user).toEqual({
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        language: user.language,
+      });
       expect(bcrypt.compare).toHaveBeenCalledWith('correct-password', user.passwordHash);
     });
 
@@ -126,6 +133,38 @@ describe('AuthService', () => {
       await expect(authService.register('alice@example.com', 'pass', 'Alice')).rejects.toThrow(
         ConflictError,
       );
+      expect(mockSave).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateLanguage()', () => {
+    it('persists and returns the new language when valid', async () => {
+      const user = buildUser({ language: 'en' });
+      mockFindOne.mockResolvedValue(user);
+      mockSave.mockResolvedValue({ ...user, language: 'pt' });
+
+      const result = await authService.updateLanguage(user.id, 'pt');
+
+      expect(result).toEqual({
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        language: 'pt',
+      });
+      expect(mockSave).toHaveBeenCalledWith(expect.objectContaining({ language: 'pt' }));
+    });
+
+    it('throws ValidationError when the language is not supported', async () => {
+      await expect(authService.updateLanguage('user-uuid-1', 'fr')).rejects.toThrow(ValidationError);
+      expect(mockFindOne).not.toHaveBeenCalled();
+      expect(mockSave).not.toHaveBeenCalled();
+    });
+
+    it('throws NotFoundError when the user does not exist', async () => {
+      mockFindOne.mockResolvedValue(null);
+
+      await expect(authService.updateLanguage('unknown-id', 'pt')).rejects.toThrow(NotFoundError);
       expect(mockSave).not.toHaveBeenCalled();
     });
   });

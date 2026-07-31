@@ -7,7 +7,27 @@ export default defineNuxtConfig({
     '@nuxtjs/tailwindcss',
     '@pinia/nuxt',
     '@vueuse/nuxt',
+    '@nuxtjs/i18n',
   ],
+
+  // ── i18n ─────────────────────────────────────────────────────
+  // Language is a user preference (settings.vue), not a routed concern,
+  // so no locale-prefixed URLs. Login/register always render in English
+  // regardless of this cookie — see middleware/force-en-locale.global.ts.
+  i18n: {
+    locales: [
+      { code: 'en', name: 'English', file: 'en.json' },
+      { code: 'pt', name: 'Portuguese', file: 'pt.json' },
+    ],
+    defaultLocale: 'en',
+    langDir: 'locales/',
+    strategy: 'no_prefix',
+    detectBrowserLanguage: {
+      useCookie: true,
+      cookieKey: 'itn-locale',
+      redirectOn: 'no prefix',
+    },
+  },
 
   // ── CSS global ───────────────────────────────────────────────
   css: ['~/assets/css/globals.css'],

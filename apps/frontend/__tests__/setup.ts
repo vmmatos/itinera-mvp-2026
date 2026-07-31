@@ -30,15 +30,27 @@ export const tripStoreMock = {
 }
 
 // ── Auth store mock ────────────────────────────────────────────
+export const mockUpdateLanguage = vi.fn()
 export const authStoreMock = {
-  user: { id: 'user-1', name: 'Test User', email: 'test@test.com', role: 'user' },
+  user: { id: 'user-1', name: 'Test User', email: 'test@test.com', role: 'user', language: 'en' },
   token: 'mock-token',
   isAuthenticated: true,
   tryRefresh: vi.fn().mockResolvedValue(true),
   clearSession: vi.fn(),
   updateToken: vi.fn(),
   logout: vi.fn(),
+  updateLanguage: mockUpdateLanguage,
 }
+
+// ── i18n mock — identity translation, no real vue-i18n instance ─
+export const mockSetLocale = vi.fn()
+export const i18nMock = {
+  t: (key: string) => key,
+  locale: { value: 'en' },
+  setLocale: mockSetLocale,
+}
+// @ts-expect-error global shim
+globalThis.useI18n = vi.fn(() => i18nMock)
 
 // ── Global shims ───────────────────────────────────────────────
 // @ts-expect-error global shim — mirrors apps/frontend/utils/validation.ts
@@ -54,6 +66,8 @@ globalThis.navigateTo = vi.fn()
 globalThis.useAuthStore = vi.fn(() => authStoreMock)
 // @ts-expect-error global shim
 globalThis.useTripPlannerStore = vi.fn(() => tripStoreMock)
+// @ts-expect-error global shim — page components call this; a no-op is enough under vitest
+globalThis.definePageMeta = vi.fn()
 
 // ── useAgentStream shim (returns empty/disconnected by default) ─
 export const agentStreamMock = { events: { value: [] }, connected: { value: false } }

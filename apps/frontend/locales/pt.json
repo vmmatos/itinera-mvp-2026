@@ -1,0 +1,16 @@
+{
+  "settings": {
+    "title": "Definições",
+    "language": "Idioma",
+    "languageHint": "Escolha o idioma usado em toda a aplicação depois de iniciar sessão.",
+    "saved": "Guardado",
+    "saveError": "Não foi possível atualizar o idioma. Tente novamente."
+  },
+  "languages": {
+    "en": "Inglês",
+    "pt": "Português"
+  },
+  "nav": {
+    "settings": "Definições"
+  }
+}

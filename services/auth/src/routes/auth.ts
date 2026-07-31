@@ -4,6 +4,7 @@ import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { z } from 'zod';
 import Redis from 'ioredis';
+import { authMiddleware } from '@itinera/shared';
 import { config } from '@/config';
 import { AuthController } from '@/controllers/AuthController';
 import type { AuthService } from '@/services/AuthService';
@@ -37,6 +38,7 @@ export function createAuthRouter(authService: AuthService, redis: Redis): Router
 
   router.post('/login', controller.login);
   router.post('/register', controller.register);
+  router.patch('/me', authMiddleware, controller.updateLanguage);
 
   router.get(
     '/oauth2/google',

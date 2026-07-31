@@ -1,0 +1,16 @@
+{
+  "settings": {
+    "title": "Settings",
+    "language": "Language",
+    "languageHint": "Choose the language used across the app after you sign in.",
+    "saved": "Saved",
+    "saveError": "Couldn't update your language. Please try again."
+  },
+  "languages": {
+    "en": "English",
+    "pt": "Portuguese"
+  },
+  "nav": {
+    "settings": "Settings"
+  }
+}

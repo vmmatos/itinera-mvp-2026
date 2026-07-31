@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash VARCHAR(255) NOT NULL,
   name          VARCHAR(255) NOT NULL,
   role          VARCHAR(50)  NOT NULL DEFAULT 'user',
+  language      VARCHAR(10)  NOT NULL DEFAULT 'en',
   created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
   updated_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );

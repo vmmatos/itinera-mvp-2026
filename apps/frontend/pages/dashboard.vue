@@ -86,6 +86,7 @@ const AGENTS = [
       <div class="flex items-center gap-4">
         <ThemeToggle />
         <span class="text-fg-2 text-13">{{ authStore.user?.email }}</span>
+        <NuxtLink to="/settings" class="btn text-13">Settings</NuxtLink>
         <NuxtLink
           v-if="authStore.isAdmin"
           to="/admin"
