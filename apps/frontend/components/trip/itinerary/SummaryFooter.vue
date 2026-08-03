@@ -1,4 +1,6 @@
 <script setup lang="ts">
+const { t } = useI18n()
+
 const props = defineProps<{
   exportLoading: boolean
   shareLoading: boolean
@@ -13,10 +15,10 @@ defineEmits<{ export: []; share: [] }>()
 <template>
   <div class="sum-foot">
     <button class="btn btn-primary" style="justify-content:center;height:42px" :disabled="props.exportLoading" data-testid="export-btn" @click="$emit('export')">
-      {{ props.exportLoading ? 'Generating…' : '↓ Export PDF' }}
+      {{ props.exportLoading ? t('trip.itinerary.summaryFooter.generating') : t('trip.itinerary.summaryFooter.exportPdf') }}
     </button>
     <button class="btn" style="justify-content:center" :disabled="props.shareLoading" data-testid="share-btn" @click="$emit('share')">
-      {{ props.shareCopied ? '✓ Copied!' : props.shareLoading ? 'Generating…' : '⤴ Share link' }}
+      {{ props.shareCopied ? t('trip.itinerary.summaryFooter.copied') : props.shareLoading ? t('trip.itinerary.summaryFooter.generating') : t('trip.itinerary.summaryFooter.shareLink') }}
     </button>
     <p v-if="props.exportError || props.shareError" class="err">{{ props.exportError ?? props.shareError }}</p>
   </div>

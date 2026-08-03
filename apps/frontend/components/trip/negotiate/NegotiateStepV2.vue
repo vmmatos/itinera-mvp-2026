@@ -7,6 +7,8 @@ import AgentList from './AgentList.vue'
 import DecisionStream from './DecisionStream.vue'
 import DraftItinerary from './DraftItinerary.vue'
 
+const { t } = useI18n()
+
 const props = defineProps<{
   tripId: string | null
   budgetTotal: number
@@ -35,15 +37,15 @@ onUnmounted(() => store.reset())
 
 <template>
   <div v-if="negotiationStatus === 'cancelled'" style="padding:var(--s-6);background:rgba(255,93,93,0.06);border:1px solid rgba(255,93,93,0.24);border-radius:var(--r-2);text-align:center;margin:var(--s-6)">
-    <p style="color:var(--red);font-size:var(--t-15);margin:0 0 var(--s-3)">Negotiation failed</p>
-    <p class="helper" style="margin:0 0 var(--s-4)">The agents could not agree on an itinerary. Please try again.</p>
-    <button class="btn" @click="emit('cancel')">Back to dashboard</button>
+    <p style="color:var(--red);font-size:var(--t-15);margin:0 0 var(--s-3)">{{ t('trip.negotiate.stepV2.negotiationFailed') }}</p>
+    <p class="helper" style="margin:0 0 var(--s-4)">{{ t('trip.negotiate.stepV2.negotiationFailedBody') }}</p>
+    <button class="btn" @click="emit('cancel')">{{ t('trip.negotiate.stepV2.backToDashboard') }}</button>
   </div>
 
   <div v-else-if="negotiationStatus === 'rejected'" style="padding:var(--s-6);background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.28);border-radius:var(--r-2);text-align:center;margin:var(--s-6)">
-    <p style="color:var(--amber, #f59e0b);font-size:var(--t-15);margin:0 0 var(--s-3)">This trip needs reformulating</p>
+    <p style="color:var(--amber, #f59e0b);font-size:var(--t-15);margin:0 0 var(--s-3)">{{ t('trip.negotiate.stepV2.needsReformulating') }}</p>
     <p class="helper" style="margin:0 0 var(--s-4);text-transform:none;letter-spacing:0">{{ rejectionReason }}</p>
-    <button class="btn" @click="emit('adjust')">Adjust trip &amp; budget</button>
+    <button class="btn" @click="emit('adjust')">{{ t('trip.negotiate.stepV2.adjustTripAndBudget') }}</button>
   </div>
 
   <div v-else style="display:flex;flex-direction:column;height:100%;min-height:0">

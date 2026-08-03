@@ -32,7 +32,9 @@ export function getTimeSlot(time?: string): Phase {
 }
 
 // ── Formatting ────────────────────────────────────────────────────
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+function monthAbbrev(date: Date, locale: string): string {
+  return new Intl.DateTimeFormat(locale, { month: 'short', timeZone: 'UTC' }).format(date)
+}
 
 export function formatDateRange(startDate?: string, endDate?: string): string {
   if (!startDate || !endDate) return ''
@@ -40,10 +42,11 @@ export function formatDateRange(startDate?: string, endDate?: string): string {
   const end = new Date(endDate)
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return `${startDate} – ${endDate}`
 
-  const endLabel = `${end.getUTCDate()} ${MONTHS[end.getUTCMonth()]} ${end.getUTCFullYear()}`
+  const locale = useNuxtApp().$i18n.locale.value
+  const endLabel = `${end.getUTCDate()} ${monthAbbrev(end, locale)} ${end.getUTCFullYear()}`
   const sameMonth = start.getUTCMonth() === end.getUTCMonth() && start.getUTCFullYear() === end.getUTCFullYear()
   if (sameMonth) return `${start.getUTCDate()}–${endLabel}`
-  return `${start.getUTCDate()} ${MONTHS[start.getUTCMonth()]} – ${endLabel}`
+  return `${start.getUTCDate()} ${monthAbbrev(start, locale)} – ${endLabel}`
 }
 
 // ── Currency ──────────────────────────────────────────────────────

@@ -3,6 +3,8 @@ import { ref } from 'vue'
 import type { TransitVM } from '~/utils/itineraryViewModel'
 import { formatEur } from '~/utils/itineraryViewModel'
 
+const { t } = useI18n()
+
 const props = defineProps<{
   transit: TransitVM
   priceMode: 'pp' | 'total'
@@ -32,7 +34,7 @@ const open = ref(false)
       @click="open = !open"
       @keydown.enter="open = !open"
     >
-      {{ open ? '▾' : '▸' }} {{ props.transit.alternatives.length }} other option{{ props.transit.alternatives.length === 1 ? '' : 's' }}
+      {{ open ? '▾' : '▸' }} {{ props.transit.alternatives.length }} {{ t(props.transit.alternatives.length === 1 ? 'trip.itinerary.transitBlock.otherOption' : 'trip.itinerary.transitBlock.otherOptionsPlural') }}
     </div>
     <div v-if="open" class="alt-list">
       <div v-for="(alt, i) in props.transit.alternatives" :key="i" class="alt" data-testid="transit-alt">

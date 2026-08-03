@@ -21,6 +21,8 @@ interface ValidatorSummary {
   rounds: number | null
 }
 
+const { t } = useI18n()
+
 const props = defineProps<{
   tripName: string
   region: string
@@ -68,9 +70,12 @@ const segments = computed(() => groupIntoSegments(props.timelineDays))
 
 const currentDay = computed(() => dayVMs.value[selectedDay.value] ?? null)
 
-const title = computed(() => props.tripName || props.region || 'Trip')
+const title = computed(() => props.tripName || props.region || t('trip.itinerary.itineraryStep.tripFallback'))
 const meta = computed(() => {
-  const parts = [`${dayVMs.value.length} days`, `${props.travellers} travellers`]
+  const parts = [
+    `${dayVMs.value.length} ${t('trip.itinerary.itineraryStep.days')}`,
+    `${props.travellers} ${t('trip.form.travellersPlural')}`,
+  ]
   const dateRange = props.dateMode === 'fixed' ? formatDateRange(props.startDate, props.endDate) : props.preferredMonth
   if (dateRange) parts.push(dateRange)
   return parts.join(' · ')
@@ -172,7 +177,7 @@ watch(() => dayVMs.value.length, (len) => {
     </div>
 
     <p v-else class="empty" data-testid="itinerary-empty">
-      The itinerary is still being finalized — check back in a moment.
+      {{ t('trip.itinerary.itineraryStep.stillFinalizing') }}
     </p>
   </div>
 </template>

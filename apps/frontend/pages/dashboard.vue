@@ -8,6 +8,7 @@ definePageMeta({
   middleware: 'auth',
 })
 
+const { t } = useI18n()
 const authStore = useAuthStore()
 const tripStore = useTripPlannerStore()
 
@@ -47,34 +48,10 @@ const statusColour: Record<Trip['status'], string> = {
 }
 
 const AGENTS = [
-  {
-    id: 'alice',
-    name: 'Alice',
-    tag: 'Culture & Museums',
-    colour: 'var(--green)',
-    description: 'Advocates for heritage sites, world-class museums, and historical neighbourhoods. Ensures at least one significant cultural activity per day.',
-  },
-  {
-    id: 'bob',
-    name: 'Bob',
-    tag: 'Relaxation & Beach',
-    colour: 'var(--amber)',
-    description: 'Champions slow mornings, beautiful coastlines, long lunches, and regional wine experiences. Pushes back on overly packed schedules.',
-  },
-  {
-    id: 'carlos',
-    name: 'Carlos',
-    tag: 'Action & Hiking',
-    colour: 'var(--blue)',
-    description: 'Drives outdoor adventures, mountain hikes, national parks, and water sports. Fights for at least one major outdoor challenge per destination.',
-  },
-  {
-    id: 'diana',
-    name: 'Diana',
-    tag: 'Gastronomy & Fine Dining',
-    colour: 'var(--magenta)',
-    description: 'Curates Michelin-starred restaurants, local food markets, cooking classes, and authentic culinary experiences. Protective of evening dining slots.',
-  },
+  { id: 'alice', name: 'Alice', colour: 'var(--green)' },
+  { id: 'bob', name: 'Bob', colour: 'var(--amber)' },
+  { id: 'carlos', name: 'Carlos', colour: 'var(--blue)' },
+  { id: 'diana', name: 'Diana', colour: 'var(--magenta)' },
 ] as const
 </script>
 
@@ -85,14 +62,15 @@ const AGENTS = [
       <AppLogo :size="20" />
       <div class="flex items-center gap-4">
         <ThemeToggle />
+        <LanguageSwitcher />
         <span class="text-fg-2 text-13">{{ authStore.user?.email }}</span>
         <NuxtLink
           v-if="authStore.isAdmin"
           to="/admin"
           class="btn text-13"
           style="font-family:var(--mono);color:var(--amber);border-color:var(--amber-line)"
-        >Debug</NuxtLink>
-        <button class="btn text-13" @click="authStore.logout()">Sign out</button>
+        >{{ t('nav.debug') }}</NuxtLink>
+        <button class="btn text-13" @click="authStore.logout()">{{ t('nav.signOut') }}</button>
       </div>
     </header>
 
@@ -103,12 +81,12 @@ const AGENTS = [
       <div class="flex items-center justify-between mb-6">
         <div>
           <h2 class="text-22 font-semibold" style="letter-spacing:-0.02em">
-            Welcome, {{ authStore.user?.name ?? 'Traveller' }}
+            {{ t('dashboard.welcome', { name: authStore.user?.name ?? t('dashboard.travellerFallback') }) }}
           </h2>
-          <p class="text-fg-3 text-13 mt-1">Plan your next group trip with AI agents.</p>
+          <p class="text-fg-3 text-13 mt-1">{{ t('dashboard.subtitle') }}</p>
         </div>
         <button class="btn btn-primary" data-testid="plan-trip-btn" @click="tripStore.clearLastInput(); navigateTo('/planner')">
-          Plan a trip <span style="margin-left:4px">→</span>
+          {{ t('dashboard.planTrip') }} <span style="margin-left:4px">→</span>
         </button>
       </div>
 
@@ -117,11 +95,11 @@ const AGENTS = [
 
         <!-- Left: trips -->
         <div class="user-left" style="padding-left:0;padding-top:0">
-          <div class="sec-eyebrow" style="margin-bottom:var(--s-5)">Your trips</div>
+          <div class="sec-eyebrow" style="margin-bottom:var(--s-5)">{{ t('dashboard.yourTrips') }}</div>
 
           <!-- Loading -->
           <div v-if="tripStore.loading" class="card flex items-center justify-center py-12">
-            <span class="helper pulse-green">Loading trips…</span>
+            <span class="helper pulse-green">{{ t('dashboard.loadingTrips') }}</span>
           </div>
 
           <!-- Error -->
@@ -154,7 +132,7 @@ const AGENTS = [
                   :to="`/trips/${trip.id}`"
                   class="btn text-13"
                   style="padding:4px 12px;font-size:12px"
-                >View results</NuxtLink>
+                >{{ t('dashboard.viewResults') }}</NuxtLink>
               </div>
             </div>
           </div>
@@ -167,8 +145,8 @@ const AGENTS = [
               </svg>
             </div>
             <div>
-              <p class="text-fg-1 text-15 font-medium">No trips yet</p>
-              <p class="text-fg-3 text-13 mt-1">Click "Plan a trip" to get started.</p>
+              <p class="text-fg-1 text-15 font-medium">{{ t('dashboard.noTripsYet') }}</p>
+              <p class="text-fg-3 text-13 mt-1">{{ t('dashboard.noTripsHint') }}</p>
             </div>
           </div>
         </div>
@@ -176,8 +154,8 @@ const AGENTS = [
         <!-- Right: agent roster -->
         <div class="user-right">
           <div class="preview-head">
-            <span class="ttl">Meet your agents</span>
-            <span class="lz">4 active</span>
+            <span class="ttl">{{ t('dashboard.meetYourAgents') }}</span>
+            <span class="lz">{{ t('dashboard.activeAgents', { count: AGENTS.length }) }}</span>
           </div>
 
           <div
@@ -186,10 +164,10 @@ const AGENTS = [
             class="summary-card"
             style="margin-bottom:var(--s-4)"
           >
-            <div class="sub" :style="`color:${agent.colour}`">{{ agent.tag }}</div>
+            <div class="sub" :style="`color:${agent.colour}`">{{ t(`dashboard.agents.${agent.id}.tag`) }}</div>
             <h3>{{ agent.name }}</h3>
             <p style="font-size:var(--t-13);color:var(--fg-2);margin:0;line-height:1.6">
-              {{ agent.description }}
+              {{ t(`dashboard.agents.${agent.id}.description`) }}
             </p>
           </div>
         </div>

@@ -8,6 +8,8 @@ import TripItineraryTravellerSatisfaction from './TravellerSatisfaction.vue'
 import TripItineraryAgentChips from './AgentChips.vue'
 import TripItinerarySummaryFooter from './SummaryFooter.vue'
 
+const { t } = useI18n()
+
 const props = defineProps<{
   open: boolean
   budgetBreakdown: BudgetBreakdown | null
@@ -43,7 +45,7 @@ defineEmits<{ select: [index: number]; export: []; share: [] }>()
     />
 
     <div class="sum-sec">
-      <h4>Cost by day <span class="hint">click to jump</span></h4>
+      <h4>{{ t('trip.itinerary.summaryPanel.costByDay') }} <span class="hint">{{ t('trip.itinerary.summaryPanel.clickToJump') }}</span></h4>
       <TripItineraryCostByDayChart :days="props.days" :selected-day="props.selectedDay" @select="$emit('select', $event)" />
     </div>
 

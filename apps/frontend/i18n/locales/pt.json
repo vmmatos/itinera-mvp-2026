@@ -1,0 +1,402 @@
+{
+  "index": {
+    "loading": "A carregar..."
+  },
+  "languageSwitcher": {
+    "label": "Mudar idioma",
+    "error": "Não foi possível atualizar o idioma. Tente novamente."
+  },
+  "nav": {
+    "debug": "Depuração",
+    "signOut": "Terminar sessão"
+  },
+  "dashboard": {
+    "welcome": "Bem-vindo, {name}",
+    "travellerFallback": "Viajante",
+    "subtitle": "Planeie a sua próxima viagem em grupo com agentes de IA.",
+    "planTrip": "Planear viagem",
+    "yourTrips": "As suas viagens",
+    "loadingTrips": "A carregar viagens…",
+    "viewResults": "Ver resultados",
+    "noTripsYet": "Ainda sem viagens",
+    "noTripsHint": "Clique em \"Planear viagem\" para começar.",
+    "meetYourAgents": "Conheça os seus agentes",
+    "activeAgents": "{count} ativos",
+    "agents": {
+      "alice": {
+        "tag": "Cultura & Museus",
+        "description": "Defende locais patrimoniais, museus de classe mundial e bairros históricos. Garante pelo menos uma atividade cultural significativa por dia."
+      },
+      "bob": {
+        "tag": "Relaxamento & Praia",
+        "description": "Defende manhãs tranquilas, litorais deslumbrantes, almoços demorados e experiências vínicas regionais. Contesta horários demasiado preenchidos."
+      },
+      "carlos": {
+        "tag": "Aventura & Caminhadas",
+        "description": "Impulsiona aventuras ao ar livre, caminhadas de montanha, parques nacionais e desportos aquáticos. Luta por pelo menos um grande desafio ao ar livre por destino."
+      },
+      "diana": {
+        "tag": "Gastronomia & Alta Cozinha",
+        "description": "Seleciona restaurantes com estrela Michelin, mercados locais, aulas de culinária e experiências gastronómicas autênticas. Protege os horários de jantar."
+      }
+    }
+  },
+  "trip": {
+    "form": {
+      "cancel": "Cancelar",
+      "newTrip": "Nova viagem",
+      "traveller": "viajante",
+      "travellersPlural": "viajantes",
+      "tripSummary": "Resumo da viagem",
+      "status": {
+        "draft": "rascunho",
+        "negotiating": "a negociar",
+        "review": "revisão",
+        "confirmed": "confirmada"
+      },
+      "steps": {
+        "group": "Grupo",
+        "brief": "Resumo",
+        "negotiate": "Negociar",
+        "itinerary": "Itinerário",
+        "export": "Exportar"
+      },
+      "flexibility": {
+        "low": "baixa",
+        "medium": "média",
+        "high": "alta"
+      },
+      "pace": {
+        "low": "tranquilo",
+        "medium": "moderado",
+        "high": "intenso"
+      },
+      "personas": {
+        "culture": "Cultura",
+        "relaxation": "Relaxamento",
+        "action": "Aventura",
+        "gastronomy": "Gastronomia"
+      },
+      "errors": {
+        "rejectionFallback": "Orçamento irrealista para esta viagem — aumente o orçamento ou reduza o âmbito.",
+        "shareFailed": "Falha ao gerar o link de partilha.",
+        "pdfExportFailed": "Falha ao exportar o PDF. Tente novamente.",
+        "sendEmailFailed": "Falha ao enviar o email. Tente novamente."
+      },
+      "step1": {
+        "eyebrow": "Composição do grupo",
+        "heading": "Quem vai participar na viagem?",
+        "namePlaceholder": "Nome do viajante",
+        "organiser": "organizador",
+        "nameRequired": "O nome é obrigatório",
+        "persona": "Perfil",
+        "personaRequired": "Selecione um perfil para continuar",
+        "flexibility": "Flexibilidade",
+        "inviteTraveller": "+ convidar viajante",
+        "next": "Seguinte",
+        "livePreview": "Pré-visualização",
+        "derived": "derivado",
+        "groupSummary": "Resumo do grupo",
+        "personasSelected": "Perfis selecionados",
+        "howAgentsWork": "Como funcionam os agentes",
+        "howAgentsWorkBody": "Cada viajante tem um agente de IA atribuído que defende as preferências do seu perfil durante as rondas de negociação. Os agentes convergem para um itinerário justo."
+      },
+      "step2": {
+        "eyebrow": "Resumo da viagem",
+        "heading": "Descreva o que pretende otimizar.",
+        "tripName": "Nome da viagem",
+        "tripNamePlaceholder": "ex. Cusco · Jun 2026",
+        "tripNameRequired": "O nome da viagem é obrigatório",
+        "destination": "Destino",
+        "destinationPlaceholder": "ex. Cusco + Vale Sagrado, Peru",
+        "destinationRequired": "O destino é obrigatório",
+        "understoodAs": "Entendido como:",
+        "dates": "Datas",
+        "fixedDates": "Datas fixas",
+        "flexibleDates": "Sou flexível",
+        "night": "noite",
+        "nightsPlural": "noites",
+        "flexibleSuffix": "flexível",
+        "selectStartDate": "Selecione uma data de início",
+        "endDateError": "A data de fim deve ser posterior à data de início",
+        "days": "dias",
+        "preferredMonth": "mês preferido",
+        "dateWindow": {
+          "tight": "restrita",
+          "moderate": "moderada",
+          "open": "aberta"
+        },
+        "budgetPerPerson": "Orçamento / pessoa",
+        "ceiling": "limite",
+        "pace": "Ritmo",
+        "transport": "Transporte",
+        "transportOptions": {
+          "flight": "Avião",
+          "train": "Comboio",
+          "car": "Carro",
+          "best": "Melhor opção"
+        },
+        "mustHaves": "Imprescindíveis",
+        "mustHavePlaceholder": "+ adicionar imprescindível",
+        "avoid": "Evitar",
+        "avoidPlaceholder": "+ adicionar a evitar",
+        "fixErrors": "corrija os erros acima",
+        "ready": "pronto",
+        "back": "Voltar",
+        "starting": "A iniciar…",
+        "startNegotiation": "Iniciar negociação",
+        "liveDerived": "Pré-visualização · derivado",
+        "updating": "a atualizar",
+        "targetPerPerson": "alvo / pessoa",
+        "estRounds": "rondas est.",
+        "mustHavesLower": "imprescindíveis",
+        "avoidsLower": "a evitar",
+        "personaMix": "Combinação de perfis",
+        "agentsCount": "{count} agentes"
+      },
+      "step5": {
+        "confirmed": "Confirmada",
+        "ready": "{name} está pronta.",
+        "downloadPdfTitle": "Transferir PDF",
+        "downloadPdfBody": "Itinerário completo com o plano dia a dia, atividades e logística.",
+        "downloadPdf": "↓ Transferir PDF",
+        "generating": "A gerar…",
+        "sendByEmailTitle": "Enviar por email",
+        "sendByEmailBody": "Enviaremos o PDF para o endereço abaixo — confirme-o ou use um diferente.",
+        "sentTo": "Enviado para {email}.",
+        "send": "Enviar",
+        "sending": "A enviar…",
+        "budget": "Orçamento",
+        "perPerson": "Por pessoa",
+        "roundsCompleted": "Rondas concluídas",
+        "agentsInvolved": "Agentes envolvidos",
+        "backToDashboard": "← Voltar ao painel"
+      }
+    },
+    "itinerary": {
+      "agentChips": {
+        "title": "Agentes envolvidos"
+      },
+      "costByDayChart": {
+        "hint": "estimativa — atividades, transporte & alojamento; exclui precisão de repartição da margem"
+      },
+      "dayPanel": {
+        "day": "dia",
+        "forecast": "Previsão",
+        "rainSuffix": "% chuva",
+        "noLiveForecast": "sem previsão em tempo real",
+        "heatAdvisory": "aviso de calor",
+        "lowRisk": "risco baixo",
+        "heatAdvisoryBody": "pico de {temp}°C — planeie atividades interiores/à sombra e evite o sol do meio-dia",
+        "noActivities": "Ainda sem atividades planeadas para este dia."
+      },
+      "daySlot": {
+        "phase": {
+          "morning": "manhã",
+          "afternoon": "tarde",
+          "evening": "noite"
+        },
+        "proposedBy": "proposto por"
+      },
+      "itineraryStep": {
+        "tripFallback": "Viagem",
+        "days": "dias",
+        "stillFinalizing": "O itinerário ainda está a ser finalizado — volte a verificar dentro de momentos."
+      },
+      "negotiationQuality": {
+        "title": "Qualidade da negociação",
+        "fairness": "Equidade",
+        "satisfaction": "Satisfação",
+        "constraints": "Restrições",
+        "passed": "✓ aprovado",
+        "failed": "✗ falhou",
+        "timingConflicts": "Conflitos de horário",
+        "detected": "detetados",
+        "negotiationRounds": "Rondas de negociação"
+      },
+      "priceSummary": {
+        "finalPrice": "Preço final",
+        "withinBudget": "dentro do orçamento",
+        "overBudget": "acima do orçamento",
+        "perPerson": "/ pessoa",
+        "total": "total",
+        "currencyMismatch": "O orçamento da viagem está em {currency}; os preços reais abaixo são calculados em EUR.",
+        "usedOf": "usado {pct}% de {total}",
+        "leftPerPerson": "{amount} restante / pessoa",
+        "estimateTitle": "Estimativa — preço real indisponível",
+        "ppShort": "/pp",
+        "totalLabel": "Total",
+        "notAvailable": "Repartição do orçamento ainda não disponível."
+      },
+      "reviewHeader": {
+        "eyebrow": "Itinerário proposto · confirmado",
+        "cancelTrip": "Cancelar viagem",
+        "rerun": "Repetir",
+        "continue": "Continuar →"
+      },
+      "summaryFooter": {
+        "generating": "A gerar…",
+        "exportPdf": "↓ Exportar PDF",
+        "copied": "✓ Copiado!",
+        "shareLink": "⤴ Partilhar link"
+      },
+      "summaryPanel": {
+        "costByDay": "Custo por dia",
+        "clickToJump": "clique para saltar"
+      },
+      "timelineRail": {
+        "label": "cronograma da viagem · {days} dias · {stops} {stopWord} · clique num dia para focar",
+        "stop": "paragem",
+        "stopsPlural": "paragens",
+        "weather": "clima",
+        "liveForecast": "previsão em tempo real · datas fixas",
+        "noLiveForecast": "sem previsão em tempo real — datas flexíveis"
+      },
+      "transitBlock": {
+        "otherOption": "outra opção",
+        "otherOptionsPlural": "outras opções"
+      },
+      "travellerSatisfaction": {
+        "title": "Correspondência de preferências"
+      }
+    },
+    "negotiate": {
+      "agentCard": {
+        "thinking": "a pensar…",
+        "proposing": "a propor…",
+        "idle": "inativo · aguarda o orquestrador"
+      },
+      "agentList": {
+        "title": "agentes",
+        "busy": "{count} / {total} ocupados"
+      },
+      "decisionEventCard": {
+        "awaitingOrchestrator": "a aguardar o orquestrador",
+        "orchestrator": "orquestrador"
+      },
+      "decisionStream": {
+        "title": "fluxo de decisões · orquestrador + propostas",
+        "live": "ao vivo",
+        "evaluating": "orquestrador a avaliar…",
+        "sessionComplete": "sessão concluída · itinerário confirmado"
+      },
+      "draftItinerary": {
+        "title": "itinerário provisório",
+        "slotCount": "{filled} / {total} espaços",
+        "reservedBy": "reservado por",
+        "by": "por",
+        "accepted": "aceite",
+        "fallbackReason": "Sem justificação detalhada disponível para esta decisão.",
+        "estTotalPp": "total est. / pessoa",
+        "budget": "orçamento €{amount}"
+      },
+      "stepV2": {
+        "negotiationFailed": "A negociação falhou",
+        "negotiationFailedBody": "Os agentes não conseguiram chegar a acordo sobre um itinerário. Tente novamente.",
+        "backToDashboard": "Voltar ao painel",
+        "needsReformulating": "Esta viagem precisa de ser reformulada",
+        "adjustTripAndBudget": "Ajustar viagem & orçamento"
+      },
+      "topBar": {
+        "complete": "concluído",
+        "systemActive": "sistema ativo",
+        "lastEvent": "último evento",
+        "ago": "atrás",
+        "elapsed": "decorrido"
+      },
+      "stagePipeline": {
+        "heading": "Os agentes estão a construir o seu itinerário",
+        "orchestratorInControl": "orquestrador no controlo",
+        "initialising": "a inicializar…",
+        "stageOf": "etapa {current} de {total} · {label}",
+        "running": "em curso",
+        "done": "concluída",
+        "queued": "em fila"
+      }
+    }
+  },
+  "admin": {
+    "index": {
+      "backToDashboard": "← Painel",
+      "debugDashboard": "painel de depuração",
+      "selectTripHint": "selecione uma viagem para inspecionar os detalhes internos da negociação",
+      "loadingTrips": "a carregar viagens…",
+      "loadTripsFailed": "Falha ao carregar viagens",
+      "searchPlaceholder": "pesquisar por nome ou email do utilizador…",
+      "tripsCount": "{filtered} / {total} viagens",
+      "noTripsFound": "nenhuma viagem encontrada"
+    },
+    "tripId": {
+      "allTrips": "← Todas as viagens",
+      "loadingDebugData": "a carregar dados de depuração…",
+      "retry": "tentar novamente",
+      "workflowEngineV2": "motor de workflow v2",
+      "state": "estado",
+      "finished": "concluído",
+      "needsRefinement": "precisa de ajustes",
+      "proposals": "propostas",
+      "routeGraph": "grafo de rota",
+      "budgetPlan": "plano de orçamento",
+      "touristProposals": "propostas turísticas",
+      "mergedItinerary": "itinerário combinado"
+    },
+    "adminBar": {
+      "role": "admin",
+      "selectTrip": "selecione uma viagem",
+      "session": "sessão",
+      "sseTitle": "estado da ligação SSE",
+      "live": "● ao vivo",
+      "idle": "○ inativo",
+      "resume": "▶ retomar",
+      "pause": "⏸ pausar",
+      "snapshot": "captura"
+    },
+    "agentActivityLog": {
+      "lines": "{count} linhas",
+      "expand": "▸ expandir",
+      "collapse": "▾ colapsar",
+      "noEntries": "sem entradas de registo"
+    },
+    "metricsPanel": {
+      "metrics": "métricas",
+      "trip": "viagem {id}",
+      "consensusFairness": "consenso / equidade",
+      "roundsRecorded": "{count} rondas registadas",
+      "autonomySlash": "/ autonomia {score}",
+      "negotiationBlocks": "bloqueios de negociação",
+      "retriesBeforeConvergence": "tentativas antes da convergência",
+      "totalTime": "tempo total",
+      "fairnessIndex": "índice de equidade",
+      "perAgentWinRate": "taxa de sucesso por agente",
+      "autonomyDecisions": "autonomia · decisões do agente / total",
+      "tokenUsage": "uso de tokens",
+      "totalTokens": "tokens totais",
+      "llmLatency": "latência do LLM p50 / p95",
+      "p95": "· p95 {latency}"
+    },
+    "negotiationPanel": {
+      "liveFeed": "atividade dos agentes · em direto",
+      "events": "{count} eventos",
+      "paused": "⏸ em pausa",
+      "dbProposals": "── propostas da bd ──",
+      "agentsCount": "{count} agentes",
+      "round": "ronda {round}",
+      "roundAction": "ronda {round} · {action}",
+      "noProposals": "ainda sem propostas"
+    },
+    "timelinePanel": {
+      "annotatedTimeline": "cronograma anotado",
+      "commitLog": "registo de confirmações",
+      "trace": "rastreio",
+      "tripLabel": "viagem",
+      "annotated": "anotado",
+      "proposalsAndLogs": "{proposals} propostas · {logs} entradas de registo",
+      "noCommittedActivities": "ainda sem atividades confirmadas — a aguardar propostas aceites",
+      "noCommits": "ainda sem confirmações",
+      "noTraceEntries": "ainda sem entradas de rastreio",
+      "day": "Dia",
+      "dayN": "Dia {day}",
+      "activity": "Atividade"
+    }
+  }
+}

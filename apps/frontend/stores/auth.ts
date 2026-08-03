@@ -6,6 +6,7 @@ interface AuthUser {
   email: string
   name: string
   role: string
+  language: string
 }
 
 interface AuthResult {
@@ -31,6 +32,7 @@ export const useAuthStore = defineStore('auth', () => {
   const clearSession = (): void => {
     token.value = null
     user.value = null
+    _syncLocale('en')
   }
 
   /**
@@ -44,6 +46,7 @@ export const useAuthStore = defineStore('auth', () => {
       const { data } = await api.post<{ success: true; data: AuthResult }>('/api/auth/refresh', {})
       token.value = data.data.token
       user.value = data.data.user
+      _syncLocale(data.data.user.language)
       return true
     } catch {
       token.value = null
@@ -100,6 +103,7 @@ export const useAuthStore = defineStore('auth', () => {
     } catch { /* best-effort */ }
     token.value = null
     user.value = null
+    _syncLocale('en')
     await navigateTo('/auth/login', { replace: true })
   }
 
@@ -107,9 +111,24 @@ export const useAuthStore = defineStore('auth', () => {
     error.value = null
   }
 
+  // Persists the language, then applies it immediately — no reload needed.
+  const updateLanguage = async (language: string): Promise<void> => {
+    const api = useApi()
+    const { data } = await api.patch<{ success: true; data: AuthUser }>('/api/auth/me', { language })
+    if (user.value) user.value.language = data.data.language
+    _syncLocale(data.data.language)
+  }
+
   const _set = (result: AuthResult): void => {
     token.value = result.token
     user.value = result.user
+    _syncLocale(result.user.language)
+  }
+
+  // $i18n.setLocale() also persists the itn-locale detection cookie for us.
+  const _syncLocale = (language: string): void => {
+    const { $i18n } = useNuxtApp()
+    void $i18n.setLocale(language)
   }
 
   const _extractMessage = (err: unknown, fallback: string): string => {
@@ -136,5 +155,6 @@ export const useAuthStore = defineStore('auth', () => {
     loginWithGoogle,
     logout,
     clearError,
+    updateLanguage,
   }
 })

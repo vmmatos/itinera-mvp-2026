@@ -1,4 +1,5 @@
 import { vi } from 'vitest'
+import en from '../i18n/locales/en.json'
 
 // Stub Nuxt auto-imports for all tests.
 // Stores/composables use these as globals in Nuxt runtime; tests shim them here.
@@ -30,15 +31,40 @@ export const tripStoreMock = {
 }
 
 // ── Auth store mock ────────────────────────────────────────────
+export const mockUpdateLanguage = vi.fn()
 export const authStoreMock = {
-  user: { id: 'user-1', name: 'Test User', email: 'test@test.com', role: 'user' },
+  user: { id: 'user-1', name: 'Test User', email: 'test@test.com', role: 'user', language: 'en' },
   token: 'mock-token',
   isAuthenticated: true,
   tryRefresh: vi.fn().mockResolvedValue(true),
   clearSession: vi.fn(),
   updateToken: vi.fn(),
   logout: vi.fn(),
+  updateLanguage: mockUpdateLanguage,
 }
+
+// ── i18n mock — real lookup against en.json, no vue-i18n instance ─
+// Resolves dot-path keys (e.g. "dashboard.title") against the actual English
+// dictionary, so component tests asserting rendered English text keep
+// passing unchanged once templates switch from literals to t('...') calls.
+const lookup = (key: string, params?: Record<string, unknown>): string => {
+  const value = key.split('.').reduce<unknown>((obj, part) => {
+    return obj && typeof obj === 'object' ? (obj as Record<string, unknown>)[part] : undefined
+  }, en)
+  const message = typeof value === 'string' ? value : key
+  if (!params) return message
+  return message.replace(/\{(\w+)\}/g, (match, name) => String(params[name] ?? match))
+}
+export const mockSetLocale = vi.fn()
+export const i18nMock = {
+  t: lookup,
+  locale: { value: 'en' },
+  setLocale: mockSetLocale,
+}
+// @ts-expect-error global shim
+globalThis.useI18n = vi.fn(() => i18nMock)
+// @ts-expect-error global shim
+globalThis.useNuxtApp = vi.fn(() => ({ $i18n: i18nMock }))
 
 // ── Global shims ───────────────────────────────────────────────
 // @ts-expect-error global shim — mirrors apps/frontend/utils/validation.ts
@@ -54,6 +80,8 @@ globalThis.navigateTo = vi.fn()
 globalThis.useAuthStore = vi.fn(() => authStoreMock)
 // @ts-expect-error global shim
 globalThis.useTripPlannerStore = vi.fn(() => tripStoreMock)
+// @ts-expect-error global shim — page components call this; a no-op is enough under vitest
+globalThis.definePageMeta = vi.fn()
 
 // ── useAgentStream shim (returns empty/disconnected by default) ─
 export const agentStreamMock = { events: { value: [] }, connected: { value: false } }

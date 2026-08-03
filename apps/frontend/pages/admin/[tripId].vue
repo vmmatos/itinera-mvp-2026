@@ -6,6 +6,7 @@ definePageMeta({
   middleware: 'auth',
 })
 
+const { t } = useI18n()
 const route = useRoute()
 const authStore = useAuthStore()
 
@@ -74,20 +75,21 @@ onUnmounted(() => { stopPolling() })
       <AppLogo :size="20" />
       <div class="flex items-center gap-4">
         <ThemeToggle />
+        <LanguageSwitcher />
         <span class="text-fg-2 text-13">{{ authStore.user?.email }}</span>
         <NuxtLink
           to="/admin"
           class="btn text-13"
           style="font-family:var(--mono);color:var(--green);border-color:var(--green-line)">
-          ← All trips
+          {{ t('admin.tripId.allTrips') }}
         </NuxtLink>
         <NuxtLink
           to="/dashboard"
           class="btn text-13"
           style="font-family:var(--mono);color:var(--amber);border-color:var(--amber-line)">
-          ← Dashboard
+          {{ t('admin.index.backToDashboard') }}
         </NuxtLink>
-        <button class="btn text-13" @click="authStore.logout()">Sign out</button>
+        <button class="btn text-13" @click="authStore.logout()">{{ t('nav.signOut') }}</button>
       </div>
     </header>
 
@@ -101,12 +103,12 @@ onUnmounted(() => { stopPolling() })
     />
 
     <div v-if="loading && !debugData" class="center-state">
-      <span class="helper">loading debug data…</span>
+      <span class="helper">{{ t('admin.tripId.loadingDebugData') }}</span>
     </div>
 
     <div v-else-if="error" class="center-state">
       <span class="helper" style="color:#ff5d5d">{{ error }}</span>
-      <button class="btn" style="margin-top: var(--s-4);" @click="refresh">retry</button>
+      <button class="btn" style="margin-top: var(--s-4);" @click="refresh">{{ t('admin.tripId.retry') }}</button>
     </div>
 
     <template v-else>
@@ -137,33 +139,33 @@ onUnmounted(() => { stopPolling() })
         v-if="debugData?.workflowState"
         style="padding:var(--s-4) var(--s-6);border-top:var(--hair);background:var(--bg-1)"
       >
-        <div class="helper" style="margin-bottom:var(--s-3);font-family:var(--mono)">workflow engine v2</div>
+        <div class="helper" style="margin-bottom:var(--s-3);font-family:var(--mono)">{{ t('admin.tripId.workflowEngineV2') }}</div>
         <div style="display:flex;flex-wrap:wrap;gap:var(--s-4) var(--s-8);font-size:var(--t-13)">
           <div>
-            <span class="helper">state</span>
+            <span class="helper">{{ t('admin.tripId.state') }}</span>
             <span style="margin-left:var(--s-2);font-family:var(--mono);color:var(--green)">{{ debugData.workflowState }}</span>
           </div>
           <div v-if="debugData.workflowState === 'FINISH'">
-            <span style="color:var(--green);font-family:var(--mono)">✓ finished</span>
+            <span style="color:var(--green);font-family:var(--mono)">✓ {{ t('admin.tripId.finished') }}</span>
           </div>
           <div v-if="debugData.workflowState === 'ASK_REFINEMENT'">
-            <span style="color:var(--amber);font-family:var(--mono)">⚠ needs refinement</span>
+            <span style="color:var(--amber);font-family:var(--mono)">⚠ {{ t('admin.tripId.needsRefinement') }}</span>
           </div>
           <div>
-            <span class="helper">proposals</span>
+            <span class="helper">{{ t('admin.tripId.proposals') }}</span>
             <span style="margin-left:var(--s-2);font-family:var(--mono)">{{ proposals.length }}</span>
           </div>
           <div v-if="proposals.some(p => p.agent === 'logistics')">
-            <span style="color:var(--blue);font-family:var(--mono);font-size:10px">✓ route graph</span>
+            <span style="color:var(--blue);font-family:var(--mono);font-size:10px">✓ {{ t('admin.tripId.routeGraph') }}</span>
           </div>
           <div v-if="proposals.some(p => p.agent === 'finance' && typeof p.content === 'object' && p.content !== null && 'perBlock' in p.content)">
-            <span style="color:var(--amber);font-family:var(--mono);font-size:10px">✓ budget plan</span>
+            <span style="color:var(--amber);font-family:var(--mono);font-size:10px">✓ {{ t('admin.tripId.budgetPlan') }}</span>
           </div>
           <div v-if="proposals.some(p => p.agent === 'alice' || p.agent === 'bob' || p.agent === 'carlos' || p.agent === 'diana')">
-            <span style="color:var(--green);font-family:var(--mono);font-size:10px">✓ tourist proposals</span>
+            <span style="color:var(--green);font-family:var(--mono);font-size:10px">✓ {{ t('admin.tripId.touristProposals') }}</span>
           </div>
           <div v-if="proposals.some(p => p.agent === 'orchestrator' && typeof p.content === 'object' && p.content !== null && 'itinerary' in p.content)">
-            <span style="color:var(--fg-0);font-family:var(--mono);font-size:10px">✓ merged itinerary</span>
+            <span style="color:var(--fg-0);font-family:var(--mono);font-size:10px">✓ {{ t('admin.tripId.mergedItinerary') }}</span>
           </div>
         </div>
       </div>

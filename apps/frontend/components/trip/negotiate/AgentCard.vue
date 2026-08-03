@@ -3,6 +3,8 @@ import { computed } from 'vue'
 import type { AgentCardState } from '~/types/index'
 import { agentColorToken } from '~/utils/agentColorTokens'
 
+const { t } = useI18n()
+
 const props = defineProps<{ agent: AgentCardState }>()
 
 const colorVar = computed(() => agentColorToken(props.agent.color))
@@ -26,13 +28,13 @@ const busy = computed(() => props.agent.state !== 'idle')
     <div class="mono" style="margin-top:8px;display:flex;align-items:center;gap:8px;font-size:11px;color:var(--fg-2);min-height:16px">
       <template v-if="agent.state === 'thinking'">
         <span style="width:9px;height:9px;border:1.5px solid currentColor;border-top-color:transparent;border-radius:50%;display:inline-block;animation:spin .8s linear infinite" />
-        <span>thinking…</span>
+        <span>{{ t('trip.negotiate.agentCard.thinking') }}</span>
       </template>
       <template v-else-if="agent.state === 'proposing'">
         <span style="width:9px;height:9px;border:1.5px solid currentColor;border-top-color:transparent;border-radius:50%;display:inline-block;animation:spin .8s linear infinite" />
-        <span>proposing…</span>
+        <span>{{ t('trip.negotiate.agentCard.proposing') }}</span>
       </template>
-      <span v-else style="color:var(--fg-3)">idle · waiting on orchestrator</span>
+      <span v-else style="color:var(--fg-3)">{{ t('trip.negotiate.agentCard.idle') }}</span>
     </div>
     <div style="margin-top:6px;font-size:12px;color:var(--fg-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">
       {{ agent.lastAction ?? '—' }}

@@ -6,15 +6,26 @@ import type { Profile as GoogleProfile } from 'passport-google-oauth20';
 import type Redis from 'ioredis';
 import { User } from '@/entities/User';
 import { config } from '@/config';
-import { UnauthorizedError, ConflictError } from '@itinera/shared';
+import { UnauthorizedError, ConflictError, NotFoundError, ValidationError } from '@itinera/shared';
 
 const BCRYPT_ROUNDS = 12;
 const ACCESS_TOKEN_EXPIRY = '15m';
 const REFRESH_TOKEN_TTL = 7 * 24 * 60 * 60; // 7 days in seconds
 
+export const SUPPORTED_LANGUAGES = ['en', 'pt'] as const;
+export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
+
 export interface AuthResult {
   token: string;
-  user: { id: string; email: string; name: string; role: string };
+  user: { id: string; email: string; name: string; role: string; language: string };
+}
+
+export interface PublicUser {
+  id: string;
+  email: string;
+  name: string;
+  role: string;
+  language: string;
 }
 
 export class AuthService {
@@ -108,8 +119,26 @@ export class AuthService {
     }
   }
 
+  async updateLanguage(userId: string, language: string): Promise<PublicUser> {
+    if (!SUPPORTED_LANGUAGES.includes(language as SupportedLanguage)) {
+      throw new ValidationError(`Unsupported language: ${language}`);
+    }
+
+    const repo = this.dataSource.getRepository(User);
+    const user = await repo.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundError('User not found');
+
+    user.language = language;
+    await repo.save(user);
+
+    return { id: user.id, email: user.email, name: user.name, role: user.role, language: user.language };
+  }
+
   private async buildResult(user: User): Promise<AuthResult> {
     const token = this.generateToken(user);
-    return { token, user: { id: user.id, email: user.email, name: user.name, role: user.role } };
+    return {
+      token,
+      user: { id: user.id, email: user.email, name: user.name, role: user.role, language: user.language },
+    };
   }
 }

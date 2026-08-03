@@ -3,6 +3,8 @@ import { ref, computed } from 'vue'
 import type { AgentLogEntry, AgentStreamEvent } from '~/types/index'
 import { AGENT_COLOURS } from '~/types/index'
 
+const { t } = useI18n()
+
 const props = defineProps<{
   agentLogs: AgentLogEntry[]
   liveEvents: AgentStreamEvent[]
@@ -97,15 +99,15 @@ const filters: AgentFilter[] = ['all', 'alice', 'bob', 'carlos', 'diana', 'orche
         >{{ f }}</button>
       </div>
       <div class="rhs">
-        <span class="badge">{{ filtered.length }} lines</span>
+        <span class="badge">{{ t('admin.agentActivityLog.lines', { count: filtered.length }) }}</span>
         <button class="toggle-btn" type="button" @click="collapsed = !collapsed">
-          {{ collapsed ? '▸ expand' : '▾ collapse' }}
+          {{ collapsed ? t('admin.agentActivityLog.expand') : t('admin.agentActivityLog.collapse') }}
         </button>
       </div>
     </div>
 
     <div v-if="!collapsed" class="alog-body">
-      <div v-if="filtered.length === 0" class="empty-state">no log entries</div>
+      <div v-if="filtered.length === 0" class="empty-state">{{ t('admin.agentActivityLog.noEntries') }}</div>
       <div
         v-for="line in filtered"
         :key="line.id"

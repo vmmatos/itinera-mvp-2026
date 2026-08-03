@@ -3,6 +3,8 @@ import { computed } from 'vue'
 import type { TripMetrics, AgentWinRate, AgentLogEntry } from '~/types/index'
 import { AGENT_COLOURS } from '~/types/index'
 
+const { t } = useI18n()
+
 const props = defineProps<{
   metrics: TripMetrics[]
   scores: AgentWinRate[]
@@ -103,20 +105,20 @@ const agentAutonomy = computed(() => {
 <template>
   <div class="acol right">
     <div class="acol-head">
-      <span>metrics</span>
-      <span>trip {{ tripId.slice(0, 8) }}</span>
+      <span>{{ t('admin.metricsPanel.metrics') }}</span>
+      <span>{{ t('admin.metricsPanel.trip', { id: tripId.slice(0, 8) }) }}</span>
     </div>
 
     <div class="metrics">
       <!-- consensus -->
       <div class="metric-row">
         <div class="lbl">
-          <span>consensus / fairness</span>
-          <span class="delta">{{ metrics.length }} rounds recorded</span>
+          <span>{{ t('admin.metricsPanel.consensusFairness') }}</span>
+          <span class="delta">{{ t('admin.metricsPanel.roundsRecorded', { count: metrics.length }) }}</span>
         </div>
         <div class="v">
           {{ fairnessScore }}
-          <span class="u">/ autonomy {{ autonomyScore }}</span>
+          <span class="u">{{ t('admin.metricsPanel.autonomySlash', { score: autonomyScore }) }}</span>
         </div>
         <svg v-if="sparkPoints" class="spark" viewBox="0 0 200 28" preserveAspectRatio="none">
           <polyline :points="sparkPoints" fill="none" stroke="#00ff88" stroke-width="1.2" />
@@ -126,8 +128,8 @@ const agentAutonomy = computed(() => {
       <!-- negotiation blocks -->
       <div class="metric-row">
         <div class="lbl">
-          <span>negotiation blocks</span>
-          <span class="delta">retries before convergence</span>
+          <span>{{ t('admin.metricsPanel.negotiationBlocks') }}</span>
+          <span class="delta">{{ t('admin.metricsPanel.retriesBeforeConvergence') }}</span>
         </div>
         <div class="v">
           {{ negotiationBlocks }}
@@ -136,7 +138,7 @@ const agentAutonomy = computed(() => {
 
       <!-- total time -->
       <div class="metric-row">
-        <div class="lbl"><span>total time</span></div>
+        <div class="lbl"><span>{{ t('admin.metricsPanel.totalTime') }}</span></div>
         <div class="v">
           {{ totalTime }}
         </div>
@@ -145,7 +147,7 @@ const agentAutonomy = computed(() => {
       <!-- fairness -->
       <div class="metric-row">
         <div class="lbl">
-          <span>fairness index</span>
+          <span>{{ t('admin.metricsPanel.fairnessIndex') }}</span>
         </div>
         <div class="v">
           {{ fairnessScore }}
@@ -155,7 +157,7 @@ const agentAutonomy = computed(() => {
 
       <!-- per-agent win-rate bars -->
       <div class="metric-bars">
-        <div class="lbl">per-agent win-rate</div>
+        <div class="lbl">{{ t('admin.metricsPanel.perAgentWinRate') }}</div>
         <div
           v-for="ag in agentWinRate"
           :key="ag.name"
@@ -175,7 +177,7 @@ const agentAutonomy = computed(() => {
 
       <!-- autonomy bars -->
       <div class="metric-bars">
-        <div class="lbl">autonomy · agent decisions / total</div>
+        <div class="lbl">{{ t('admin.metricsPanel.autonomyDecisions') }}</div>
         <div
           v-for="ag in agentAutonomy"
           :key="ag.name"
@@ -192,19 +194,19 @@ const agentAutonomy = computed(() => {
 
       <!-- token cost -->
       <div class="metric-row">
-        <div class="lbl"><span>token usage</span></div>
+        <div class="lbl"><span>{{ t('admin.metricsPanel.tokenUsage') }}</span></div>
         <div class="v">
           {{ totalTokens }}
-          <span class="u">total tokens</span>
+          <span class="u">{{ t('admin.metricsPanel.totalTokens') }}</span>
         </div>
       </div>
 
       <!-- latency -->
       <div class="metric-row">
-        <div class="lbl"><span>llm latency p50 / p95</span></div>
+        <div class="lbl"><span>{{ t('admin.metricsPanel.llmLatency') }}</span></div>
         <div class="v">
           {{ latencyP50 }}
-          <span class="u">· p95 {{ latencyP95 }}</span>
+          <span class="u">{{ t('admin.metricsPanel.p95', { latency: latencyP95 }) }}</span>
         </div>
       </div>
     </div>

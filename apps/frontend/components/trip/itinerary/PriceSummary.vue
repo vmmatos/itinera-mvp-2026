@@ -3,6 +3,8 @@ import { computed } from 'vue'
 import type { BudgetBreakdown } from '~/types/index'
 import { budgetCategoriesToRows, formatMoney } from '~/utils/itineraryViewModel'
 
+const { t } = useI18n()
+
 const props = defineProps<{
   budgetBreakdown: BudgetBreakdown | null
   priceMode: 'pp' | 'total'
@@ -17,17 +19,17 @@ const otherModeLabel = computed(() => {
   const bd = props.budgetBreakdown
   if (!bd) return ''
   return props.priceMode === 'pp'
-    ? `${formatMoney(bd.perPersonTotal, 'total', props.travellers, props.currencySymbol)} total · ${props.travellers} travellers`
-    : `${formatMoney(bd.perPersonTotal, 'pp', props.travellers, props.currencySymbol)} / person · ${props.travellers} travellers`
+    ? `${formatMoney(bd.perPersonTotal, 'total', props.travellers, props.currencySymbol)} ${t('trip.itinerary.priceSummary.total')} · ${props.travellers} ${t('trip.form.travellersPlural')}`
+    : `${formatMoney(bd.perPersonTotal, 'pp', props.travellers, props.currencySymbol)} ${t('trip.itinerary.priceSummary.perPerson')} · ${props.travellers} ${t('trip.form.travellersPlural')}`
 })
 </script>
 
 <template>
   <div class="sum-sec">
     <h4>
-      Final price
+      {{ t('trip.itinerary.priceSummary.finalPrice') }}
       <span v-if="props.budgetBreakdown" class="st" :class="{ over: props.budgetBreakdown.status === 'over_budget' }" data-testid="budget-badge">
-        {{ props.budgetBreakdown.status === 'within_budget' ? '✓ within budget' : '⚠ over budget' }}
+        {{ props.budgetBreakdown.status === 'within_budget' ? `✓ ${t('trip.itinerary.priceSummary.withinBudget')}` : `⚠ ${t('trip.itinerary.priceSummary.overBudget')}` }}
       </span>
     </h4>
 
@@ -36,12 +38,12 @@ const otherModeLabel = computed(() => {
         <span class="big" data-testid="cost-hero">
           {{ formatMoney(props.budgetBreakdown.perPersonTotal, props.priceMode, props.travellers, props.currencySymbol) }}
         </span>
-        <span class="unit">{{ props.priceMode === 'pp' ? '/ person' : 'total' }}</span>
+        <span class="unit">{{ props.priceMode === 'pp' ? t('trip.itinerary.priceSummary.perPerson') : t('trip.itinerary.priceSummary.total') }}</span>
       </div>
       <div class="cost-sub">{{ otherModeLabel }}</div>
 
       <div v-if="props.budgetBreakdown.currencyMismatch" class="mismatch-warning">
-        ⚠️ Trip budget is in {{ props.budgetBreakdown.currency }}; real prices below are computed in EUR.
+        ⚠️ {{ t('trip.itinerary.priceSummary.currencyMismatch', { currency: props.budgetBreakdown.currency }) }}
       </div>
 
       <div class="budget-bar">
@@ -49,21 +51,21 @@ const otherModeLabel = computed(() => {
         <div class="ceil" style="left:100%" />
       </div>
       <div class="budget-legend">
-        <span>used <b>{{ props.budgetBreakdown.percentageUsed }}%</b> of {{ formatMoney(props.budgetBreakdown.budgetTotal, 'pp', props.travellers, props.currencySymbol) }}</span>
-        <span>{{ formatMoney(Math.max(0, props.budgetBreakdown.budgetTotal - props.budgetBreakdown.perPersonTotal), 'pp', props.travellers, props.currencySymbol) }} left / person</span>
+        <span>{{ t('trip.itinerary.priceSummary.usedOf', { pct: props.budgetBreakdown.percentageUsed, total: formatMoney(props.budgetBreakdown.budgetTotal, 'pp', props.travellers, props.currencySymbol) }) }}</span>
+        <span>{{ t('trip.itinerary.priceSummary.leftPerPerson', { amount: formatMoney(Math.max(0, props.budgetBreakdown.budgetTotal - props.budgetBreakdown.perPersonTotal), 'pp', props.travellers, props.currencySymbol) }) }}</span>
       </div>
 
       <div v-for="row in rows" :key="row.key" class="cat" data-testid="category-row">
-        <span class="nm"><span class="sw" :style="{ background: row.color }" />{{ row.label }}<span v-if="row.isEstimate" title="Estimate — real price unavailable">⚠️</span></span>
-        <span class="amt">{{ formatMoney(row.amountPerPerson, props.priceMode, props.travellers, props.currencySymbol) }} <small>{{ props.priceMode === 'pp' ? '/pp' : 'total' }}</small></span>
+        <span class="nm"><span class="sw" :style="{ background: row.color }" />{{ row.label }}<span v-if="row.isEstimate" :title="t('trip.itinerary.priceSummary.estimateTitle')">⚠️</span></span>
+        <span class="amt">{{ formatMoney(row.amountPerPerson, props.priceMode, props.travellers, props.currencySymbol) }} <small>{{ props.priceMode === 'pp' ? t('trip.itinerary.priceSummary.ppShort') : t('trip.itinerary.priceSummary.total') }}</small></span>
         <div class="track"><div class="f" :style="{ width: (row.amountPerPerson / maxAmount * 100) + '%', background: row.color }" /></div>
       </div>
       <div class="cat total">
-        <span class="nm">Total</span>
-        <span class="amt">{{ formatMoney(props.budgetBreakdown.perPersonTotal, props.priceMode, props.travellers, props.currencySymbol) }} <small>{{ props.priceMode === 'pp' ? '/pp' : 'total' }}</small></span>
+        <span class="nm">{{ t('trip.itinerary.priceSummary.totalLabel') }}</span>
+        <span class="amt">{{ formatMoney(props.budgetBreakdown.perPersonTotal, props.priceMode, props.travellers, props.currencySymbol) }} <small>{{ props.priceMode === 'pp' ? t('trip.itinerary.priceSummary.ppShort') : t('trip.itinerary.priceSummary.total') }}</small></span>
       </div>
     </template>
-    <p v-else class="empty">Budget breakdown not available yet.</p>
+    <p v-else class="empty">{{ t('trip.itinerary.priceSummary.notAvailable') }}</p>
   </div>
 </template>
 

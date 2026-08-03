@@ -1,4 +1,6 @@
 <script setup lang="ts">
+const { t } = useI18n()
+
 const props = defineProps<{
   title: string
   meta: string
@@ -17,18 +19,18 @@ const emit = defineEmits<{
 <template>
   <div class="rhead">
     <div class="lhs">
-      <div class="eb">Proposed itinerary · committed</div>
+      <div class="eb">{{ t('trip.itinerary.reviewHeader.eyebrow') }}</div>
       <h1>{{ props.title }} <em>{{ props.meta }}</em></h1>
     </div>
     <div class="rhs">
-      <button class="btn sum-toggle" data-testid="summary-toggle" @click="emit('toggle-summary')">Trip summary</button>
+      <button class="btn sum-toggle" data-testid="summary-toggle" @click="emit('toggle-summary')">{{ t('trip.form.tripSummary') }}</button>
       <div class="seg" data-testid="price-toggle">
-        <button :class="{ on: props.priceMode === 'pp' }" @click="emit('update:priceMode', 'pp')">per person</button>
-        <button :class="{ on: props.priceMode === 'total' }" @click="emit('update:priceMode', 'total')">total</button>
+        <button :class="{ on: props.priceMode === 'pp' }" @click="emit('update:priceMode', 'pp')">{{ t('trip.itinerary.priceSummary.perPerson') }}</button>
+        <button :class="{ on: props.priceMode === 'total' }" @click="emit('update:priceMode', 'total')">{{ t('trip.itinerary.priceSummary.total') }}</button>
       </div>
-      <button class="btn cancel-link" data-testid="cancel-trip" @click="emit('reject')">Cancel trip</button>
-      <button class="btn" data-testid="refine-btn" @click="emit('refine')">Re-run</button>
-      <button class="btn btn-primary" data-testid="continue-btn" @click="emit('accept')">Continue →</button>
+      <button class="btn cancel-link" data-testid="cancel-trip" @click="emit('reject')">{{ t('trip.itinerary.reviewHeader.cancelTrip') }}</button>
+      <button class="btn" data-testid="refine-btn" @click="emit('refine')">{{ t('trip.itinerary.reviewHeader.rerun') }}</button>
+      <button class="btn btn-primary" data-testid="continue-btn" @click="emit('accept')">{{ t('trip.itinerary.reviewHeader.continue') }}</button>
     </div>
   </div>
 </template>

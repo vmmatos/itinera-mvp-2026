@@ -3,6 +3,8 @@ import { computed } from 'vue'
 import type { ProposalRound, AgentStreamEvent } from '~/types/index'
 import { AGENT_COLOURS } from '~/types/index'
 
+const { t } = useI18n()
+
 const props = defineProps<{
   proposals: ProposalRound[]
   liveEvents: AgentStreamEvent[]
@@ -38,7 +40,7 @@ function eventSummary(event: AgentStreamEvent): string {
     if (typeof c.summary === 'string') return c.summary.slice(0, 80)
     if (typeof c.message === 'string') return c.message.slice(0, 80)
   }
-  return `round ${event.round}`
+  return t('admin.negotiationPanel.round', { round: event.round })
 }
 
 function proposalSummary(p: ProposalRound): string {
@@ -47,7 +49,7 @@ function proposalSummary(p: ProposalRound): string {
     const c = p.content as Record<string, unknown>
     if (typeof c.summary === 'string') return c.summary.slice(0, 100)
   }
-  return `round ${p.round} · ${p.action}`
+  return t('admin.negotiationPanel.roundAction', { round: p.round, action: p.action })
 }
 
 const byRound = computed(() => {
@@ -78,12 +80,12 @@ function toggleRound(round: number): void {
 <template>
   <div class="acol left">
     <div class="acol-head">
-      <span>agent activity · live feed</span>
+      <span>{{ t('admin.negotiationPanel.liveFeed') }}</span>
       <span v-if="!paused" class="live">
         <span class="pulse" />
-        {{ liveEvents.length }} events
+        {{ t('admin.negotiationPanel.events', { count: liveEvents.length }) }}
       </span>
-      <span v-else style="color: var(--amber); font-family: var(--mono); font-size: var(--t-12);">⏸ paused</span>
+      <span v-else style="color: var(--amber); font-family: var(--mono); font-size: var(--t-12);">{{ t('admin.negotiationPanel.paused') }}</span>
     </div>
 
     <div class="feed">
@@ -102,7 +104,7 @@ function toggleRound(round: number): void {
             {{ eventSummary(ev) }}
           </span>
         </div>
-        <div class="fe-divider">── db proposals ──</div>
+        <div class="fe-divider">{{ t('admin.negotiationPanel.dbProposals') }}</div>
       </template>
 
       <!-- Proposals grouped by round -->
@@ -110,9 +112,9 @@ function toggleRound(round: number): void {
         <template v-for="[round, items] in byRound" :key="round">
           <div class="fe round-header" @click="toggleRound(round)">
             <span class="ts">r{{ round }}</span>
-            <span class="ag" style="color: var(--fg-2);">{{ items.length }} agents</span>
+            <span class="ag" style="color: var(--fg-2);">{{ t('admin.negotiationPanel.agentsCount', { count: items.length }) }}</span>
             <span class="body" style="color: var(--fg-3);">
-              {{ expandedRounds.has(round) ? '▾' : '▸' }} round {{ round }}
+              {{ expandedRounds.has(round) ? '▾' : '▸' }} {{ t('admin.negotiationPanel.round', { round }) }}
             </span>
           </div>
           <template v-if="expandedRounds.has(round)">
@@ -134,7 +136,7 @@ function toggleRound(round: number): void {
       </template>
 
       <div v-else-if="visibleEvents.length === 0" class="empty-state">
-        no proposals yet
+        {{ t('admin.negotiationPanel.noProposals') }}
       </div>
     </div>
   </div>

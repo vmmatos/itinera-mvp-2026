@@ -213,6 +213,7 @@ onMounted(async () => {
       <AppLogo :size="20" />
       <div class="flex items-center gap-4">
         <ThemeToggle />
+        <LanguageSwitcher />
         <NuxtLink to="/dashboard" class="btn text-13">← Dashboard</NuxtLink>
         <NuxtLink
           v-if="authStore.isAdmin && trip"

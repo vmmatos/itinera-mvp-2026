@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 
+const { t } = useI18n()
+
 const props = defineProps<{
   status: 'negotiating' | 'complete'
   startedAt: number | null
@@ -26,7 +28,7 @@ function fmt(ms: number): string {
 
 const elapsed = computed(() => (props.startedAt ? fmt(now.value - props.startedAt) : '00:00'))
 const lastEventSeconds = computed(() => (props.lastEventAt ? Math.max(0, Math.floor((now.value - props.lastEventAt) / 1000)) : 0))
-const stateLabel = computed(() => (props.status === 'complete' ? 'complete' : 'system active'))
+const stateLabel = computed(() => (props.status === 'complete' ? t('trip.negotiate.topBar.complete') : t('trip.negotiate.topBar.systemActive')))
 </script>
 
 <template>
@@ -34,8 +36,8 @@ const stateLabel = computed(() => (props.status === 'complete' ? 'complete' : 's
     <span style="width:7px;height:7px;border-radius:50%;background:var(--lime);box-shadow:0 0 10px var(--lime)" class="pulse-green" />
     <span data-testid="hb-state">{{ stateLabel }}</span>
     <span style="color:var(--fg-3)">
-      · last event <b data-testid="hb-last-event" style="color:var(--fg-1);font-weight:500">{{ lastEventSeconds }}s</b> ago
-      · elapsed <b data-testid="hb-elapsed" style="color:var(--fg-1);font-weight:500">{{ elapsed }}</b>
+      · {{ t('trip.negotiate.topBar.lastEvent') }} <b data-testid="hb-last-event" style="color:var(--fg-1);font-weight:500">{{ lastEventSeconds }}s</b> {{ t('trip.negotiate.topBar.ago') }}
+      · {{ t('trip.negotiate.topBar.elapsed') }} <b data-testid="hb-elapsed" style="color:var(--fg-1);font-weight:500">{{ elapsed }}</b>
     </span>
   </div>
 </template>

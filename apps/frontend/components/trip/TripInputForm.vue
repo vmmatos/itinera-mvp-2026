@@ -12,6 +12,7 @@ const emit = defineEmits<{
 }>()
 
 // ── Auth ─────────────────────────────────────────────────────
+const { t: translate } = useI18n()
 const authStore = useAuthStore()
 
 // ── Wizard step ───────────────────────────────────────────────
@@ -100,12 +101,12 @@ const avoids     = ref<string[]>([])
 
 const transportPreference = ref<TransportMode>('best')
 
-const TRANSPORT_OPTIONS = [
-  { value: 'flight' as TransportMode, label: 'Flight',      icon: '✈️' },
-  { value: 'train'  as TransportMode, label: 'Train',       icon: '🚆' },
-  { value: 'car'    as TransportMode, label: 'Car',         icon: '🚗' },
-  { value: 'best'   as TransportMode, label: 'Best option', icon: '⭐' },
-]
+const TRANSPORT_OPTIONS = computed(() => [
+  { value: 'flight' as TransportMode, label: translate('trip.form.step2.transportOptions.flight'), icon: '✈️' },
+  { value: 'train'  as TransportMode, label: translate('trip.form.step2.transportOptions.train'),  icon: '🚆' },
+  { value: 'car'    as TransportMode, label: translate('trip.form.step2.transportOptions.car'),    icon: '🚗' },
+  { value: 'best'   as TransportMode, label: translate('trip.form.step2.transportOptions.best'),   icon: '⭐' },
+])
 
 const nights = computed(() => {
   if (!startDate.value || !endDate.value) return 0
@@ -337,7 +338,7 @@ const startNegotiationPolling = (tripId: string): void => {
       } else if (negotiationStatus.value === 'rejected') {
         // Budget impossible — agents could not reach a bookable plan. Ask to reformulate.
         rejectionReason.value = tripResp.data.data.rejectionReason
-          || 'Budget unrealistic for this trip — increase the budget or reduce the scope.'
+          || translate('trip.form.errors.rejectionFallback')
         stopPolling()
       } else if (negotiationStatus.value === 'cancelled') {
         stopPolling()
@@ -690,7 +691,7 @@ const handleShare = async (): Promise<void> => {
     shareCopied.value = true
     setTimeout(() => { shareCopied.value = false }, 2000)
   } catch {
-    shareError.value = 'Failed to generate share link.'
+    shareError.value = translate('trip.form.errors.shareFailed')
   } finally {
     shareLoading.value = false
   }
@@ -803,7 +804,7 @@ const downloadPdf = async (): Promise<void> => {
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
   } catch {
-    exportError.value = 'PDF export failed. Try again.'
+    exportError.value = translate('trip.form.errors.pdfExportFailed')
   } finally {
     exportLoading.value = false
   }
@@ -820,7 +821,7 @@ const sendPdfEmail = async (): Promise<void> => {
     })
     sendEmailSuccess.value = true
   } catch {
-    sendEmailError.value = 'Failed to send email. Try again.'
+    sendEmailError.value = translate('trip.form.errors.sendEmailFailed')
   } finally {
     sendEmailLoading.value = false
   }
@@ -845,12 +846,12 @@ const estRounds = computed(() => {
 })
 
 // ── Persona meta ──────────────────────────────────────────────
-const PERSONAS: { value: Persona; label: string; agent: string; colour: string }[] = [
-  { value: 'culture',    label: 'Culture',    agent: 'alice',  colour: 'var(--green)'   },
-  { value: 'relaxation', label: 'Relaxation', agent: 'bob',    colour: 'var(--amber)'   },
-  { value: 'action',     label: 'Action',     agent: 'carlos', colour: 'var(--blue)'    },
-  { value: 'gastronomy', label: 'Gastronomy', agent: 'diana',  colour: 'var(--magenta)' },
-]
+const PERSONAS = computed(() => [
+  { value: 'culture' as Persona,    label: translate('trip.form.personas.culture'),    agent: 'alice',  colour: 'var(--green)'   },
+  { value: 'relaxation' as Persona, label: translate('trip.form.personas.relaxation'), agent: 'bob',    colour: 'var(--amber)'   },
+  { value: 'action' as Persona,     label: translate('trip.form.personas.action'),     agent: 'carlos', colour: 'var(--blue)'    },
+  { value: 'gastronomy' as Persona, label: translate('trip.form.personas.gastronomy'), agent: 'diana',  colour: 'var(--magenta)' },
+])
 </script>
 
 <template>
@@ -861,13 +862,14 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
       <div class="crumb">
         <AppLogo />
         <span class="sep">/</span>
-        <b>{{ tripName || 'New trip' }}</b>
+        <b>{{ tripName || translate('trip.form.newTrip') }}</b>
         <span class="sep">/</span>
-        <span>{{ step <= 2 ? 'draft' : step === 3 ? 'negotiating' : step === 4 ? 'review' : 'confirmed' }}</span>
+        <span>{{ step <= 2 ? translate('trip.form.status.draft') : step === 3 ? translate('trip.form.status.negotiating') : step === 4 ? translate('trip.form.status.review') : translate('trip.form.status.confirmed') }}</span>
       </div>
       <div style="display:flex;gap:8px;align-items:center">
         <ThemeToggle />
-        <button v-if="step <= 2" class="btn" @click="emit('cancel')">Cancel</button>
+        <LanguageSwitcher />
+        <button v-if="step <= 2" class="btn" @click="emit('cancel')">{{ translate('trip.form.cancel') }}</button>
         <div class="avatar">{{ initials(currentUserName) }}</div>
       </div>
     </div>
@@ -875,19 +877,19 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
     <!-- Wizard steps -->
     <div class="usteps" style="flex-shrink:0">
       <div class="ustep" :class="{ cur: step === 1, done: step > 1 }">
-        <span class="n">01</span> Group
+        <span class="n">01</span> {{ translate('trip.form.steps.group') }}
       </div>
       <div class="ustep" :class="{ cur: step === 2, done: step > 2 }">
-        <span class="n">02</span> Brief
+        <span class="n">02</span> {{ translate('trip.form.steps.brief') }}
       </div>
       <div class="ustep" :class="{ cur: step === 3, done: step > 3 }">
-        <span class="n">03</span> Negotiate
+        <span class="n">03</span> {{ translate('trip.form.steps.negotiate') }}
       </div>
       <div class="ustep" :class="{ cur: step === 4, done: step > 4 }">
-        <span class="n">04</span> Itinerary
+        <span class="n">04</span> {{ translate('trip.form.steps.itinerary') }}
       </div>
       <div class="ustep" :class="{ cur: step === 5 }">
-        <span class="n">05</span> Export
+        <span class="n">05</span> {{ translate('trip.form.steps.export') }}
       </div>
     </div>
 
@@ -897,9 +899,9 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
       <!-- Left: traveller list -->
       <div class="user-left">
         <div style="margin-bottom:var(--s-8)">
-          <div class="sec-eyebrow" style="margin-bottom:6px">Group composition</div>
+          <div class="sec-eyebrow" style="margin-bottom:6px">{{ translate('trip.form.step1.eyebrow') }}</div>
           <h2 style="margin:0;font-size:var(--t-28);font-weight:400;letter-spacing:-0.02em">
-            Who's joining the trip?
+            {{ translate('trip.form.step1.heading') }}
           </h2>
         </div>
 
@@ -919,19 +921,19 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
                   v-if="!t.isCurrentUser"
                   v-model="t.name"
                   class="txt full"
-                  placeholder="Traveller name"
+                  :placeholder="translate('trip.form.step1.namePlaceholder')"
                   style="font-size:var(--t-14)"
                   maxlength="255"
                 />
                 <span v-else class="gn">
                   {{ t.name }}
-                  <span class="role">organiser</span>
+                  <span class="role">{{ translate('trip.form.step1.organiser') }}</span>
                 </span>
                 <p
                   v-if="step1Attempted && !t.isCurrentUser && !t.name.trim()"
                   style="color:var(--red);font-size:var(--t-12);margin:2px 0 0;font-family:var(--mono)"
                 >
-                  Name is required
+                  {{ translate('trip.form.step1.nameRequired') }}
                 </p>
               </div>
               <button
@@ -946,7 +948,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
 
             <!-- Persona row -->
             <div style="margin-bottom:var(--s-3)">
-              <div class="field-label" style="margin-bottom:var(--s-2)">Persona</div>
+              <div class="field-label" style="margin-bottom:var(--s-2)">{{ translate('trip.form.step1.persona') }}</div>
               <div style="display:flex;gap:6px;flex-wrap:wrap">
                 <button
                   v-for="p in PERSONAS"
@@ -964,13 +966,13 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
                 v-if="step1Attempted && !t.persona"
                 style="color:var(--red);font-size:var(--t-12);margin:4px 0 0;font-family:var(--mono)"
               >
-                Select a persona to continue
+                {{ translate('trip.form.step1.personaRequired') }}
               </p>
             </div>
 
             <!-- Flexibility row -->
             <div>
-              <div class="field-label" style="margin-bottom:var(--s-2)">Flexibility</div>
+              <div class="field-label" style="margin-bottom:var(--s-2)">{{ translate('trip.form.step1.flexibility') }}</div>
               <div style="display:flex;gap:6px">
                 <button
                   v-for="f in (['low', 'medium', 'high'] as Flexibility[])"
@@ -979,7 +981,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
                   :class="{ on: t.flexibility === f }"
                   @click="setFlexibility(t.id, f)"
                 >
-                  {{ f }}
+                  {{ translate(`trip.form.flexibility.${f}`) }}
                 </button>
               </div>
             </div>
@@ -992,17 +994,17 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
             data-testid="add-traveller"
             @click="addTraveller"
           >
-            + invite traveller
+            {{ translate('trip.form.step1.inviteTraveller') }}
           </div>
         </div>
 
         <div class="user-form-foot">
-          <span class="helper">{{ travellers.length }} traveller{{ travellers.length !== 1 ? 's' : '' }}</span>
+          <span class="helper">{{ travellers.length }} {{ translate(travellers.length !== 1 ? 'trip.form.travellersPlural' : 'trip.form.traveller') }}</span>
           <button
             class="btn btn-primary"
             @click="goToStep2"
           >
-            Next <span style="margin-left:4px">→</span>
+            {{ translate('trip.form.step1.next') }} <span style="margin-left:4px">→</span>
           </button>
         </div>
       </div>
@@ -1010,15 +1012,15 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
       <!-- Right: preview -->
       <div class="user-right">
         <div class="preview-head">
-          <span class="ttl">Live preview</span>
-          <span class="lz"><span class="pulse" />&nbsp;derived</span>
+          <span class="ttl">{{ translate('trip.form.step1.livePreview') }}</span>
+          <span class="lz"><span class="pulse" />&nbsp;{{ translate('trip.form.step1.derived') }}</span>
         </div>
 
         <div class="summary-card">
-          <div class="sub">Group summary</div>
-          <h3>{{ travellers.length }} traveller{{ travellers.length !== 1 ? 's' : '' }}</h3>
+          <div class="sub">{{ translate('trip.form.step1.groupSummary') }}</div>
+          <h3>{{ travellers.length }} {{ translate(travellers.length !== 1 ? 'trip.form.travellersPlural' : 'trip.form.traveller') }}</h3>
           <div class="kv">
-            <div class="k">Personas selected</div>
+            <div class="k">{{ translate('trip.form.step1.personasSelected') }}</div>
             <div class="v mono">{{ travellers.filter(t => t.persona).length }} / {{ travellers.length }}</div>
             <template v-for="t in travellers" :key="t.id">
               <div class="k">{{ t.name || '—' }}</div>
@@ -1030,10 +1032,9 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
         </div>
 
         <div class="suggest">
-          <h4>How agents work</h4>
+          <h4>{{ translate('trip.form.step1.howAgentsWork') }}</h4>
           <p style="font-size:var(--t-13);color:var(--fg-2);margin:0;line-height:1.6">
-            Each traveller is assigned an AI agent that argues their persona's preferences
-            during negotiation rounds. Agents converge on a fair itinerary.
+            {{ translate('trip.form.step1.howAgentsWorkBody') }}
           </p>
         </div>
       </div>
@@ -1045,19 +1046,19 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
       <!-- Left: form -->
       <div class="user-left">
         <div style="margin-bottom:var(--s-8)">
-          <div class="sec-eyebrow" style="margin-bottom:6px">Trip brief</div>
+          <div class="sec-eyebrow" style="margin-bottom:6px">{{ translate('trip.form.step2.eyebrow') }}</div>
           <h2 style="margin:0;font-size:var(--t-28);font-weight:400;letter-spacing:-0.02em">
-            Describe what you're optimising for.
+            {{ translate('trip.form.step2.heading') }}
           </h2>
         </div>
 
         <div class="field-row">
-          <div class="field-label">Trip name</div>
+          <div class="field-label">{{ translate('trip.form.step2.tripName') }}</div>
           <div class="field-input" style="width:100%;flex-direction:column;align-items:stretch">
             <input
               v-model="tripName"
               class="txt full lg"
-              placeholder="e.g. Cusco run · Jun 2026"
+              :placeholder="translate('trip.form.step2.tripNamePlaceholder')"
               data-testid="trip-name"
               maxlength="255"
             />
@@ -1065,18 +1066,18 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
               v-if="step2Attempted && !tripName.trim()"
               style="color:var(--red);font-size:var(--t-12);margin:4px 0 0;font-family:var(--mono)"
             >
-              Trip name is required
+              {{ translate('trip.form.step2.tripNameRequired') }}
             </p>
           </div>
         </div>
 
         <div class="field-row">
-          <div class="field-label">Destination</div>
+          <div class="field-label">{{ translate('trip.form.step2.destination') }}</div>
           <div class="field-input" style="width:100%;flex-direction:column;align-items:stretch">
             <input
               v-model="region"
               class="txt full"
-              placeholder="e.g. Cusco + Sacred Valley, Peru"
+              :placeholder="translate('trip.form.step2.destinationPlaceholder')"
               data-testid="region"
               maxlength="255"
             />
@@ -1084,7 +1085,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
               v-if="step2Attempted && !region.trim()"
               style="color:var(--red);font-size:var(--t-12);margin:4px 0 0;font-family:var(--mono)"
             >
-              Destination is required
+              {{ translate('trip.form.step2.destinationRequired') }}
             </p>
             <!-- Echo of how the system understood the destinations + nights split -->
             <div
@@ -1093,7 +1094,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
               data-testid="parsed-destinations"
             >
               <span class="helper" style="text-transform:none;letter-spacing:0;width:100%;margin-bottom:2px">
-                Understood as:
+                {{ translate('trip.form.step2.understoodAs') }}
               </span>
               <span
                 v-for="(d, i) in parsedDestinations"
@@ -1107,7 +1108,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
         </div>
 
         <div class="field-row">
-          <div class="field-label">Dates</div>
+          <div class="field-label">{{ translate('trip.form.step2.dates') }}</div>
           <div class="field-input" style="flex-direction:column;align-items:flex-start;gap:var(--s-3)">
             <!-- Mode toggle -->
             <div style="display:flex;gap:6px">
@@ -1116,13 +1117,13 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
                 :class="{ on: dateMode === 'fixed' }"
                 data-testid="date-mode-fixed"
                 @click="dateMode = 'fixed'"
-              >Fixed dates</button>
+              >{{ translate('trip.form.step2.fixedDates') }}</button>
               <button
                 class="chip"
                 :class="{ on: dateMode === 'flexible' }"
                 data-testid="date-mode-flexible"
                 @click="dateMode = 'flexible'"
-              >I'm flexible</button>
+              >{{ translate('trip.form.step2.flexibleDates') }}</button>
             </div>
 
             <!-- Fixed mode -->
@@ -1144,19 +1145,19 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
                   :min="startDate"
                   data-testid="end-date"
                 />
-                <span v-if="nights > 0" class="helper">{{ nights }} night{{ nights !== 1 ? 's' : '' }}</span>
+                <span v-if="nights > 0" class="helper">{{ nights }} {{ translate(nights !== 1 ? 'trip.form.step2.nightsPlural' : 'trip.form.step2.night') }}</span>
               </div>
               <p
                 v-if="step2Attempted && !startDate"
                 style="color:var(--red);font-size:var(--t-12);margin:0;font-family:var(--mono)"
               >
-                Select a start date
+                {{ translate('trip.form.step2.selectStartDate') }}
               </p>
               <p
                 v-else-if="step2Attempted && (!endDate || nights <= 0)"
                 style="color:var(--red);font-size:var(--t-12);margin:0;font-family:var(--mono)"
               >
-                End date must be after start date
+                {{ translate('trip.form.step2.endDateError') }}
               </p>
             </template>
 
@@ -1172,7 +1173,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
                   style="width:64px"
                   data-testid="flex-days"
                 />
-                <span class="helper">days</span>
+                <span class="helper">{{ translate('trip.form.step2.days') }}</span>
               </div>
               <div style="display:flex;align-items:center;gap:8px">
                 <input
@@ -1181,7 +1182,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
                   class="txt"
                   data-testid="preferred-month"
                 />
-                <span class="helper">preferred month</span>
+                <span class="helper">{{ translate('trip.form.step2.preferredMonth') }}</span>
               </div>
               <div style="display:flex;gap:6px">
                 <button
@@ -1190,14 +1191,14 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
                   class="chip"
                   :class="{ on: flexWindow === w }"
                   @click="flexWindow = w"
-                >{{ w }}</button>
+                >{{ translate(`trip.form.step2.dateWindow.${w}`) }}</button>
               </div>
             </template>
           </div>
         </div>
 
         <div class="field-row">
-          <div class="field-label">Budget / pp</div>
+          <div class="field-label">{{ translate('trip.form.step2.budgetPerPerson') }}</div>
           <div class="field-input" style="width:100%;flex-direction:column;align-items:stretch;gap:var(--s-2)">
             <div style="display:flex;gap:6px;margin-bottom:4px">
               <button
@@ -1215,7 +1216,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
                 <div class="fill" :style="`width:${budgetPercent}%`" />
               </div>
               <span class="helper" style="min-width:60px">{{ currencySymbol }}20k</span>
-              <span class="val">{{ currencySymbol }}{{ budgetTotal.toLocaleString() }} ceiling</span>
+              <span class="val">{{ currencySymbol }}{{ budgetTotal.toLocaleString() }} {{ translate('trip.form.step2.ceiling') }}</span>
             </div>
             <input
               v-model.number="budgetTotal"
@@ -1230,7 +1231,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
         </div>
 
         <div class="field-row">
-          <div class="field-label">Pace</div>
+          <div class="field-label">{{ translate('trip.form.step2.pace') }}</div>
           <div class="field-input">
             <button
               v-for="f in (['low', 'medium', 'high'] as Flexibility[])"
@@ -1239,13 +1240,13 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
               :class="{ on: tripFlexibility === f }"
               @click="tripFlexibility = f"
             >
-              {{ f === 'low' ? 'slow' : f === 'medium' ? 'moderate' : 'packed' }}
+              {{ translate(`trip.form.pace.${f}`) }}
             </button>
           </div>
         </div>
 
         <div class="field-row">
-          <div class="field-label">Transport</div>
+          <div class="field-label">{{ translate('trip.form.step2.transport') }}</div>
           <div class="field-input">
             <button
               v-for="opt in TRANSPORT_OPTIONS"
@@ -1261,7 +1262,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
         </div>
 
         <div class="field-row">
-          <div class="field-label">Must-haves</div>
+          <div class="field-label">{{ translate('trip.form.step2.mustHaves') }}</div>
           <div class="field-input" style="width:100%">
             <span
               v-for="item in mustHaves"
@@ -1275,7 +1276,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
             <input
               v-model="mustHaveInput"
               class="txt"
-              placeholder="+ add must-have"
+              :placeholder="translate('trip.form.step2.mustHavePlaceholder')"
               style="width:160px"
               maxlength="200"
               @keydown.enter.prevent="addMustHave"
@@ -1285,7 +1286,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
         </div>
 
         <div class="field-row">
-          <div class="field-label">Avoid</div>
+          <div class="field-label">{{ translate('trip.form.step2.avoid') }}</div>
           <div class="field-input" style="width:100%">
             <span
               v-for="item in avoids"
@@ -1299,7 +1300,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
             <input
               v-model="avoidInput"
               class="txt"
-              placeholder="+ add avoid"
+              :placeholder="translate('trip.form.step2.avoidPlaceholder')"
               style="width:160px"
               maxlength="200"
               @keydown.enter.prevent="addAvoid"
@@ -1317,17 +1318,17 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
             class="helper"
             :style="step2Attempted && !step2Valid ? 'color:var(--red)' : ''"
           >
-            {{ step2Attempted && !step2Valid ? 'fix errors above' : step2Valid ? 'ready' : '' }}
+            {{ step2Attempted && !step2Valid ? translate('trip.form.step2.fixErrors') : step2Valid ? translate('trip.form.step2.ready') : '' }}
           </span>
           <div style="display:flex;gap:8px">
-            <button class="btn" @click="step = 1">Back</button>
+            <button class="btn" @click="step = 1">{{ translate('trip.form.step2.back') }}</button>
             <button
               class="btn btn-primary"
               :disabled="store.loading"
               data-testid="submit-btn"
               @click="attemptSubmit"
             >
-              {{ store.loading ? 'Starting…' : 'Start negotiation' }}
+              {{ store.loading ? translate('trip.form.step2.starting') : translate('trip.form.step2.startNegotiation') }}
               <span style="margin-left:4px">→</span>
             </button>
           </div>
@@ -1337,34 +1338,34 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
       <!-- Right: live preview -->
       <div class="user-right">
         <div class="preview-head">
-          <span class="ttl">Live preview · derived</span>
-          <span class="lz"><span class="pulse" />&nbsp;updating</span>
+          <span class="ttl">{{ translate('trip.form.step2.liveDerived') }}</span>
+          <span class="lz"><span class="pulse" />&nbsp;{{ translate('trip.form.step2.updating') }}</span>
         </div>
 
         <div class="summary-card">
-          <div class="sub">Trip summary</div>
-          <h3>{{ region || '—' }}{{ dateMode === 'flexible' ? ` · ${flexDays} nights · flexible` : nights > 0 ? ` · ${nights} nights` : '' }} · {{ travellers.length }} travellers</h3>
+          <div class="sub">{{ translate('trip.form.tripSummary') }}</div>
+          <h3>{{ region || '—' }}{{ dateMode === 'flexible' ? ` · ${flexDays} ${translate('trip.form.step2.nightsPlural')} · ${translate('trip.form.step2.flexibleSuffix')}` : nights > 0 ? ` · ${nights} ${translate(nights !== 1 ? 'trip.form.step2.nightsPlural' : 'trip.form.step2.night')}` : '' }} · {{ travellers.length }} {{ translate('trip.form.travellersPlural') }}</h3>
           <div class="kv">
-            <div class="k">target / pp</div>
+            <div class="k">{{ translate('trip.form.step2.targetPerPerson') }}</div>
             <div class="v"><span class="mono">{{ currencySymbol }}{{ budgetPerPerson.toLocaleString() }}</span></div>
-            <div class="k">pace</div>
-            <div class="v">{{ tripFlexibility === 'low' ? 'slow' : tripFlexibility === 'medium' ? 'moderate' : 'packed' }}</div>
-            <div class="k">transport</div>
+            <div class="k">{{ translate('trip.form.step2.pace') }}</div>
+            <div class="v">{{ translate(`trip.form.pace.${tripFlexibility}`) }}</div>
+            <div class="k">{{ translate('trip.form.step2.transport') }}</div>
             <div class="v">{{ TRANSPORT_OPTIONS.find(o => o.value === transportPreference)?.label ?? '—' }}</div>
-            <div class="k">est. rounds</div>
+            <div class="k">{{ translate('trip.form.step2.estRounds') }}</div>
             <div class="v"><span class="mono">{{ estRounds }}</span></div>
-            <div class="k">must-haves</div>
+            <div class="k">{{ translate('trip.form.step2.mustHavesLower') }}</div>
             <div class="v mono">{{ mustHaves.length }}</div>
-            <div class="k">avoids</div>
+            <div class="k">{{ translate('trip.form.step2.avoidsLower') }}</div>
             <div class="v mono">{{ avoids.length }}</div>
           </div>
         </div>
 
         <div v-if="travellers.filter(t => t.persona).length > 1" class="suggest">
           <h4>
-            Persona mix
+            {{ translate('trip.form.step2.personaMix') }}
             <span style="float:right;font-family:var(--mono);font-size:var(--t-12)">
-              {{ travellers.filter(t => t.persona).length }} agents
+              {{ translate('trip.form.step2.agentsCount', { count: travellers.filter(t => t.persona).length }) }}
             </span>
           </h4>
           <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:var(--s-2)">
@@ -1429,12 +1430,12 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
       <div class="user-left" style="flex:1;max-width:600px">
 
         <div style="margin-bottom:var(--s-8)">
-          <div class="sec-eyebrow" style="margin-bottom:6px;color:var(--green)">Confirmed</div>
+          <div class="sec-eyebrow" style="margin-bottom:6px;color:var(--green)">{{ translate('trip.form.step5.confirmed') }}</div>
           <h2 style="margin:0;font-size:var(--t-28);font-weight:400;letter-spacing:-0.02em">
-            {{ tripName }} is ready.
+            {{ translate('trip.form.step5.ready', { name: tripName }) }}
           </h2>
           <p style="margin:var(--s-2) 0 0;color:var(--fg-3);font-size:var(--t-14)">
-            {{ region }} · {{ dateMode === 'flexible' ? `${flexDays} nights (flexible)` : `${nights} nights` }} · {{ travellers.length }} traveller{{ travellers.length !== 1 ? 's' : '' }}
+            {{ region }} · {{ dateMode === 'flexible' ? `${flexDays} ${translate('trip.form.step2.nightsPlural')} (${translate('trip.form.step2.flexibleSuffix')})` : `${nights} ${translate(nights !== 1 ? 'trip.form.step2.nightsPlural' : 'trip.form.step2.night')}` }} · {{ travellers.length }} {{ translate(travellers.length !== 1 ? 'trip.form.travellersPlural' : 'trip.form.traveller') }}
           </p>
         </div>
 
@@ -1442,8 +1443,8 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
           <!-- PDF export -->
           <div style="border:var(--hair);border-radius:var(--r-2);padding:var(--s-5);background:var(--bg-1)">
             <div style="margin-bottom:var(--s-3)">
-              <p style="margin:0;font-size:var(--t-15);font-weight:500">Download PDF</p>
-              <p style="margin:4px 0 0;font-size:var(--t-13);color:var(--fg-3)">Full itinerary with day-by-day plan, activities and logistics.</p>
+              <p style="margin:0;font-size:var(--t-15);font-weight:500">{{ translate('trip.form.step5.downloadPdfTitle') }}</p>
+              <p style="margin:4px 0 0;font-size:var(--t-13);color:var(--fg-3)">{{ translate('trip.form.step5.downloadPdfBody') }}</p>
             </div>
             <div v-if="exportError" style="font-size:var(--t-13);color:var(--red);margin-bottom:var(--s-3)">{{ exportError }}</div>
             <button
@@ -1451,18 +1452,18 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
               :disabled="exportLoading"
               @click="downloadPdf"
             >
-              {{ exportLoading ? 'Generating…' : '↓ Download PDF' }}
+              {{ exportLoading ? translate('trip.form.step5.generating') : translate('trip.form.step5.downloadPdf') }}
             </button>
           </div>
 
           <!-- Send by email -->
           <div style="border:var(--hair);border-radius:var(--r-2);padding:var(--s-5);background:var(--bg-1)">
             <div style="margin-bottom:var(--s-3)">
-              <p style="margin:0;font-size:var(--t-15);font-weight:500">Send by email</p>
-              <p style="margin:4px 0 0;font-size:var(--t-13);color:var(--fg-3)">We'll email the PDF to the address below — confirm it or use a different one.</p>
+              <p style="margin:0;font-size:var(--t-15);font-weight:500">{{ translate('trip.form.step5.sendByEmailTitle') }}</p>
+              <p style="margin:4px 0 0;font-size:var(--t-13);color:var(--fg-3)">{{ translate('trip.form.step5.sendByEmailBody') }}</p>
             </div>
             <div v-if="sendEmailError" style="font-size:var(--t-13);color:var(--red);margin-bottom:var(--s-3)">{{ sendEmailError }}</div>
-            <div v-if="sendEmailSuccess" style="font-size:var(--t-13);color:var(--green);margin-bottom:var(--s-3)">Sent to {{ emailTo }}.</div>
+            <div v-if="sendEmailSuccess" style="font-size:var(--t-13);color:var(--green);margin-bottom:var(--s-3)">{{ translate('trip.form.step5.sentTo', { email: emailTo }) }}</div>
             <div style="display:flex;gap:var(--s-2)">
               <input
                 v-model="emailTo"
@@ -1475,22 +1476,22 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
                 :disabled="sendEmailLoading || !emailTo"
                 @click="sendPdfEmail"
               >
-                {{ sendEmailLoading ? 'Sending…' : 'Send' }}
+                {{ sendEmailLoading ? translate('trip.form.step5.sending') : translate('trip.form.step5.send') }}
               </button>
             </div>
           </div>
 
           <!-- Summary card -->
           <div style="border:var(--hair);border-radius:var(--r-2);padding:var(--s-5);background:var(--bg-1)">
-            <div class="sub" style="margin-bottom:var(--s-3)">Trip summary</div>
+            <div class="sub" style="margin-bottom:var(--s-3)">{{ translate('trip.form.tripSummary') }}</div>
             <div class="kv">
-              <div class="k">Budget</div>
+              <div class="k">{{ translate('trip.form.step5.budget') }}</div>
               <div class="v mono">{{ currencySymbol }}{{ budgetTotal.toLocaleString() }}</div>
-              <div class="k">Per person</div>
+              <div class="k">{{ translate('trip.form.step5.perPerson') }}</div>
               <div class="v mono">{{ currencySymbol }}{{ budgetPerPerson.toLocaleString() }}</div>
-              <div class="k">Rounds completed</div>
+              <div class="k">{{ translate('trip.form.step5.roundsCompleted') }}</div>
               <div class="v mono">{{ liveProposals.length > 0 ? Math.max(...liveProposals.map(p => p.round)) : 6 }}</div>
-              <div class="k">Agents involved</div>
+              <div class="k">{{ translate('trip.form.step5.agentsInvolved') }}</div>
               <div class="v mono">{{ new Set(liveProposals.map(p => p.agent)).size }}</div>
             </div>
           </div>
@@ -1498,7 +1499,7 @@ const PERSONAS: { value: Persona; label: string; agent: string; colour: string }
 
         <div class="user-form-foot" style="margin-top:var(--s-6)">
           <button class="btn btn-primary" @click="goToDashboard">
-            ← Back to dashboard
+            {{ translate('trip.form.step5.backToDashboard') }}
           </button>
         </div>
       </div>
