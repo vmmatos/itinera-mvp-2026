@@ -1193,7 +1193,7 @@ describe('WorkflowEngine — parallel per-city merge calls (Part B)', () => {
     ).toBe(true);
   });
 
-  it('error: one of two per-city merge calls rejecting is isolated to that city — the other city\'s itinerary still publishes and saves', async () => {
+  it('error: one of two per-city merge calls rejecting fails executeMerge so state machine can retry', async () => {
     setupTwoCityMocks();
     vi.mocked(agentCaller.callOrchestratorMerge).mockImplementation(async (..._args) => {
       const targetCity = _args[6] as string;
@@ -1204,33 +1204,24 @@ describe('WorkflowEngine — parallel per-city merge calls (Part B)', () => {
 
     await expect(engine.run(TRIP_ID)).resolves.not.toThrow();
 
-    // Dublin's failure no longer aborts the whole merge stage — Madrid's
-    // days still make it into the saved/published itinerary.
-    const mergeCalls = vi.mocked(eventPublisher.publish).mock.calls.filter(
-      (c) => (c[2] as { type: string }).type === 'agent.merge',
-    );
-    expect(mergeCalls).toHaveLength(1);
-
-    const content = mergedProposalContent();
-    const itinerary = content['itinerary'] as Array<Record<string, unknown>>;
-    expect(itinerary.map((d) => d['day'])).toEqual([1, 2]);
-    expect(itinerary.every((d) => d['city'] === 'Madrid')).toBe(true);
+    // A city-level failure in callOrchestratorMerge fails the merge step so retry can happen
+    const savedContexts = vi.mocked(stateManager.saveWorkflowContext).mock.calls.map((c) => c[1] as WorkflowContext);
+    const failedContext = savedContexts.find((c) => c.errors.some((e) => e.includes('merge: Error: orchestrator-agent unreachable for Dublin')));
+    expect(failedContext).toBeDefined();
+    expect(failedContext?.mergedItinerary).toBeUndefined();
   });
 
-  it('error: both per-city merge calls rejecting degrades to an empty itinerary without throwing', async () => {
+  it('error: both per-city merge calls rejecting fails executeMerge without throwing uncaught exception', async () => {
     setupTwoCityMocks();
     vi.mocked(agentCaller.callOrchestratorMerge).mockRejectedValue(new Error('orchestrator-agent unreachable'));
     driveHappyPath();
 
     await expect(engine.run(TRIP_ID)).resolves.not.toThrow();
 
-    const mergeCalls = vi.mocked(eventPublisher.publish).mock.calls.filter(
-      (c) => (c[2] as { type: string }).type === 'agent.merge',
-    );
-    expect(mergeCalls).toHaveLength(1);
-
-    const content = mergedProposalContent();
-    expect(content['itinerary']).toEqual([]);
+    const savedContexts = vi.mocked(stateManager.saveWorkflowContext).mock.calls.map((c) => c[1] as WorkflowContext);
+    const failedContext = savedContexts.find((c) => c.errors.some((e) => e.includes('merge: Error: orchestrator-agent unreachable')));
+    expect(failedContext).toBeDefined();
+    expect(failedContext?.mergedItinerary).toBeUndefined();
   });
 });
 

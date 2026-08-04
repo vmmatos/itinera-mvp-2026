@@ -417,128 +417,121 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
 
       const cityResults: CityMergeResult[] = await Promise.all(
         routeGraph.cityStays.map(async (stay): Promise<CityMergeResult> => {
-          try {
-            const result = await this.agentCaller.callOrchestratorMerge(
+          const result = await this.agentCaller.callOrchestratorMerge(
+            context.tripId,
+            1,
+            routeGraph,
+            touristAgentOutputs,
+            budgetPlan,
+            tripContext,
+            stay.city,
+            groupPreferences,
+          );
+
+          void this.stateManager.logAgentCall({
+            tripId: context.tripId,
+            agent: 'orchestrator',
+            round: 1,
+            action: 'merge-city',
+            latencyMs: result.latencyMs,
+            tokensUsed: result.tokensUsed,
+            reasoning: `city=${stay.city}`,
+          });
+
+          const cityContent: Record<string, unknown> = {
+            itinerary: Array.isArray(result.content['itinerary']) ? result.content['itinerary'] : [],
+            accommodation: Array.isArray(result.content['accommodation']) ? result.content['accommodation'] : [],
+          };
+          const rawDecisionLog = Array.isArray(result.content['decisions'])
+            ? (result.content['decisions'] as Array<Record<string, unknown>>)
+            : [];
+
+          // Enforce canonical destinations, strip LLM activities from blocked
+          // transit slots (merge.txt is prompt-level only — this is the hard
+          // guarantee), then inject real transport legs from routeGraph —
+          // scoped to this city's own days only (see note above).
+          const enforced = this.enforceCanonicalDestinations(cityContent, context.destinations, routeGraph);
+          const stripped = this.stripBlockedSlotActivities(enforced, routeGraph);
+          const withTransport = this.injectRouteGraphTransport(stripped, routeGraph, context.destinations);
+
+          const cityInputProposals = inputProposals.filter((p) => p.city === stay.city);
+          const usedIds = new Set<string>();
+          const rawItinerary = (withTransport as { itinerary?: Array<{ day?: number; activities?: Array<{ proposalIds?: string[]; category?: string }> }> }).itinerary ?? [];
+          // merge.txt only tells the LLM (prompt-level) to stick to its
+          // target city — this is the deterministic backstop. Without it, a
+          // day hallucinated by the wrong city's call reaches the combined
+          // itinerary as a second, duplicate "Day N" card in the UI/PDF.
+          const ownedDays = this.filterOwnedDays(rawItinerary, dayOwnership, stay.city);
+          // Restore the source slot proposal's category. Done after the day
+          // filter so discarded days cost nothing, and before the decision
+          // walk so both read the same objects.
+          const withTransportItinerary = this.backfillActivityCategories(ownedDays, categoryByProposalId);
+          for (const day of withTransportItinerary) {
+            for (const act of day.activities ?? []) {
+              for (const pid of act.proposalIds ?? []) usedIds.add(pid);
+            }
+          }
+
+          if (usedIds.size === 0 && cityInputProposals.length > 0) {
+            this.logger.warn('Merge produced no proposalIds on any activity for this city — all its proposals will resolve to rejected', {
+              tripId: context.tripId, city: stay.city, inputProposalCount: cityInputProposals.length,
+            });
+          }
+
+          const decisionEnrichmentById = new Map<string, { status: string; reason: string }>();
+          for (const raw of rawDecisionLog) {
+            const pid = raw['proposalId'];
+            const status = raw['status'];
+            const reason = raw['reason'];
+            if (typeof pid === 'string' && typeof status === 'string' && typeof reason === 'string') {
+              decisionEnrichmentById.set(pid, { status, reason });
+            }
+          }
+
+          const decisions: ProposalDecision[] = cityInputProposals.map((p) => {
+            const enrichment = decisionEnrichmentById.get(p.id);
+            const accepted = usedIds.has(p.id);
+            const status: ProposalDecisionStatus = !accepted
+              ? 'rejected'
+              : enrichment?.status === 'merged' ? 'merged' : 'accepted';
+            const reason = enrichment?.reason ?? (accepted
+              ? 'Included in the final itinerary.'
+              : 'Not included in the final itinerary — budget, duplicate, or a competing proposal was preferred for that slot.');
+            return {
+              proposalId: p.id,
+              agent: p.agent,
+              city: p.city,
+              date: p.date,
+              slot: p.slot,
+              activity: p.activity,
+              status,
+              reason,
+              estimatedCostPerPerson: p.estimatedCostPerPerson,
+            };
+          });
+
+          // Publish this city's decision events the instant its own merge
+          // finishes — independent of slower sibling cities still in flight.
+          for (const decision of decisions) {
+            await this.publishAgentEvent(
               context.tripId,
               1,
-              routeGraph,
-              touristAgentOutputs,
-              budgetPlan,
-              tripContext,
-              stay.city,
-              groupPreferences,
+              decision.agent,
+              'decision',
+              decision as unknown as Record<string, unknown>,
             );
-
-            void this.stateManager.logAgentCall({
-              tripId: context.tripId,
-              agent: 'orchestrator',
-              round: 1,
-              action: 'merge-city',
-              latencyMs: result.latencyMs,
-              tokensUsed: result.tokensUsed,
-              reasoning: `city=${stay.city}`,
-            });
-
-            const cityContent: Record<string, unknown> = {
-              itinerary: Array.isArray(result.content['itinerary']) ? result.content['itinerary'] : [],
-              accommodation: Array.isArray(result.content['accommodation']) ? result.content['accommodation'] : [],
-            };
-            const rawDecisionLog = Array.isArray(result.content['decisions'])
-              ? (result.content['decisions'] as Array<Record<string, unknown>>)
-              : [];
-
-            // Enforce canonical destinations, strip LLM activities from blocked
-            // transit slots (merge.txt is prompt-level only — this is the hard
-            // guarantee), then inject real transport legs from routeGraph —
-            // scoped to this city's own days only (see note above).
-            const enforced = this.enforceCanonicalDestinations(cityContent, context.destinations, routeGraph);
-            const stripped = this.stripBlockedSlotActivities(enforced, routeGraph);
-            const withTransport = this.injectRouteGraphTransport(stripped, routeGraph, context.destinations);
-
-            const cityInputProposals = inputProposals.filter((p) => p.city === stay.city);
-            const usedIds = new Set<string>();
-            const rawItinerary = (withTransport as { itinerary?: Array<{ day?: number; activities?: Array<{ proposalIds?: string[]; category?: string }> }> }).itinerary ?? [];
-            // merge.txt only tells the LLM (prompt-level) to stick to its
-            // target city — this is the deterministic backstop. Without it, a
-            // day hallucinated by the wrong city's call reaches the combined
-            // itinerary as a second, duplicate "Day N" card in the UI/PDF.
-            const ownedDays = this.filterOwnedDays(rawItinerary, dayOwnership, stay.city);
-            // Restore the source slot proposal's category. Done after the day
-            // filter so discarded days cost nothing, and before the decision
-            // walk so both read the same objects.
-            const withTransportItinerary = this.backfillActivityCategories(ownedDays, categoryByProposalId);
-            for (const day of withTransportItinerary) {
-              for (const act of day.activities ?? []) {
-                for (const pid of act.proposalIds ?? []) usedIds.add(pid);
-              }
-            }
-
-            if (usedIds.size === 0 && cityInputProposals.length > 0) {
-              this.logger.warn('Merge produced no proposalIds on any activity for this city — all its proposals will resolve to rejected', {
-                tripId: context.tripId, city: stay.city, inputProposalCount: cityInputProposals.length,
-              });
-            }
-
-            const decisionEnrichmentById = new Map<string, { status: string; reason: string }>();
-            for (const raw of rawDecisionLog) {
-              const pid = raw['proposalId'];
-              const status = raw['status'];
-              const reason = raw['reason'];
-              if (typeof pid === 'string' && typeof status === 'string' && typeof reason === 'string') {
-                decisionEnrichmentById.set(pid, { status, reason });
-              }
-            }
-
-            const decisions: ProposalDecision[] = cityInputProposals.map((p) => {
-              const enrichment = decisionEnrichmentById.get(p.id);
-              const accepted = usedIds.has(p.id);
-              const status: ProposalDecisionStatus = !accepted
-                ? 'rejected'
-                : enrichment?.status === 'merged' ? 'merged' : 'accepted';
-              const reason = enrichment?.reason ?? (accepted
-                ? 'Included in the final itinerary.'
-                : 'Not included in the final itinerary — budget, duplicate, or a competing proposal was preferred for that slot.');
-              return {
-                proposalId: p.id,
-                agent: p.agent,
-                city: p.city,
-                date: p.date,
-                slot: p.slot,
-                activity: p.activity,
-                status,
-                reason,
-                estimatedCostPerPerson: p.estimatedCostPerPerson,
-              };
-            });
-
-            // Publish this city's decision events the instant its own merge
-            // finishes — independent of slower sibling cities still in flight.
-            for (const decision of decisions) {
-              await this.publishAgentEvent(
-                context.tripId,
-                1,
-                decision.agent,
-                'decision',
-                decision as unknown as Record<string, unknown>,
-              );
-            }
-
-            return {
-              itinerary: withTransportItinerary,
-              accommodation: Array.isArray((withTransport as Record<string, unknown>)['accommodation'])
-                ? ((withTransport as Record<string, unknown>)['accommodation'] as unknown[])
-                : [],
-              decisions,
-              rawDecisionLog,
-              reasoning: result.reasoning,
-              tokensUsed: result.tokensUsed,
-            };
-          } catch (cityErr) {
-            this.logger.warn('Merge failed for city — continuing with other cities', {
-              tripId: context.tripId, city: stay.city, error: String(cityErr),
-            });
-            return { itinerary: [], accommodation: [], decisions: [], rawDecisionLog: [], tokensUsed: 0 };
           }
+
+          return {
+            itinerary: withTransportItinerary,
+            accommodation: Array.isArray((withTransport as Record<string, unknown>)['accommodation'])
+              ? ((withTransport as Record<string, unknown>)['accommodation'] as unknown[])
+              : [],
+            decisions,
+            rawDecisionLog,
+            reasoning: result.reasoning,
+            tokensUsed: result.tokensUsed,
+          };
         }),
       );
 
