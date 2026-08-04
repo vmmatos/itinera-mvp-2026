@@ -86,7 +86,7 @@ const AGENTS = [
       </div>
 
       <!-- Dashboard two-column layout -->
-      <div class="user-grid" style="min-height:auto;grid-template-columns:1.6fr 1fr">
+      <div class="user-grid dash-grid">
 
         <!-- Left: trips -->
         <div class="user-left" style="padding-left:0;padding-top:0">

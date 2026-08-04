@@ -616,6 +616,12 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   background: var(--bg-1);
 }
 
+/* Dashboard variant: wider left (trips) column, no forced min-height */
+.dash-grid {
+  grid-template-columns: 1.6fr 1fr;
+  min-height: auto;
+}
+
 /* Form rows */
 .field-row {
   display: grid;
