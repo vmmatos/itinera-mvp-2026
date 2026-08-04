@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch, onUnmounted } from 'vue'
+import { computed, ref, watch, onUnmounted } from 'vue'
 import { useNegotiationStore } from '~/stores/negotiation'
 import NegotiateTopBar from './NegotiateTopBar.vue'
 import StagePipeline from './StagePipeline.vue'
@@ -8,6 +8,9 @@ import DecisionStream from './DecisionStream.vue'
 import DraftItinerary from './DraftItinerary.vue'
 
 const { t } = useI18n()
+
+type MobilePanel = 'agents' | 'activity' | 'itinerary'
+const activeMobilePanel = ref<MobilePanel>('activity')
 
 const props = defineProps<{
   tripId: string | null
@@ -59,16 +62,95 @@ onUnmounted(() => store.reset())
 
     <StagePipeline :stages="store.state.stages" />
 
-    <div class="max-[1180px]:grid-cols-[260px_minmax(0,1fr)]" style="display:grid;grid-template-columns:300px minmax(0,1fr) 340px;flex:1;min-height:0">
-      <AgentList :agents="store.state.agents" />
-      <DecisionStream :events="store.state.events" :session-status="store.state.session.status" />
+    <div class="mobile-tabs">
+      <button
+        data-testid="mobile-panel-tab-agents"
+        :class="['t', { on: activeMobilePanel === 'agents' }]"
+        type="button"
+        @click="activeMobilePanel = 'agents'"
+      >{{ t('trip.negotiate.stepV2.panelAgents') }}</button>
+      <button
+        data-testid="mobile-panel-tab-activity"
+        :class="['t', { on: activeMobilePanel === 'activity' }]"
+        type="button"
+        @click="activeMobilePanel = 'activity'"
+      >{{ t('trip.negotiate.stepV2.panelActivity') }}</button>
+      <button
+        data-testid="mobile-panel-tab-itinerary"
+        :class="['t', { on: activeMobilePanel === 'itinerary' }]"
+        type="button"
+        @click="activeMobilePanel = 'itinerary'"
+      >{{ t('trip.negotiate.stepV2.panelItinerary') }}</button>
+    </div>
+
+    <div class="negotiate-body">
+      <AgentList :agents="store.state.agents" :class="{ 'panel-hidden': activeMobilePanel !== 'agents' }" />
+      <DecisionStream :events="store.state.events" :session-status="store.state.session.status" :class="{ 'panel-hidden': activeMobilePanel !== 'activity' }" />
       <DraftItinerary
         :days="store.state.slots"
         :budget-total="store.state.budgetTotal"
         :running-total="store.runningTotal"
         :filled-count="store.filledCount"
         :total-slots="store.totalSlots"
+        :class="{ 'panel-hidden': activeMobilePanel !== 'itinerary' }"
       />
     </div>
   </div>
 </template>
+
+<style scoped>
+.negotiate-body {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr) 340px;
+  flex: 1;
+  min-height: 0;
+}
+
+.mobile-tabs {
+  display: none;
+}
+
+@media (max-width: 1180px) {
+  .negotiate-body {
+    display: flex;
+    flex-direction: column;
+  }
+  .negotiate-body > :deep(*) {
+    flex: 1;
+    min-height: 0;
+  }
+}
+
+@media (max-width: 820px) {
+  .mobile-tabs {
+    display: flex;
+    border-bottom: var(--hair);
+    padding: 0 var(--s-5, 20px);
+    font-family: var(--mono);
+    font-size: var(--t-12, 12px);
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    flex-shrink: 0;
+  }
+  .mobile-tabs .t {
+    padding: var(--s-3, 10px) var(--s-4, 14px);
+    border: none;
+    border-bottom: 2px solid transparent;
+    background: none;
+    color: var(--fg-3);
+    cursor: pointer;
+    font-family: var(--mono);
+    font-size: var(--t-12, 12px);
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    flex: 1;
+  }
+  .mobile-tabs .t.on {
+    color: var(--fg-0);
+    border-bottom-color: var(--green);
+  }
+  .negotiate-body > :deep(.panel-hidden) {
+    display: none;
+  }
+}
+</style>

@@ -28,4 +28,10 @@ describe('AgentList', () => {
     })
     expect(wrapper.find('[data-testid="agent-summary"]').text()).toBe('0 / 3 busy')
   })
+
+  it('renders the mobile horizontal-scroll container with a sized card per agent', () => {
+    const wrapper = mount(AgentList, { props: { agents: agents() } })
+    expect(wrapper.find('.agent-list-cards').exists()).toBe(true)
+    expect(wrapper.findAll('.agent-card-item')).toHaveLength(3)
+  })
 })

@@ -42,7 +42,7 @@ function toggleReason(day: DraftDay, key: string): void {
 </script>
 
 <template>
-  <div class="max-[1180px]:hidden" style="border-left:var(--hair);background:var(--bg-1);display:flex;flex-direction:column;min-height:0">
+  <div class="draft-itinerary-root" style="background:var(--bg-1);display:flex;flex-direction:column;min-height:0">
     <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 16px;border-bottom:var(--hair);min-height:40px" class="mono">
       <span style="font-size:11px;color:var(--fg-2);text-transform:uppercase;letter-spacing:.08em">{{ t('trip.negotiate.draftItinerary.title') }}</span>
       <span data-testid="slot-count" style="font-size:11px;color:var(--fg-2)">{{ t('trip.negotiate.draftItinerary.slotCount', { filled: filledCount, total: totalSlots }) }}</span>
@@ -104,3 +104,15 @@ function toggleReason(day: DraftDay, key: string): void {
     </div>
   </div>
 </template>
+
+<style scoped>
+.draft-itinerary-root {
+  border-left: var(--hair);
+}
+@media (max-width: 1180px) {
+  .draft-itinerary-root {
+    border-left: none;
+    border-top: var(--hair);
+  }
+}
+</style>

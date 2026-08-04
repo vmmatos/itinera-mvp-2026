@@ -113,4 +113,16 @@ describe('DraftItinerary', () => {
     await wrapper.find('[data-testid="filled-slot"]').trigger('keydown.enter')
     expect(wrapper.find('[data-testid="slot-reason"]').text()).toBe('No detailed reasoning available for this decision.')
   })
+
+  it('still renders its content when the parent applies a mobile-hidden class (visibility is CSS-only, not conditional rendering)', () => {
+    const day = emptyDay(1, 'Barcelona', '2026-08-10')
+    day.slots.morning = { status: 'filled', name: 'Mercat de Sta Caterina', by: 'diana', color: 'magenta', cost: 14 }
+    const wrapper = mount(DraftItinerary, {
+      props: { days: [day], budgetTotal: 1400, runningTotal: 14, filledCount: 1, totalSlots: 3 },
+      attrs: { class: 'panel-hidden' },
+    })
+    expect(wrapper.classes()).toContain('panel-hidden')
+    expect(wrapper.find('[data-testid="filled-slot"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Mercat de Sta Caterina')
+  })
 })

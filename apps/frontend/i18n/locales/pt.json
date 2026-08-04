@@ -295,7 +295,10 @@
         "negotiationFailedBody": "Os agentes não conseguiram chegar a acordo sobre um itinerário. Tente novamente.",
         "backToDashboard": "Voltar ao painel",
         "needsReformulating": "Esta viagem precisa de ser reformulada",
-        "adjustTripAndBudget": "Ajustar viagem & orçamento"
+        "adjustTripAndBudget": "Ajustar viagem & orçamento",
+        "panelAgents": "Agentes",
+        "panelActivity": "Atividade",
+        "panelItinerary": "Itinerário"
       },
       "topBar": {
         "complete": "concluído",

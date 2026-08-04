@@ -295,7 +295,10 @@
         "negotiationFailedBody": "The agents could not agree on an itinerary. Please try again.",
         "backToDashboard": "Back to dashboard",
         "needsReformulating": "This trip needs reformulating",
-        "adjustTripAndBudget": "Adjust trip & budget"
+        "adjustTripAndBudget": "Adjust trip & budget",
+        "panelAgents": "Agents",
+        "panelActivity": "Activity",
+        "panelItinerary": "Itinerary"
       },
       "topBar": {
         "complete": "complete",
