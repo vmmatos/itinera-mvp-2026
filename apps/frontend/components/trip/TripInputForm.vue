@@ -1128,20 +1128,18 @@ const PERSONAS = computed(() => [
 
             <!-- Fixed mode -->
             <template v-if="dateMode === 'fixed'">
-              <div style="display:flex;align-items:center;gap:8px">
+              <div class="date-range-row" style="display:flex;align-items:center;gap:8px">
                 <input
                   v-model="startDate"
                   type="date"
-                  class="txt"
-                  style="width:140px"
+                  class="txt date-range-input"
                   data-testid="start-date"
                 />
                 <span style="color:var(--fg-3);font-family:var(--mono);font-size:var(--t-12)">→</span>
                 <input
                   v-model="endDate"
                   type="date"
-                  class="txt"
-                  style="width:140px"
+                  class="txt date-range-input"
                   :min="startDate"
                   data-testid="end-date"
                 />
@@ -1175,7 +1173,7 @@ const PERSONAS = computed(() => [
                 />
                 <span class="helper">{{ translate('trip.form.step2.days') }}</span>
               </div>
-              <div style="display:flex;align-items:center;gap:8px">
+              <div class="month-row" style="display:flex;align-items:center;gap:8px">
                 <input
                   v-model="preferredMonth"
                   type="month"
@@ -1275,9 +1273,8 @@ const PERSONAS = computed(() => [
             </span>
             <input
               v-model="mustHaveInput"
-              class="txt"
+              class="txt txt-inline"
               :placeholder="translate('trip.form.step2.mustHavePlaceholder')"
-              style="width:160px"
               maxlength="200"
               @keydown.enter.prevent="addMustHave"
               @blur="addMustHave"
@@ -1299,9 +1296,8 @@ const PERSONAS = computed(() => [
             </span>
             <input
               v-model="avoidInput"
-              class="txt"
+              class="txt txt-inline"
               :placeholder="translate('trip.form.step2.avoidPlaceholder')"
-              style="width:160px"
               maxlength="200"
               @keydown.enter.prevent="addAvoid"
               @blur="addAvoid"

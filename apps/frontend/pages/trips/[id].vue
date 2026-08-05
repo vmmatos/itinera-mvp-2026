@@ -209,11 +209,8 @@ onMounted(async () => {
 <template>
   <div class="min-h-screen bg-bg-0 text-fg-0">
     <!-- Header -->
-    <header class="border-b border-line-2 px-6 py-4 flex items-center justify-between">
-      <AppLogo :size="20" />
-      <div class="flex items-center gap-4">
-        <ThemeToggle />
-        <LanguageSwitcher />
+    <AppHeader :show-sign-out="false">
+      <template #links>
         <NuxtLink to="/dashboard" class="btn text-13">← Dashboard</NuxtLink>
         <NuxtLink
           v-if="authStore.isAdmin && trip"
@@ -221,8 +218,8 @@ onMounted(async () => {
           class="btn text-13"
           style="color:var(--amber);border-color:var(--amber-line);font-family:var(--mono)"
         >Debug view</NuxtLink>
-      </div>
-    </header>
+      </template>
+    </AppHeader>
 
     <!-- Loading -->
     <div v-if="loading" class="flex items-center justify-center py-32">

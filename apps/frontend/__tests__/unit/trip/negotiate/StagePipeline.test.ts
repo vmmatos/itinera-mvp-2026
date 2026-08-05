@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+import { nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
 import StagePipeline from '~/components/trip/negotiate/StagePipeline.vue'
 import type { StageInfo } from '~/types/index'
@@ -46,5 +47,31 @@ describe('StagePipeline', () => {
   it('falls back to the last done stage for the label once everything is done', () => {
     const wrapper = mount(StagePipeline, { props: { stages: stages({ 0: 'done', 1: 'done', 2: 'done', 3: 'done', 4: 'done', 5: 'done' }) } })
     expect(wrapper.find('[data-testid="stage-label"]').text()).toBe('stage 6 of 6 · Final check')
+  })
+
+  it('renders the full, non-truncated label text for a long stage name', () => {
+    const wrapper = mount(StagePipeline, { props: { stages: stages() } })
+    const cells = wrapper.findAll('[data-testid="stage-cell"]')
+    expect(cells[1]!.text()).toContain('Finance envelope')
+    expect(cells[3]!.text()).toContain('Merge & resolve')
+  })
+
+  it('renders the pipeline as a scrollable strip container with sized cells', () => {
+    const wrapper = mount(StagePipeline, { props: { stages: stages() } })
+    expect(wrapper.find('.stage-grid').exists()).toBe(true)
+    expect(wrapper.findAll('.stage-cell')).toHaveLength(6)
+  })
+
+  it('scrolls the running stage into view', async () => {
+    const scrollIntoView = vi.fn()
+    Element.prototype.scrollIntoView = scrollIntoView
+
+    const wrapper = mount(StagePipeline, { props: { stages: stages() } })
+    scrollIntoView.mockClear()
+
+    await wrapper.setProps({ stages: stages({ 0: 'done', 1: 'running' }) })
+    await nextTick()
+
+    expect(scrollIntoView).toHaveBeenCalledWith(expect.objectContaining({ inline: 'center' }))
   })
 })

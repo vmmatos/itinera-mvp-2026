@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch, nextTick } from 'vue'
+import type { ComponentPublicInstance } from 'vue'
 import type { StageInfo } from '~/types/index'
 
 const { t } = useI18n()
@@ -18,6 +19,18 @@ const stageLabel = computed(() => {
   const stage = props.stages[currentStageIndex.value]
   return t('trip.negotiate.stagePipeline.stageOf', { current: currentStageIndex.value + 1, total: props.stages.length, label: stage?.label ?? '' })
 })
+
+const cellRefs: (Element | null)[] = []
+function setCellRef(el: Element | ComponentPublicInstance | null, idx: number): void {
+  cellRefs[idx] = el as Element | null
+}
+
+watch(currentStageIndex, (idx) => {
+  if (idx < 0) return
+  nextTick(() => {
+    cellRefs[idx]?.scrollIntoView?.({ block: 'nearest', inline: 'center', behavior: 'smooth' })
+  })
+})
 </script>
 
 <template>
@@ -30,17 +43,19 @@ const stageLabel = computed(() => {
       <span class="helper" data-testid="stage-label">{{ stageLabel }}</span>
     </div>
 
-    <div class="max-[1180px]:grid-cols-3 max-[820px]:grid-cols-2" style="display:grid;grid-template-columns:repeat(6,1fr);gap:6px">
+    <div class="stage-grid">
       <div
-        v-for="stage in stages"
+        v-for="(stage, idx) in stages"
         :key="stage.id"
+        :ref="(el) => setCellRef(el, idx)"
+        class="stage-cell"
         data-testid="stage-cell"
         :data-status="stage.status"
-        :style="`border:1px solid ${stage.status === 'running' ? 'var(--green-line)' : stage.status === 'done' ? 'var(--line-3)' : 'var(--line-2)'};background:${stage.status === 'running' ? 'var(--green-bg)' : 'var(--bg-2)'};padding:10px 12px;min-width:0`"
+        :style="`border:1px solid ${stage.status === 'running' ? 'var(--green-line)' : stage.status === 'done' ? 'var(--line-3)' : 'var(--line-2)'};background:${stage.status === 'running' ? 'var(--green-bg)' : 'var(--bg-2)'};padding:10px 12px`"
       >
         <div
-          class="mono"
-          style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"
+          class="mono stage-label"
+          style="font-size:11px;text-transform:uppercase;letter-spacing:.06em"
           :style="`color:${stage.status === 'done' ? 'var(--fg-1)' : stage.status === 'running' ? 'var(--fg-0)' : 'var(--fg-2)'}`"
         >{{ stage.label }}</div>
         <div
@@ -69,6 +84,40 @@ const stageLabel = computed(() => {
 </template>
 
 <style scoped>
+.stage-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 6px;
+}
+.stage-cell { min-width: 0; }
+.stage-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 1180px) {
+  .stage-grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+@media (max-width: 820px) {
+  .stage-grid {
+    display: flex;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+  }
+  .stage-cell {
+    flex: 0 0 auto;
+    min-width: 150px;
+  }
+  .stage-label {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+}
+
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes indet {
   0%   { left: -40%; width: 40%; }

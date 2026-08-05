@@ -52,6 +52,7 @@ export default defineNuxtConfig({
     head: {
       title: 'itinera',
       meta: [
+        { name: 'viewport', content: 'width=device-width, initial-scale=1' },
         { name: 'description', content: 'Multi-agent AI group travel planner' },
         { name: 'theme-color', content: '#0a0a0a' },
       ],

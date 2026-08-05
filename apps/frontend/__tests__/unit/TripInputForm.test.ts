@@ -217,6 +217,80 @@ describe('TripInputForm', () => {
   })
 })
 
+// ── Step 2: mobile input layout regressions ───────────────────────
+// Guards against the inline `style="width:160px"` bug reappearing — inline
+// styles beat any responsive CSS class/media-query for the same property,
+// which is exactly what broke these fields on narrow viewports.
+
+describe('TripInputForm — mobile input layout', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+  })
+
+  it('must-have input has no inline width style and uses the responsive txt-inline class', async () => {
+    const wrapper = mountForm()
+    await goToStep2(wrapper)
+
+    const input = wrapper.find('input[placeholder="+ add must-have"]')
+    expect(input.attributes('style') ?? '').not.toContain('width')
+    expect(input.classes()).toContain('txt-inline')
+  })
+
+  it('avoid input has no inline width style and uses the responsive txt-inline class', async () => {
+    const wrapper = mountForm()
+    await goToStep2(wrapper)
+
+    const input = wrapper.find('input[placeholder="+ add avoid"]')
+    expect(input.attributes('style') ?? '').not.toContain('width')
+    expect(input.classes()).toContain('txt-inline')
+  })
+
+  it('typing 200 chars into the must-have input and pressing Enter adds the full chip text without truncation', async () => {
+    const wrapper = mountForm()
+    await goToStep2(wrapper)
+
+    const longText = 'a'.repeat(200)
+    const input = wrapper.find('input[placeholder="+ add must-have"]')
+    await input.setValue(longText)
+    await input.trigger('keydown.enter')
+
+    const chips = wrapper.findAll('[data-testid="must-have-chip"]').map((c) => c.text())
+    expect(chips.some((c) => c.includes(longText))).toBe(true)
+  })
+
+  it('the fixed-dates start/end inputs have no inline width style', async () => {
+    const wrapper = mountForm()
+    await goToStep2(wrapper)
+
+    expect(wrapper.find('[data-testid="start-date"]').attributes('style') ?? '').not.toContain('width')
+    expect(wrapper.find('[data-testid="end-date"]').attributes('style') ?? '').not.toContain('width')
+    expect(wrapper.find('[data-testid="start-date"]').classes()).toContain('date-range-input')
+  })
+
+  it('the preferred-month input accepts a value in flexible-dates mode', async () => {
+    const wrapper = mountForm()
+    await goToStep2(wrapper)
+
+    await wrapper.find('[data-testid="date-mode-flexible"]').trigger('click')
+    const monthInput = wrapper.find('[data-testid="preferred-month"]')
+    await monthInput.setValue('2026-09')
+
+    expect((monthInput.element as HTMLInputElement).value).toBe('2026-09')
+  })
+
+  it('footer Voltar/Iniciar negociação buttons render as equal-stretch flex children', async () => {
+    const wrapper = mountForm()
+    await goToStep2(wrapper)
+
+    const backBtn = wrapper.find('.user-form-foot .btn:not(.btn-primary)')
+    const submitBtn = wrapper.find('[data-testid="submit-btn"]')
+    expect(backBtn.exists()).toBe(true)
+    expect(submitBtn.exists()).toBe(true)
+    expect(backBtn.element.parentElement).toBe(submitBtn.element.parentElement)
+  })
+})
+
 // ── Pre-fill from lastInput ───────────────────────────────────────
 
 describe('TripInputForm — pre-fill from lastInput', () => {

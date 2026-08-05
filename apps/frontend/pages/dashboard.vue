@@ -58,21 +58,16 @@ const AGENTS = [
 <template>
   <div class="min-h-screen bg-bg-0 text-fg-0">
     <!-- Header -->
-    <header class="border-b border-line-2 px-6 py-4 flex items-center justify-between">
-      <AppLogo :size="20" />
-      <div class="flex items-center gap-4">
-        <ThemeToggle />
-        <LanguageSwitcher />
-        <span class="text-fg-2 text-13">{{ authStore.user?.email }}</span>
+    <AppHeader :email="authStore.user?.email" @sign-out="authStore.logout()">
+      <template #links>
         <NuxtLink
           v-if="authStore.isAdmin"
           to="/admin"
           class="btn text-13"
           style="font-family:var(--mono);color:var(--amber);border-color:var(--amber-line)"
         >{{ t('nav.debug') }}</NuxtLink>
-        <button class="btn text-13" @click="authStore.logout()">{{ t('nav.signOut') }}</button>
-      </div>
-    </header>
+      </template>
+    </AppHeader>
 
     <!-- Main -->
     <main class="px-6 py-10">
@@ -91,7 +86,7 @@ const AGENTS = [
       </div>
 
       <!-- Dashboard two-column layout -->
-      <div class="user-grid" style="min-height:auto;grid-template-columns:1.6fr 1fr">
+      <div class="user-grid dash-grid">
 
         <!-- Left: trips -->
         <div class="user-left" style="padding-left:0;padding-top:0">

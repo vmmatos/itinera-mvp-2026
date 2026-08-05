@@ -216,6 +216,7 @@ html, body {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   font-feature-settings: 'ss01', 'cv01';
+  overflow-x: hidden;
 }
 
 /* ── Scrollbar ──────────────────────────────────────────────── */
@@ -615,6 +616,12 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   background: var(--bg-1);
 }
 
+/* Dashboard variant: wider left (trips) column, no forced min-height */
+.dash-grid {
+  grid-template-columns: 1.6fr 1fr;
+  min-height: auto;
+}
+
 /* Form rows */
 .field-row {
   display: grid;
@@ -661,6 +668,8 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
 .txt:focus { border-color: var(--green-line); background: var(--bg-2); }
 .txt.full { width: 100%; }
 .txt.lg { font-size: var(--t-22); padding: 14px 14px; letter-spacing: -0.01em; }
+.txt-inline { flex: 1 1 160px; min-width: 0; }
+.date-range-input { width: 140px; }
 
 /* Chip tags */
 .chip {
@@ -1094,6 +1103,29 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
     width: 100% !important;
   }
 
+  .field-input .txt-inline {
+    width: 100%;
+    flex: 0 0 auto;
+  }
+
+  .month-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .month-row input[type="month"] {
+    width: 100%;
+  }
+
+  .date-range-row {
+    flex-wrap: wrap;
+  }
+
+  .date-range-input {
+    width: 100%;
+    flex: 1 1 auto;
+  }
+
   .user-form-foot {
     flex-direction: column;
     gap: var(--s-3);
@@ -1101,7 +1133,12 @@ input[type="date"]::-webkit-calendar-picker-indicator:hover {
   }
 
   .user-form-foot > div {
-    justify-content: flex-end;
+    display: flex;
+    gap: 8px;
+  }
+
+  .user-form-foot > div .btn {
+    flex: 1 1 0;
   }
 
   .pref-grid {
