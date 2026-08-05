@@ -152,4 +152,4 @@ vite.config.ts.timestamp-*
 # Kong sentinel (written by configure.sh, not source)
 infrastructure/kong/.kong-configured
 
-CLAUDE.md
+.claude/settings.local.json
