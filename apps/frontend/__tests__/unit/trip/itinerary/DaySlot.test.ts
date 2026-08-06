@@ -18,15 +18,54 @@ describe('DaySlot', () => {
   it('renders a nested transit block when the slot carries transit data', () => {
     const wrapper = mount(DaySlot, {
       props: {
-        slot: slot({ transit: { icon: '🚗', modeLabel: 'Drive', destination: 'Seia', durationLabel: '4h 55m', priceEurPerPerson: 107, alternatives: [] } }),
+        slot: slot({ transit: { icon: '🚗', routeLabel: 'Drive →Seia', destination: 'Seia', durationLabel: '4h 55m', priceEurPerPerson: 107, qualifier: 'Recommended option', alternatives: [] } }),
         phase: 'morning', priceMode: 'pp', travellers: 2, currencySymbol: '€',
       },
     })
     expect(wrapper.find('[data-testid="transit-block"]').exists()).toBe(true)
   })
 
+  it('does not render the generated title when the slot carries transit data', () => {
+    const wrapper = mount(DaySlot, {
+      props: {
+        slot: slot({
+          title: 'Drive →Porto — €13/person — 0h 44m',
+          transit: { icon: '🚗', routeLabel: 'Drive →Porto', destination: 'Porto', durationLabel: '0h 44m', priceEurPerPerson: 13, qualifier: 'Recommended option', alternatives: [] },
+        }),
+        phase: 'morning', priceMode: 'pp', travellers: 2, currencySymbol: '€',
+      },
+    })
+    expect(wrapper.find('h3').exists()).toBe(false)
+  })
+
+  it('still renders the title for a normal activity that has no transit data', () => {
+    const wrapper = mount(DaySlot, { props: { slot: slot(), phase: 'morning', priceMode: 'pp', travellers: 2, currencySymbol: '€' } })
+    expect(wrapper.find('h3').text()).toBe('Guided visit to Mértola Castle')
+  })
+
   it('does not render a cost/agent tag row when neither is present', () => {
     const wrapper = mount(DaySlot, { props: { slot: slot({ costPerPerson: undefined, agentName: undefined }), phase: 'evening', priceMode: 'pp', travellers: 2, currencySymbol: '€' } })
     expect(wrapper.find('.tags').exists()).toBe(false)
+  })
+
+  it('renders the green address line when location and country are present', () => {
+    const wrapper = mount(DaySlot, {
+      props: { slot: slot({ location: 'Cais da Ribeira & Ponte Dom Luís I', country: 'Portugal' }), phase: 'afternoon', priceMode: 'pp', travellers: 2, currencySymbol: '€' },
+    })
+    expect(wrapper.find('.slot-city').text()).toBe('Cais da Ribeira & Ponte Dom Luís I, Portugal')
+  })
+
+  it('renders the address line with location only when country is absent', () => {
+    const wrapper = mount(DaySlot, {
+      props: { slot: slot({ location: 'Graham\'s Port Lodge', country: undefined }), phase: 'evening', priceMode: 'pp', travellers: 2, currencySymbol: '€' },
+    })
+    expect(wrapper.find('.slot-city').text()).toBe('Graham\'s Port Lodge')
+  })
+
+  it('does not render an address line when neither location nor country is present', () => {
+    const wrapper = mount(DaySlot, {
+      props: { slot: slot({ location: undefined, country: undefined }), phase: 'morning', priceMode: 'pp', travellers: 2, currencySymbol: '€' },
+    })
+    expect(wrapper.find('.slot-city').exists()).toBe(false)
   })
 })

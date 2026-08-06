@@ -112,6 +112,21 @@ describe('ItineraryStep', () => {
     expect(wrapper.find('[data-testid="weather-banner"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="day-slot"]').exists()).toBe(true)
   })
+
+  it('forwards restrictionWarnings through to the focused day panel', () => {
+    wrapper = mount(ItineraryStep, {
+      props: baseProps({
+        restrictionWarnings: [{ day: 1, activityName: 'Castle visit', warningType: 'opening_hours', message: '⚠ Check current hours before visiting.' }],
+      }),
+    })
+    expect(wrapper.find('[data-testid="restriction-warnings"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Check current hours before visiting.')
+  })
+
+  it('does not show a restriction-warning banner when restrictionWarnings is omitted', () => {
+    wrapper = mount(ItineraryStep, { props: baseProps() })
+    expect(wrapper.find('[data-testid="restriction-warnings"]').exists()).toBe(false)
+  })
 })
 
 describe('ItineraryStep — per-traveller preference match', () => {

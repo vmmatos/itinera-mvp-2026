@@ -8,7 +8,7 @@ import type {
   BudgetCategory,
   TransportOption,
 } from '~/types/index'
-import { routeIcon, formatDuration } from '~/utils/itinerary'
+import { routeIcon, formatDuration, optHeadLabel, priceDelta, transitQualifier } from '~/utils/itinerary'
 
 // ── Time slot bucketing ──────────────────────────────────────────
 // Pure copy of the logic in TripInputForm.vue (v1 stays untouched — that
@@ -223,28 +223,35 @@ function buildDayWeather(assessment: WeatherAssessment | null, dayNumber: number
 // ── Transit ───────────────────────────────────────────────────────
 export interface TransitAltVM {
   icon: string
-  label: string
+  routeLabel: string
+  departureTime?: string
   durationLabel: string
   priceEurPerPerson?: number
+  priceDeltaLabel?: string
 }
 
 export interface TransitVM {
   icon: string
-  modeLabel: string
+  routeLabel: string
   destination: string
   durationLabel: string
   priceEurPerPerson?: number
+  departureTime?: string
   subLabel?: string
+  qualifier: string
   warning?: string
   alternatives: TransitAltVM[]
 }
 
-function altVM(opt: TransportOption): TransitAltVM {
+function altVM(opt: TransportOption, to: string, selected: TransportOption): TransitAltVM {
+  const delta = priceDelta(opt, selected)
   return {
     icon: routeIcon(opt),
-    label: opt.mode === 'flight' ? 'Fly' : opt.mode === 'train' ? 'Train' : opt.mode === 'bus' ? 'Bus' : 'Drive',
+    routeLabel: optHeadLabel(opt, to),
+    departureTime: opt.departureTime,
     durationLabel: formatDuration(opt.durationMinutes),
     priceEurPerPerson: opt.priceEur,
+    priceDeltaLabel: delta || undefined,
   }
 }
 
@@ -252,7 +259,8 @@ export function buildTransitVM(activity: ItineraryActivity): TransitVM | null {
   const td = activity.transportData
   if (!td) return null
   const opt = td.selectedOption
-  const modeLabel = opt.mode === 'flight' ? 'Flight' : opt.mode === 'train' ? 'Train' : opt.mode === 'bus' ? 'Bus' : 'Drive'
+  // Strip bogus 0-duration entries (hub→dest API misses) before comparing/listing.
+  const validAlts = td.alternatives.filter((a) => a.durationMinutes > 0)
 
   // Real warning from the resolved leg takes priority — the mock's flavor
   // sentence ("orchestrator trimmed travel-day activities") is decorative
@@ -262,13 +270,15 @@ export function buildTransitVM(activity: ItineraryActivity): TransitVM | null {
 
   return {
     icon: routeIcon(opt),
-    modeLabel,
+    routeLabel: optHeadLabel(opt, td.to),
     destination: td.to,
     durationLabel: formatDuration(opt.durationMinutes),
     priceEurPerPerson: opt.priceEur,
+    departureTime: opt.departureTime,
     subLabel: opt.displaySummary,
+    qualifier: transitQualifier(opt, validAlts),
     warning,
-    alternatives: td.alternatives.slice(0, 3).map(altVM),
+    alternatives: validAlts.slice(0, 3).map((o) => altVM(o, td.to, opt)),
   }
 }
 
@@ -278,6 +288,8 @@ export interface SlotItemVM {
   description?: string
   costPerPerson?: number
   agentName?: string
+  location?: string
+  country?: string
   transit: TransitVM | null
 }
 
@@ -336,6 +348,8 @@ export function buildDayViewModels(
         description: activity.notes,
         costPerPerson: activity.cost,
         agentName: activity.ownerAgent,
+        location: activity.location,
+        country: activity.country,
         transit,
       })
     }

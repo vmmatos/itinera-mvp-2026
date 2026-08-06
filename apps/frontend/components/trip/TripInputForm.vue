@@ -3,6 +3,7 @@ import { ref, computed, watch, onUnmounted, onMounted } from 'vue'
 import { PERSONA_LABELS, PERSONA_AGENT, AGENT_COLOURS } from '~/types/index'
 import type { Persona, Flexibility, Currency, DateWindow, DateInput, CreateTripInput, TravellerInput, TravellerScore, TransportMode, TransportOption, TransportActivityData, BudgetBreakdown, ItineraryDay, ItineraryActivity, ItineraryCityTransition } from '~/types/index'
 import { formatTransportLabel } from '~/utils/itinerary'
+import type { RestrictionWarning } from '~/utils/itinerary'
 
 const props = withDefaults(defineProps<{ viewTripId?: string }>(), { viewTripId: undefined })
 
@@ -438,7 +439,9 @@ function buildDays(obj: unknown): ItineraryDay[] {
         ? (d['activities'] as Array<Record<string, unknown>>).map((a) => ({
             name:         String(a['name'] ?? a['activity'] ?? a['title'] ?? '—'),
             time:         typeof a['time'] === 'string' ? a['time'] : typeof a['startTime'] === 'string' ? a['startTime'] : undefined,
-            location:     typeof a['location'] === 'string' ? a['location'] : undefined,
+            location:     (typeof a['location'] === 'string' && a['location'].trim())
+                            ? a['location'].trim()
+                            : (typeof a['venue'] === 'string' && a['venue'].trim() ? a['venue'].trim() : undefined),
             venue:        typeof a['venue'] === 'string' && a['venue'].trim() ? a['venue'].trim() : undefined,
             city:         typeof a['city'] === 'string' && a['city'].trim() ? a['city'].trim() : undefined,
             country:      typeof a['country'] === 'string' && a['country'].trim() ? a['country'].trim() : undefined,
@@ -668,6 +671,13 @@ const weatherAssessment = computed<Record<string, unknown> | null>(() => {
 const weatherAlerts = computed<string[]>(() => {
   const c = weatherAssessment.value
   return Array.isArray(c?.['weatherAlerts']) ? (c['weatherAlerts'] as string[]) : []
+})
+
+const restrictionWarnings = computed((): RestrictionWarning[] => {
+  const c = latestOrchestratorContent.value
+  return Array.isArray(c?.['restrictionWarnings'])
+    ? (c['restrictionWarnings'] as RestrictionWarning[])
+    : []
 })
 
 const showWeather = computed(() => !(dateMode.value === 'flexible' && !preferredMonth.value))
@@ -1405,6 +1415,7 @@ const PERSONAS = computed(() => [
       :accommodation="accommodationBlocks"
       :weather-assessment="weatherAssessment"
       :show-weather="showWeather"
+      :restriction-warnings="restrictionWarnings"
       :validator-summary="validatorSummary"
       :traveller-scores="travellerScores"
       :agent-names="Object.keys(latestByAgent)"

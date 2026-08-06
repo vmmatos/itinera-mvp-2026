@@ -53,6 +53,51 @@ export function formatDuration(minutes: number): string {
   return m > 0 ? `${h}h ${m}m` : `${h}h`
 }
 
+export function modeName(mode: string): string {
+  return mode === 'flight' ? 'Flight' : mode === 'train' ? 'Train' : mode === 'bus' ? 'Bus' : 'Drive'
+}
+
+// Route text for a transit row header. Multi-leg routes carry a pre-built
+// displaySummary (e.g. "Bus + Train + Flight — 9h, ~€172/person"); direct
+// routes get "Train TGV →Barcelona" style with the provider/ref.
+export function optHeadLabel(opt: TransportOption, to: string): string {
+  if (opt.displaySummary) return opt.displaySummary
+  const ref = opt.flightNumber ?? opt.trainLine ?? opt.provider ?? ''
+  return `${modeName(opt.mode)}${ref ? ` ${ref}` : ''} →${to}`
+}
+
+export function priceDelta(alt: TransportOption, base?: TransportOption): string {
+  if (typeof alt.priceEur !== 'number' || typeof base?.priceEur !== 'number') return ''
+  const d = alt.priceEur - base.priceEur
+  if (d === 0) return ''
+  return d > 0 ? `+€${d}` : `−€${Math.abs(d)}`
+}
+
+// One-line qualifier under the selected transit option: why it was picked.
+// `comparableAlts` should already be stripped of bogus 0-duration entries.
+export function transitQualifier(selected: TransportOption, comparableAlts: TransportOption[]): string {
+  const all = [selected, ...comparableAlts]
+  const priced = all.filter((o) => typeof o.priceEur === 'number') as Array<TransportOption & { priceEur: number }>
+
+  if (priced.length > 1 && typeof selected.priceEur === 'number') {
+    const cheapest = Math.min(...priced.map((o) => o.priceEur))
+    if (selected.priceEur === cheapest) {
+      const nextUp = priced.map((o) => o.priceEur).filter((p) => p > cheapest).sort((a, b) => a - b)[0]
+      if (nextUp !== undefined) return `Cheapest option — €${selected.priceEur} vs €${nextUp} alternative`
+    }
+  }
+
+  if (comparableAlts.length > 0) {
+    const fastest = Math.min(...all.map((o) => o.durationMinutes))
+    if (selected.durationMinutes === fastest) {
+      const nextSlower = all.map((o) => o.durationMinutes).filter((m) => m > fastest).sort((a, b) => a - b)[0]
+      if (nextSlower !== undefined) return `Fastest option — ${formatDuration(selected.durationMinutes)} vs ${formatDuration(nextSlower)}`
+    }
+  }
+
+  return 'Recommended option'
+}
+
 export function formatLocation(act: LocationFields): string {
   const venue   = act.venue?.trim()
   const city    = act.city?.trim()

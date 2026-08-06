@@ -567,6 +567,42 @@ describe('TripInputForm — Step 4 (TripItineraryStep)', () => {
     // After refine, should return to step 1 (Group composition)
     expect(wrapper.text()).toContain('Group composition')
   })
+
+  // Preference agents populate `venue`, not `location`, on each activity
+  // (SlotProposal.venue) — buildDays() must fall back to it so the address
+  // line has something to render, matching pages/trips/[id].vue's extractItinerary().
+  const orchestratorProposal = (activities: Record<string, unknown>[], round = 3) => ({
+    id: 'prop-orchestrator', agent: 'orchestrator', round, action: 'propose',
+    content: { itinerary: [{ day: 1, city: 'Braga', activities }] },
+    createdAt: '2026-07-01T10:00:00Z',
+  })
+
+  it('falls back to venue for the activity location when location is absent', async () => {
+    const wrapper = await mountWithProposals([
+      orchestratorProposal([{ name: 'Visit museum', venue: 'Museu de Arqueologia D. Diogo de Sousa', country: 'Portugal' }]),
+    ])
+
+    const activities = wrapper.findComponent({ name: 'TripItineraryStep' }).props('timelineDays')[0].activities
+    expect(activities[0].location).toBe('Museu de Arqueologia D. Diogo de Sousa')
+  })
+
+  it('keeps an explicit location over venue when both are present', async () => {
+    const wrapper = await mountWithProposals([
+      orchestratorProposal([{ name: 'Visit museum', location: 'Praça Municipal', venue: 'Museu de Arqueologia D. Diogo de Sousa' }]),
+    ])
+
+    const activities = wrapper.findComponent({ name: 'TripItineraryStep' }).props('timelineDays')[0].activities
+    expect(activities[0].location).toBe('Praça Municipal')
+  })
+
+  it('error: leaves location undefined when neither location nor venue is present', async () => {
+    const wrapper = await mountWithProposals([
+      orchestratorProposal([{ name: 'Free time' }]),
+    ])
+
+    const activities = wrapper.findComponent({ name: 'TripItineraryStep' }).props('timelineDays')[0].activities
+    expect(activities[0].location).toBeUndefined()
+  })
 })
 
 // ── wizardRootStyle: step 3 v2 needs a bounded flex column so its 3
@@ -705,6 +741,60 @@ describe('TripInputForm — Step 4 weatherAssessment forwarding', () => {
 
     const step = wrapper.findComponent({ name: 'TripItineraryStep' })
     expect(step.props('weatherAssessment')).toBeNull()
+  })
+
+  it('forwards the orchestrator proposal\'s restrictionWarnings to TripItineraryStep', async () => {
+    mockApiGet
+      .mockResolvedValueOnce({ data: { data: { status: 'confirmed' } } })
+      .mockResolvedValueOnce({
+        data: {
+          data: [
+            {
+              tripId: VALID_TRIP_UUID, type: 'propose', agent: 'orchestrator', round: 1, timestamp: '',
+              content: {
+                itinerary: [{ day: 2, date: '2026-08-11', city: 'Braga', activities: [] }],
+                restrictionWarnings: [
+                  { day: 2, activityName: 'Pilgrimage climb', warningType: 'opening_hours', message: '⚠ "Pilgrimage climb and panoramic visit to Bom Jesus do Monte" opens 8:00 AM-7:00 PM but activity is scheduled at 09:00 on Friday. Check current hours before visiting.' },
+                ],
+              },
+            },
+          ],
+        },
+      })
+
+    const wrapper = mountAtStep4()
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    const step = wrapper.findComponent({ name: 'TripItineraryStep' })
+    const restrictionWarnings = step.props('restrictionWarnings') as Array<{ day: number; message: string }>
+    expect(restrictionWarnings).toHaveLength(1)
+    expect(restrictionWarnings[0]?.day).toBe(2)
+    expect(restrictionWarnings[0]?.message).toContain('Check current hours before visiting.')
+  })
+
+  it('forwards an empty restrictionWarnings array when no orchestrator proposal carries one', async () => {
+    mockApiGet
+      .mockResolvedValueOnce({ data: { data: { status: 'confirmed' } } })
+      .mockResolvedValueOnce({
+        data: {
+          data: [
+            {
+              tripId: VALID_TRIP_UUID, type: 'propose', agent: 'logistics', round: 1, timestamp: '',
+              content: { orderedLegs: [], cityStays: [] },
+            },
+          ],
+        },
+      })
+
+    const wrapper = mountAtStep4()
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    const step = wrapper.findComponent({ name: 'TripItineraryStep' })
+    expect(step.props('restrictionWarnings')).toEqual([])
   })
 })
 
