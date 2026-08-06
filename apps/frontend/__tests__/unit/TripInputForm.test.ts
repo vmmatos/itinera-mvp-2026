@@ -706,6 +706,60 @@ describe('TripInputForm — Step 4 weatherAssessment forwarding', () => {
     const step = wrapper.findComponent({ name: 'TripItineraryStep' })
     expect(step.props('weatherAssessment')).toBeNull()
   })
+
+  it('forwards the orchestrator proposal\'s restrictionWarnings to TripItineraryStep', async () => {
+    mockApiGet
+      .mockResolvedValueOnce({ data: { data: { status: 'confirmed' } } })
+      .mockResolvedValueOnce({
+        data: {
+          data: [
+            {
+              tripId: VALID_TRIP_UUID, type: 'propose', agent: 'orchestrator', round: 1, timestamp: '',
+              content: {
+                itinerary: [{ day: 2, date: '2026-08-11', city: 'Braga', activities: [] }],
+                restrictionWarnings: [
+                  { day: 2, activityName: 'Pilgrimage climb', warningType: 'opening_hours', message: '⚠ "Pilgrimage climb and panoramic visit to Bom Jesus do Monte" opens 8:00 AM-7:00 PM but activity is scheduled at 09:00 on Friday. Check current hours before visiting.' },
+                ],
+              },
+            },
+          ],
+        },
+      })
+
+    const wrapper = mountAtStep4()
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    const step = wrapper.findComponent({ name: 'TripItineraryStep' })
+    const restrictionWarnings = step.props('restrictionWarnings') as Array<{ day: number; message: string }>
+    expect(restrictionWarnings).toHaveLength(1)
+    expect(restrictionWarnings[0]?.day).toBe(2)
+    expect(restrictionWarnings[0]?.message).toContain('Check current hours before visiting.')
+  })
+
+  it('forwards an empty restrictionWarnings array when no orchestrator proposal carries one', async () => {
+    mockApiGet
+      .mockResolvedValueOnce({ data: { data: { status: 'confirmed' } } })
+      .mockResolvedValueOnce({
+        data: {
+          data: [
+            {
+              tripId: VALID_TRIP_UUID, type: 'propose', agent: 'logistics', round: 1, timestamp: '',
+              content: { orderedLegs: [], cityStays: [] },
+            },
+          ],
+        },
+      })
+
+    const wrapper = mountAtStep4()
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    const step = wrapper.findComponent({ name: 'TripItineraryStep' })
+    expect(step.props('restrictionWarnings')).toEqual([])
+  })
 })
 
 // ── Step 5: send PDF by email ───────────────────────────────────

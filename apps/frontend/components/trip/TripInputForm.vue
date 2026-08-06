@@ -3,6 +3,7 @@ import { ref, computed, watch, onUnmounted, onMounted } from 'vue'
 import { PERSONA_LABELS, PERSONA_AGENT, AGENT_COLOURS } from '~/types/index'
 import type { Persona, Flexibility, Currency, DateWindow, DateInput, CreateTripInput, TravellerInput, TravellerScore, TransportMode, TransportOption, TransportActivityData, BudgetBreakdown, ItineraryDay, ItineraryActivity, ItineraryCityTransition } from '~/types/index'
 import { formatTransportLabel } from '~/utils/itinerary'
+import type { RestrictionWarning } from '~/utils/itinerary'
 
 const props = withDefaults(defineProps<{ viewTripId?: string }>(), { viewTripId: undefined })
 
@@ -668,6 +669,13 @@ const weatherAssessment = computed<Record<string, unknown> | null>(() => {
 const weatherAlerts = computed<string[]>(() => {
   const c = weatherAssessment.value
   return Array.isArray(c?.['weatherAlerts']) ? (c['weatherAlerts'] as string[]) : []
+})
+
+const restrictionWarnings = computed((): RestrictionWarning[] => {
+  const c = latestOrchestratorContent.value
+  return Array.isArray(c?.['restrictionWarnings'])
+    ? (c['restrictionWarnings'] as RestrictionWarning[])
+    : []
 })
 
 const showWeather = computed(() => !(dateMode.value === 'flexible' && !preferredMonth.value))
@@ -1405,6 +1413,7 @@ const PERSONAS = computed(() => [
       :accommodation="accommodationBlocks"
       :weather-assessment="weatherAssessment"
       :show-weather="showWeather"
+      :restriction-warnings="restrictionWarnings"
       :validator-summary="validatorSummary"
       :traveller-scores="travellerScores"
       :agent-names="Object.keys(latestByAgent)"

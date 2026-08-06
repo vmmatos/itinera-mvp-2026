@@ -278,6 +278,8 @@ export interface SlotItemVM {
   description?: string
   costPerPerson?: number
   agentName?: string
+  location?: string
+  country?: string
   transit: TransitVM | null
 }
 
@@ -336,6 +338,8 @@ export function buildDayViewModels(
         description: activity.notes,
         costPerPerson: activity.cost,
         agentName: activity.ownerAgent,
+        location: activity.location,
+        country: activity.country,
         transit,
       })
     }

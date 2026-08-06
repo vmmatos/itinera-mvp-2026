@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import DayPanel from '~/components/trip/itinerary/DayPanel.vue'
 import type { DayVM } from '~/utils/itineraryViewModel'
+import type { RestrictionWarning } from '~/utils/itinerary'
 
 function dayVM(overrides: Partial<DayVM> = {}): DayVM {
   return {
@@ -76,5 +77,45 @@ describe('DayPanel', () => {
       props: { day: dayVM({ slots: { morning: [], afternoon: [], evening: [] } }), dayIndex: 0, totalDays: 8, priceMode: 'pp', travellers: 2, currencySymbol: '€' },
     })
     expect(wrapper.find('[data-testid="day-empty"]').exists()).toBe(true)
+  })
+
+  it('shows the restriction-warning banner for a day with matching warnings', () => {
+    const warnings: RestrictionWarning[] = [
+      { day: 1, activityName: 'Pilgrimage climb', warningType: 'opening_hours', message: '⚠ "Pilgrimage climb and panoramic visit to Bom Jesus do Monte" opens 8:00 AM-7:00 PM but activity is scheduled at 09:00 on Friday. Check current hours before visiting.' },
+    ]
+    const wrapper = mount(DayPanel, {
+      props: { day: dayVM({ day: 1 }), dayIndex: 0, totalDays: 8, priceMode: 'pp', travellers: 2, currencySymbol: '€', restrictionWarnings: warnings },
+    })
+    expect(wrapper.find('[data-testid="restriction-warnings"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Check current hours before visiting.')
+  })
+
+  it('does not show the restriction-warning banner when warnings belong to a different day', () => {
+    const warnings: RestrictionWarning[] = [
+      { day: 2, activityName: 'Pilgrimage climb', warningType: 'opening_hours', message: '⚠ some other day warning' },
+    ]
+    const wrapper = mount(DayPanel, {
+      props: { day: dayVM({ day: 1 }), dayIndex: 0, totalDays: 8, priceMode: 'pp', travellers: 2, currencySymbol: '€', restrictionWarnings: warnings },
+    })
+    expect(wrapper.find('[data-testid="restriction-warnings"]').exists()).toBe(false)
+  })
+
+  it('stacks multiple warnings for the same day', () => {
+    const warnings: RestrictionWarning[] = [
+      { day: 1, activityName: 'A', warningType: 'holiday', message: '⚠ first warning' },
+      { day: 1, activityName: 'B', warningType: 'opening_hours', message: '⚠ second warning' },
+    ]
+    const wrapper = mount(DayPanel, {
+      props: { day: dayVM({ day: 1 }), dayIndex: 0, totalDays: 8, priceMode: 'pp', travellers: 2, currencySymbol: '€', restrictionWarnings: warnings },
+    })
+    const items = wrapper.findAll('.dp-restriction-item')
+    expect(items).toHaveLength(2)
+  })
+
+  it('does not show the restriction-warning banner when no warnings are passed', () => {
+    const wrapper = mount(DayPanel, {
+      props: { day: dayVM({ day: 1 }), dayIndex: 0, totalDays: 8, priceMode: 'pp', travellers: 2, currencySymbol: '€' },
+    })
+    expect(wrapper.find('[data-testid="restriction-warnings"]').exists()).toBe(false)
   })
 })

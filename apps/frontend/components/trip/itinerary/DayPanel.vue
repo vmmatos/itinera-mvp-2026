@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
 import type { DayVM, Phase } from '~/utils/itineraryViewModel'
+import type { RestrictionWarning } from '~/utils/itinerary'
+import { warningsForDay } from '~/utils/itinerary'
 import TripItineraryDaySlot from './DaySlot.vue'
 
 const { t } = useI18n()
@@ -12,12 +14,15 @@ const props = defineProps<{
   priceMode: 'pp' | 'total'
   travellers: number
   currencySymbol: string
+  restrictionWarnings?: RestrictionWarning[]
 }>()
 
 defineEmits<{ prev: []; next: [] }>()
 
 const PHASES: Phase[] = ['morning', 'afternoon', 'evening']
 const bodyEl = ref<HTMLElement | null>(null)
+
+const dayWarnings = computed(() => warningsForDay(props.restrictionWarnings, props.day.day))
 
 watch(() => props.day.index, () => {
   if (bodyEl.value) bodyEl.value.scrollTop = 0
@@ -56,6 +61,10 @@ const riskLabel = computed(() => {
         </div>
         <span v-if="riskLabel" class="risk" :class="props.day.weather.risk" data-testid="risk-chip">{{ riskLabel }}</span>
       </div>
+    </div>
+
+    <div v-if="dayWarnings.length > 0" class="dp-restrictions" data-testid="restriction-warnings">
+      <p v-for="(w, wi) in dayWarnings" :key="wi" class="dp-restriction-item">{{ w.message }}</p>
     </div>
 
     <div ref="bodyEl" class="dp-body">
@@ -101,6 +110,8 @@ const riskLabel = computed(() => {
 .wx-banner .risk { font-family: var(--mono); font-size: var(--t-12); text-transform: uppercase; letter-spacing: .06em; padding: 2px 7px; border: 1px solid var(--line-2); color: var(--fg-3); }
 .wx-banner .risk.heat { color: var(--amber); border-color: var(--amber-line); background: var(--amber-bg); }
 .wx-banner .risk.low { color: var(--green); border-color: var(--green-line); background: var(--green-bg); }
+.dp-restrictions { display: flex; flex-direction: column; gap: 4px; padding: var(--s-2) var(--s-6); background: var(--amber-bg); border-bottom: 1px solid var(--amber-line); flex-shrink: 0; }
+.dp-restriction-item { font-family: var(--mono); font-size: var(--t-12); color: var(--amber); margin: 0; line-height: 1.5; }
 .dp-body { flex: 1; overflow-y: auto; padding: var(--s-2) var(--s-6) var(--s-8); }
 .wx-advisory { display: flex; align-items: center; gap: var(--s-2); margin: var(--s-4) 0 4px; padding: 9px var(--s-3); border: 1px solid var(--amber-line); background: var(--amber-bg); font-family: var(--mono); font-size: var(--t-12); color: var(--amber); }
 .empty { color: var(--fg-3); font-family: var(--mono); font-size: var(--t-13); padding: var(--s-6) 0; }

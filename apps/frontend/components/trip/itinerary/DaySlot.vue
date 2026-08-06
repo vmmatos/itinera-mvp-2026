@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { SlotItemVM, Phase } from '~/utils/itineraryViewModel'
 import { formatMoney } from '~/utils/itineraryViewModel'
 import { agentColorToken } from '~/utils/agentColorTokens'
@@ -22,6 +23,15 @@ function agentColor(name?: string): string {
   const colour = AGENT_COLOURS[name as AgentName]
   return agentColorToken(colour ?? 'neutral')
 }
+
+const venueLine = computed(() => {
+  const location = props.slot.location?.trim() ?? ''
+  const country = props.slot.country?.trim() ?? ''
+
+  return (country && location)
+    ? `${location}, ${country}`
+    : location
+})
 </script>
 
 <template>
@@ -31,6 +41,12 @@ function agentColor(name?: string): string {
     </div>
     <div class="item">
       <h3>{{ props.slot.title }}</h3>
+      <div v-if="venueLine" class="slot-city">
+        <svg class="pin-green" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M8 1.5C5.51 1.5 3.5 3.51 3.5 6c0 3.75 4.5 8.5 4.5 8.5s4.5-4.75 4.5-8.5c0-2.49-2.01-4.5-4.5-4.5zm0 6a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z" fill="currentColor"/>
+        </svg>
+        <span>{{ venueLine }}</span>
+      </div>
       <p v-if="props.slot.description">{{ props.slot.description }}</p>
       <div v-if="props.slot.costPerPerson || props.slot.agentName" class="tags">
         <span v-if="props.slot.costPerPerson" class="tag cost">
@@ -55,6 +71,8 @@ function agentColor(name?: string): string {
 .slot:last-child { border-bottom: none; }
 .when .ph { font-family: var(--mono); font-size: var(--t-12); color: var(--fg-2); text-transform: uppercase; letter-spacing: .08em; display: flex; align-items: center; gap: 7px; }
 .item h3 { margin: 0 0 6px; font-size: var(--t-16); font-weight: 500; letter-spacing: -0.01em; }
+.slot-city { display: flex; align-items: center; gap: 3px; font-family: var(--mono); font-size: 10px; color: var(--green); opacity: 0.75; letter-spacing: 0.03em; margin-bottom: 6px; }
+.pin-green { width: 10px; height: 10px; flex-shrink: 0; color: var(--green); }
 .item p { margin: 0; color: var(--fg-2); font-size: var(--t-15); max-width: 64ch; line-height: 1.55; }
 .tags { display: flex; gap: var(--s-2); margin-top: var(--s-3); flex-wrap: wrap; }
 .tag { font-family: var(--mono); font-size: var(--t-12); text-transform: uppercase; letter-spacing: .06em; padding: 2px var(--s-2); border: var(--hair); color: var(--fg-2); border-radius: var(--r-1); }

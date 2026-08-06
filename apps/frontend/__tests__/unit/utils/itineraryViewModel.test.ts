@@ -200,6 +200,21 @@ describe('buildDayViewModels', () => {
     expect(vm?.slots.evening).toHaveLength(1)
     expect(vm?.slots.afternoon).toHaveLength(0)
   })
+
+  it('carries location and country onto the produced slot when present', () => {
+    const [vm] = buildDayViewModels(
+      [day({ activities: [{ name: 'Port wine tasting', time: 'evening', location: 'Graham\'s Port Lodge, Vila Nova de Gaia', country: 'Portugal' }] })],
+      null, [], null,
+    )
+    expect(vm?.slots.evening[0]?.location).toBe('Graham\'s Port Lodge, Vila Nova de Gaia')
+    expect(vm?.slots.evening[0]?.country).toBe('Portugal')
+  })
+
+  it('leaves location and country undefined when absent on the source activity', () => {
+    const [vm] = buildDayViewModels([day({ activities: [{ name: 'Free walk', time: 'morning' }] })], null, [], null)
+    expect(vm?.slots.morning[0]?.location).toBeUndefined()
+    expect(vm?.slots.morning[0]?.country).toBeUndefined()
+  })
 })
 
 describe('dayCostMax', () => {

@@ -29,4 +29,25 @@ describe('DaySlot', () => {
     const wrapper = mount(DaySlot, { props: { slot: slot({ costPerPerson: undefined, agentName: undefined }), phase: 'evening', priceMode: 'pp', travellers: 2, currencySymbol: '€' } })
     expect(wrapper.find('.tags').exists()).toBe(false)
   })
+
+  it('renders the green address line when location and country are present', () => {
+    const wrapper = mount(DaySlot, {
+      props: { slot: slot({ location: 'Cais da Ribeira & Ponte Dom Luís I', country: 'Portugal' }), phase: 'afternoon', priceMode: 'pp', travellers: 2, currencySymbol: '€' },
+    })
+    expect(wrapper.find('.slot-city').text()).toBe('Cais da Ribeira & Ponte Dom Luís I, Portugal')
+  })
+
+  it('renders the address line with location only when country is absent', () => {
+    const wrapper = mount(DaySlot, {
+      props: { slot: slot({ location: 'Graham\'s Port Lodge', country: undefined }), phase: 'evening', priceMode: 'pp', travellers: 2, currencySymbol: '€' },
+    })
+    expect(wrapper.find('.slot-city').text()).toBe('Graham\'s Port Lodge')
+  })
+
+  it('does not render an address line when neither location nor country is present', () => {
+    const wrapper = mount(DaySlot, {
+      props: { slot: slot({ location: undefined, country: undefined }), phase: 'morning', priceMode: 'pp', travellers: 2, currencySymbol: '€' },
+    })
+    expect(wrapper.find('.slot-city').exists()).toBe(false)
+  })
 })
