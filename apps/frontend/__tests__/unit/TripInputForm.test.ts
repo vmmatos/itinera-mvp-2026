@@ -567,6 +567,42 @@ describe('TripInputForm — Step 4 (TripItineraryStep)', () => {
     // After refine, should return to step 1 (Group composition)
     expect(wrapper.text()).toContain('Group composition')
   })
+
+  // Preference agents populate `venue`, not `location`, on each activity
+  // (SlotProposal.venue) — buildDays() must fall back to it so the address
+  // line has something to render, matching pages/trips/[id].vue's extractItinerary().
+  const orchestratorProposal = (activities: Record<string, unknown>[], round = 3) => ({
+    id: 'prop-orchestrator', agent: 'orchestrator', round, action: 'propose',
+    content: { itinerary: [{ day: 1, city: 'Braga', activities }] },
+    createdAt: '2026-07-01T10:00:00Z',
+  })
+
+  it('falls back to venue for the activity location when location is absent', async () => {
+    const wrapper = await mountWithProposals([
+      orchestratorProposal([{ name: 'Visit museum', venue: 'Museu de Arqueologia D. Diogo de Sousa', country: 'Portugal' }]),
+    ])
+
+    const activities = wrapper.findComponent({ name: 'TripItineraryStep' }).props('timelineDays')[0].activities
+    expect(activities[0].location).toBe('Museu de Arqueologia D. Diogo de Sousa')
+  })
+
+  it('keeps an explicit location over venue when both are present', async () => {
+    const wrapper = await mountWithProposals([
+      orchestratorProposal([{ name: 'Visit museum', location: 'Praça Municipal', venue: 'Museu de Arqueologia D. Diogo de Sousa' }]),
+    ])
+
+    const activities = wrapper.findComponent({ name: 'TripItineraryStep' }).props('timelineDays')[0].activities
+    expect(activities[0].location).toBe('Praça Municipal')
+  })
+
+  it('error: leaves location undefined when neither location nor venue is present', async () => {
+    const wrapper = await mountWithProposals([
+      orchestratorProposal([{ name: 'Free time' }]),
+    ])
+
+    const activities = wrapper.findComponent({ name: 'TripItineraryStep' }).props('timelineDays')[0].activities
+    expect(activities[0].location).toBeUndefined()
+  })
 })
 
 // ── wizardRootStyle: step 3 v2 needs a bounded flex column so its 3

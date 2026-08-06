@@ -439,7 +439,9 @@ function buildDays(obj: unknown): ItineraryDay[] {
         ? (d['activities'] as Array<Record<string, unknown>>).map((a) => ({
             name:         String(a['name'] ?? a['activity'] ?? a['title'] ?? '—'),
             time:         typeof a['time'] === 'string' ? a['time'] : typeof a['startTime'] === 'string' ? a['startTime'] : undefined,
-            location:     typeof a['location'] === 'string' ? a['location'] : undefined,
+            location:     (typeof a['location'] === 'string' && a['location'].trim())
+                            ? a['location'].trim()
+                            : (typeof a['venue'] === 'string' && a['venue'].trim() ? a['venue'].trim() : undefined),
             venue:        typeof a['venue'] === 'string' && a['venue'].trim() ? a['venue'].trim() : undefined,
             city:         typeof a['city'] === 'string' && a['city'].trim() ? a['city'].trim() : undefined,
             country:      typeof a['country'] === 'string' && a['country'].trim() ? a['country'].trim() : undefined,
