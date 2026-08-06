@@ -6,15 +6,16 @@ import type { TransitVM } from '~/utils/itineraryViewModel'
 function transit(overrides: Partial<TransitVM> = {}): TransitVM {
   return {
     icon: '🚗',
-    modeLabel: 'Drive',
+    routeLabel: 'Drive →Seia',
     destination: 'Seia',
     durationLabel: '4h 55m',
     priceEurPerPerson: 107,
+    qualifier: 'Recommended option',
     warning: 'Long journey',
     alternatives: [
-      { icon: '✈️', label: 'Fly', durationLabel: '3h 40m', priceEurPerPerson: 189 },
-      { icon: '🚆', label: 'Train', durationLabel: '6h 20m', priceEurPerPerson: 96 },
-      { icon: '🚐', label: 'Drive', durationLabel: '4h 30m', priceEurPerPerson: 240 },
+      { icon: '✈️', routeLabel: 'Fly →Seia', durationLabel: '3h 40m', priceEurPerPerson: 189, priceDeltaLabel: '+€82' },
+      { icon: '🚆', routeLabel: 'Train →Seia', durationLabel: '6h 20m', priceEurPerPerson: 96, departureTime: '12:00' },
+      { icon: '🚐', routeLabel: 'Drive →Seia', durationLabel: '4h 30m', priceEurPerPerson: 240 },
     ],
     ...overrides,
   }
@@ -57,5 +58,21 @@ describe('TransitBlock', () => {
   it('does not render an alternatives toggle when there are none', () => {
     const wrapper = mount(TransitBlock, { props: { transit: transit({ alternatives: [] }), priceMode: 'pp', travellers: 2 } })
     expect(wrapper.find('[data-testid="transit-alts-toggle"]').exists()).toBe(false)
+  })
+
+  it('always renders the qualifier caption', () => {
+    const wrapper = mount(TransitBlock, {
+      props: { transit: transit({ qualifier: 'Cheapest option — €13 vs €23 alternative' }), priceMode: 'pp', travellers: 2 },
+    })
+    expect(wrapper.find('[data-testid="transit-qualifier"]').text()).toBe('Cheapest option — €13 vs €23 alternative')
+  })
+
+  it('shows an alternative\'s departure time and price delta when present', async () => {
+    const wrapper = mount(TransitBlock, { props: { transit: transit(), priceMode: 'pp', travellers: 2 } })
+    await wrapper.find('[data-testid="transit-alts-toggle"]').trigger('click')
+
+    const alts = wrapper.findAll('[data-testid="transit-alt"]')
+    expect(alts[0]!.text()).toContain('+€82')
+    expect(alts[1]!.text()).toContain('12:00')
   })
 })

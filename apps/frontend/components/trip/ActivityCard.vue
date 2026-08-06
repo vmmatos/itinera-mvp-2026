@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { AGENT_COLOURS } from '~/types/index'
 import type { TransportActivityData, TransportOption } from '~/types/index'
-import { routeIcon, formatDuration } from '~/utils/itinerary'
+import { routeIcon, formatDuration, optHeadLabel, priceDelta, transitQualifier } from '~/utils/itinerary'
 
 export interface ActivityCardProps {
   venue?:         string
@@ -34,56 +34,17 @@ const validAlts = computed<TransportOption[]>(() =>
   (td.value?.alternatives ?? []).filter((a) => a.durationMinutes > 0),
 )
 
-function modeName(mode: string): string {
-  return mode === 'flight' ? 'Flight' : mode === 'train' ? 'Train' : mode === 'bus' ? 'Bus' : 'Drive'
-}
-
-// Route text for the row header. Multi-leg routes carry a pre-built
-// displaySummary (e.g. "Bus + Train + Flight — 9h, ~€172/person"); direct
-// routes get "Train TGV →Barcelona" style with the provider/ref.
-function optHeadLabel(opt: TransportOption, to: string): string {
-  if (opt.displaySummary) return opt.displaySummary
-  const ref = opt.flightNumber ?? opt.trainLine ?? opt.provider ?? ''
-  return `${modeName(opt.mode)}${ref ? ` ${ref}` : ''} →${to}`
-}
-
 // Price/duration live in displaySummary for multi-leg, so suppress the
 // redundant badges in that case and only surface the departure time.
 function showPriceDur(opt: TransportOption): boolean {
   return !opt.displaySummary
 }
 
-function priceDelta(alt: TransportOption, base?: TransportOption): string {
-  if (typeof alt.priceEur !== 'number' || typeof base?.priceEur !== 'number') return ''
-  const d = alt.priceEur - base.priceEur
-  if (d === 0) return ''
-  return d > 0 ? `+€${d}` : `−€${Math.abs(d)}`
-}
-
 // One-line qualifier under the selected option: why it was picked.
 const qualifier = computed<string>(() => {
   const sel = td.value?.selectedOption
   if (!sel) return ''
-  const all = [sel, ...validAlts.value]
-  const priced = all.filter((o) => typeof o.priceEur === 'number') as Array<TransportOption & { priceEur: number }>
-
-  if (priced.length > 1 && typeof sel.priceEur === 'number') {
-    const cheapest = Math.min(...priced.map((o) => o.priceEur))
-    if (sel.priceEur === cheapest) {
-      const nextUp = priced.map((o) => o.priceEur).filter((p) => p > cheapest).sort((a, b) => a - b)[0]
-      if (nextUp !== undefined) return `Cheapest option — €${sel.priceEur} vs €${nextUp} alternative`
-    }
-  }
-
-  if (validAlts.value.length > 0) {
-    const fastest = Math.min(...all.map((o) => o.durationMinutes))
-    if (sel.durationMinutes === fastest) {
-      const nextSlower = all.map((o) => o.durationMinutes).filter((m) => m > fastest).sort((a, b) => a - b)[0]
-      if (nextSlower !== undefined) return `Fastest option — ${formatDuration(sel.durationMinutes)} vs ${formatDuration(nextSlower)}`
-    }
-  }
-
-  return 'Recommended option'
+  return transitQualifier(sel, validAlts.value)
 })
 
 const venueLine = computed(() => {

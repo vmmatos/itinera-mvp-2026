@@ -322,6 +322,43 @@ describe('buildTransitVM', () => {
     expect(vm?.alternatives).toHaveLength(3)
   })
 
+  it('builds the route label, departure time and per-alternative price delta', () => {
+    const selected: TransportOption = { mode: 'car', durationMinutes: 44, priceEur: 13, departureTime: '09:00', warnings: [] }
+    const alts: TransportOption[] = [
+      { mode: 'train', trainLine: 'Alfa-Pendular', durationMinutes: 38, priceEur: 23, departureTime: '12:00', warnings: [] },
+    ]
+    const vm = buildTransitVM({ name: 'In transit', transportData: { to: 'Porto', selectedOption: selected, alternatives: alts } })
+    expect(vm?.routeLabel).toBe('Drive →Porto')
+    expect(vm?.departureTime).toBe('09:00')
+    expect(vm?.alternatives[0]).toMatchObject({
+      routeLabel: 'Train Alfa-Pendular →Porto',
+      departureTime: '12:00',
+      priceDeltaLabel: '+€10',
+    })
+  })
+
+  it('error: filters out zero-duration alternatives (bogus hub→dest API misses)', () => {
+    const alts: TransportOption[] = [
+      { mode: 'train', durationMinutes: 0, priceEur: 5, warnings: [] },
+      { mode: 'bus', durationMinutes: 90, priceEur: 20, warnings: [] },
+    ]
+    const vm = buildTransitVM({ name: 'In transit', transportData: { to: 'Seia', selectedOption: TRANSPORT_OPTION, alternatives: alts } })
+    expect(vm?.alternatives).toHaveLength(1)
+    expect(vm?.alternatives[0]?.durationLabel).toBe('1h 30m')
+  })
+
+  it('computes the qualifier from the selected option and comparable alternatives', () => {
+    const selected: TransportOption = { mode: 'car', durationMinutes: 44, priceEur: 13, warnings: [] }
+    const alts: TransportOption[] = [{ mode: 'train', durationMinutes: 38, priceEur: 23, warnings: [] }]
+    const vm = buildTransitVM({ name: 'In transit', transportData: { to: 'Porto', selectedOption: selected, alternatives: alts } })
+    expect(vm?.qualifier).toBe('Cheapest option — €13 vs €23 alternative')
+  })
+
+  it('error: qualifier falls back to "Recommended option" with no comparable alternatives', () => {
+    const vm = buildTransitVM({ name: 'x', transportData: { to: 'Seia', selectedOption: TRANSPORT_OPTION, alternatives: [] } })
+    expect(vm?.qualifier).toBe('Recommended option')
+  })
+
   it('surfaces a real warning verbatim when present', () => {
     const opt: TransportOption = { ...TRANSPORT_OPTION, warnings: ['Overnight layover required'] }
     const vm = buildTransitVM({ name: 'x', transportData: { to: 'Seia', selectedOption: opt, alternatives: [] } })

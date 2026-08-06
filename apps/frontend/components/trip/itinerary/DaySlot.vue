@@ -40,7 +40,7 @@ const venueLine = computed(() => {
       <span class="ph"><span class="ic">{{ PHASE_ICON[props.phase] }}</span>{{ t(`trip.itinerary.daySlot.phase.${props.phase}`) }}</span>
     </div>
     <div class="item">
-      <h3>{{ props.slot.title }}</h3>
+      <h3 v-if="!props.slot.transit">{{ props.slot.title }}</h3>
       <div v-if="venueLine" class="slot-city">
         <svg class="pin-green" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
           <path d="M8 1.5C5.51 1.5 3.5 3.51 3.5 6c0 3.75 4.5 8.5 4.5 8.5s4.5-4.75 4.5-8.5c0-2.49-2.01-4.5-4.5-4.5zm0 6a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3z" fill="currentColor"/>
