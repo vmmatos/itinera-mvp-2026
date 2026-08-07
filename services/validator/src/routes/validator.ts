@@ -24,11 +24,43 @@ const GroupPreferencesSchema = z.object({
   avoids: PreferenceTermsSchema.default([]),
 });
 
+/**
+ * Finance and logistics compliance, blended with persona fit into the single
+ * score FINAL_VALIDATION gates on — see ComplianceScorer. Both optional: an
+ * orchestrator on an older build sends neither and gets persona-only scoring,
+ * exactly as before.
+ */
+const ComplianceSchema = z.object({
+  finance: z
+    .object({
+      budgetTotal: z.number(),
+      actualTotal: z.number(),
+    })
+    .optional(),
+  logistics: z
+    .object({
+      transportDowngrades: z.number().int().min(0).optional(),
+      restrictionWarnings: z.number().int().min(0).optional(),
+      weatherRisk: z.enum(['low', 'medium', 'high']).optional(),
+    })
+    .optional(),
+});
+
 const ValidateSchema = z.object({
   tripId: z.string().uuid(),
   round: z.number().int().min(1),
   proposal: z.record(z.unknown()),
   groupPreferences: GroupPreferencesSchema.optional(),
+  compliance: ComplianceSchema.optional(),
+  /** Budget/duration/traveller-count checks — previously never sent, so
+   * ConstraintChecker's budget branch was dead code. */
+  constraints: z
+    .object({
+      budgetTotal: z.number().positive().optional(),
+      travellerCount: z.number().int().positive().optional(),
+      durationDays: z.number().int().positive().optional(),
+    })
+    .optional(),
 });
 
 const TravellerPreferenceSchema = z
@@ -112,7 +144,7 @@ export function createValidatorRouter(
       return;
     }
 
-    const { tripId, round, proposal, groupPreferences } = parsed.data;
+    const { tripId, round, proposal, groupPreferences, compliance, constraints } = parsed.data;
     const start = Date.now();
 
     const travellerRepo = AppDataSource.getRepository(Traveller);
@@ -120,7 +152,9 @@ export function createValidatorRouter(
     const dbTravellers = await travellerRepo.find({ where: { tripId }, order: { createdAt: 'ASC' } });
     const travellers = dbTravellers.map((t, i) => toTravellerPreference(t, i, groupPreferences));
 
-    const result = await validationService.validate(tripId, round, proposal, {}, travellers);
+    const result = await validationService.validate(
+      tripId, round, proposal, constraints ?? {}, travellers, compliance,
+    );
 
     res.json({
       content: result,

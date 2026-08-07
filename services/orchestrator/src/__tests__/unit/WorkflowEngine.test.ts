@@ -989,6 +989,67 @@ describe('WorkflowEngine — validation-score rejection retries with a real re-m
     const afterPass = savedContexts[savedContexts.length - 1];
     expect(afterPass?.scoreFeedback).toBeUndefined();
   });
+
+  // A score dragged down by budget must not produce a persona-rebalance
+  // instruction: telling the merge to give underserved personas *more*
+  // activities would push an already-over-budget itinerary further out.
+  it('a budget-caused low score suppresses the persona-rebalance instruction', async () => {
+    setupCommonMocks(stateManager, eventPublisher);
+    vi.mocked(stateManager.getTrip).mockResolvedValue(TRIP_WITH_PERSONAS as never);
+    vi.mocked(agentCaller.callLogisticsPlan).mockResolvedValue(ROUTE_GRAPH);
+    vi.mocked(agentCaller.callFinanceEstimate).mockResolvedValue(BUDGET_PLAN);
+    vi.mocked(agentCaller.callPreferenceAgentSlots).mockResolvedValue([
+      { content: {}, latencyMs: 10, tokensUsed: 1 },
+      { content: {}, latencyMs: 10, tokensUsed: 1 },
+      { content: {}, latencyMs: 10, tokensUsed: 1 },
+      { content: {}, latencyMs: 10, tokensUsed: 1 },
+    ]);
+    vi.mocked(agentCaller.callOrchestratorMerge).mockResolvedValue({
+      content: JSON.parse(JSON.stringify(CULTURE_ONLY_ITINERARY)) as Record<string, unknown>,
+      latencyMs: 20,
+      tokensUsed: 20,
+    });
+    vi.mocked(agentCaller.callFinanceAgent).mockResolvedValue({
+      content: { verdict: { approved: true, budgetFeasible: true, issues: [] } },
+      latencyMs: 10,
+      tokensUsed: 10,
+    });
+    vi.mocked(agentCaller.callValidatorAgent)
+      .mockResolvedValueOnce({
+        content: {
+          scoring: {
+            overallScore: 59,
+            scores: [
+              { travellerId: 't1', label: 'Vitor', score: 20 },
+              { travellerId: 't2', label: 'Joana', score: 30 },
+            ],
+          },
+          // Budget blowout capped the blend — persona fit was actually fine.
+          compliance: {
+            personaScore: 100, financeScore: 0, logisticsScore: 100,
+            combinedScore: 59, cappedByBudget: true,
+          },
+        },
+        latencyMs: 10,
+        tokensUsed: 10,
+      })
+      .mockResolvedValueOnce({
+        content: { scoring: { overallScore: 75, scores: [] } },
+        latencyMs: 10,
+        tokensUsed: 10,
+      });
+
+    driveValidationRetryPath();
+    await engine.run(TRIP_ID);
+
+    const secondTripContext = vi.mocked(agentCaller.callOrchestratorMerge).mock.calls[1]![5] as string;
+    expect(secondTripContext).not.toContain('PERSONA REBALANCE RETRY');
+
+    const savedContexts = vi.mocked(stateManager.saveWorkflowContext).mock.calls.map((c) => c[1] as WorkflowContext);
+    const afterLowScore = savedContexts.find((c) => c.scoreFeedback !== undefined);
+    expect(afterLowScore?.scoreFeedback?.primaryCause).toBe('budget');
+    expect(afterLowScore?.scoreBreakdown).toMatchObject({ financeScore: 0, cappedByBudget: true });
+  });
 });
 
 describe('WorkflowEngine — per-leg transport priority', () => {
@@ -1832,7 +1893,25 @@ describe('WorkflowEngine — activity category backfill and validator hand-off',
       2,
       expect.any(Object),
       { mustHaves: ['museus'], avoids: ['discotecas'] },
+      expect.any(Object),
+      expect.any(Object),
     );
+  });
+
+  it('happy path: sends finance and logistics compliance so the score is a blend, not persona-only', async () => {
+    await runWithSlotProposals();
+
+    const args = vi.mocked(agentCaller.callValidatorAgent).mock.calls[0]!;
+    const compliance = args[4] as {
+      finance?: { budgetTotal: number; actualTotal: number };
+      logistics?: { transportDowngrades: number; restrictionWarnings: number; weatherRisk: string };
+    };
+    // No budgetBreakdown in the mocked finance response, so the finance axis has
+    // no real cost to score against and is omitted rather than sent as zero.
+    expect(compliance.finance).toBeUndefined();
+    expect(compliance.logistics).toMatchObject({ transportDowngrades: 0, restrictionWarnings: 0 });
+
+    expect(args[5]).toMatchObject({ budgetTotal: 1500 });
   });
 
   it('error: a validator failure still finalises the run instead of throwing', async () => {

@@ -270,4 +270,80 @@ describe('BaseAgent.proposeForSlot', () => {
     expect(anthropic.complete).not.toHaveBeenCalled();
     expect(event).toEqual(cachedEvent);
   });
+
+  // The budget already reaches the model (budgetPerPersonBlock is in the slot
+  // JSON, and every *-slots.txt tells it to stay within) but that is
+  // instruction-only — nothing enforced it, which is how a €2200 trip produced
+  // a ~€4400 itinerary and burned two re-merge cycles downstream.
+  describe('budget enforcement', () => {
+    const OVER_BUDGET_JSON = JSON.stringify({
+      slotProposals: [
+        { city: 'Porto', date: '2026-09-10', slot: 'morning', activity: 'Helicopter tour', venue: 'Heliport', estimatedCostPerPerson: 400 },
+      ],
+      reasoning: 'Splurge',
+    });
+
+    it('happy path: proposals within budget are accepted without a re-ask', async () => {
+      vi.mocked(anthropic.complete).mockResolvedValue({
+        content: VALID_SLOT_PROPOSALS_JSON, latencyMs: 500, tokensUsed: 800, truncated: false,
+      });
+
+      await agent.proposeForSlot('trip-123', 1, [SLOT]);
+
+      expect(anthropic.complete).toHaveBeenCalledOnce();
+    });
+
+    it('re-asks with the real figures when a city exceeds its budget, and takes the cheaper answer', async () => {
+      vi.mocked(anthropic.complete)
+        .mockResolvedValueOnce({ content: OVER_BUDGET_JSON, latencyMs: 500, tokensUsed: 800, truncated: false })
+        .mockResolvedValueOnce({ content: VALID_SLOT_PROPOSALS_JSON, latencyMs: 400, tokensUsed: 600, truncated: false });
+
+      const event = await agent.proposeForSlot('trip-123', 1, [SLOT]);
+
+      expect(anthropic.complete).toHaveBeenCalledTimes(2);
+      const retryPrompt = JSON.stringify(vi.mocked(anthropic.complete).mock.calls[1]);
+      expect(retryPrompt).toContain('400');
+      expect(retryPrompt).toContain('300');
+
+      const proposals = (event.content as { slotProposals: Array<{ estimatedCostPerPerson: number }> }).slotProposals;
+      expect(proposals[0]!.estimatedCostPerPerson).toBe(0);
+      expect(event.metrics?.tokensUsed).toBe(1400);
+    });
+
+    it('error: still over budget after the re-ask passes through rather than starving the persona', async () => {
+      // Dropping the proposals would leave this persona with zero slots in the
+      // merge — its own failure mode. Finance now contributes to the combined
+      // validation score, so an over-budget itinerary is caught there instead.
+      vi.mocked(anthropic.complete).mockResolvedValue({
+        content: OVER_BUDGET_JSON, latencyMs: 500, tokensUsed: 800, truncated: false,
+      });
+
+      const event = await agent.proposeForSlot('trip-123', 1, [SLOT]);
+
+      expect(anthropic.complete).toHaveBeenCalledTimes(2);
+      const proposals = (event.content as { slotProposals: unknown[] }).slotProposals;
+      expect(proposals).toHaveLength(1);
+    });
+
+    it('error: an invalid re-ask response keeps the original proposals', async () => {
+      vi.mocked(anthropic.complete)
+        .mockResolvedValueOnce({ content: OVER_BUDGET_JSON, latencyMs: 500, tokensUsed: 800, truncated: false })
+        .mockResolvedValueOnce({ content: 'sorry, cheaper options are hard', latencyMs: 100, tokensUsed: 50, truncated: false });
+
+      const event = await agent.proposeForSlot('trip-123', 1, [SLOT]);
+
+      const proposals = (event.content as { slotProposals: Array<{ activity: string }> }).slotProposals;
+      expect(proposals[0]!.activity).toBe('Helicopter tour');
+    });
+
+    it('error: a zero budget means unknown, not free — no re-ask is triggered', async () => {
+      vi.mocked(anthropic.complete).mockResolvedValue({
+        content: OVER_BUDGET_JSON, latencyMs: 500, tokensUsed: 800, truncated: false,
+      });
+
+      await agent.proposeForSlot('trip-123', 1, [{ ...SLOT, budgetPerPersonBlock: 0 }]);
+
+      expect(anthropic.complete).toHaveBeenCalledOnce();
+    });
+  });
 });

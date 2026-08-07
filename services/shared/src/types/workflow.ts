@@ -127,6 +127,22 @@ export interface LowScoringTraveller {
 export interface ScoreFeedback {
   overallScore: number;
   lowScoringTravellers: LowScoringTraveller[];
+  /** Which axis dragged the score down — drives which retry instruction is
+   * built. A budget failure must not produce a persona-rebalance instruction. */
+  primaryCause?: 'persona' | 'budget' | 'logistics';
+}
+
+/**
+ * The three axes behind the single FINAL_VALIDATION score. `finance`/`logistics`
+ * are null when the validator had no data for that axis.
+ */
+export interface ScoreBreakdown {
+  personaScore: number;
+  financeScore: number | null;
+  logisticsScore: number | null;
+  combinedScore: number;
+  /** True when a budget blowout capped the combined score below the threshold. */
+  cappedByBudget?: boolean;
 }
 
 export interface RestrictionWarning {
@@ -214,8 +230,17 @@ export interface WorkflowContext {
   touristAgentOutputs?: Record<string, unknown>;
   mergedItinerary?: Record<string, unknown>;
   financeFeedback?: FinanceFeedback;
+  /**
+   * What the merged itinerary actually costs the group, as computed by finance
+   * at FINANCE_VALIDATE. Kept separate from `financeFeedback` (which is cleared
+   * on approval) because the final validation needs the real figure whether
+   * finance approved or not, to score the budget axis — see ComplianceScorer.
+   */
+  actualCostTotal?: number;
   validationScore?: number;
   scoreFeedback?: ScoreFeedback;
+  /** Per-axis breakdown behind `validationScore`. */
+  scoreBreakdown?: ScoreBreakdown;
   currentState: WorkflowState;
   retryCount: Partial<Record<WorkflowRetryTarget, number>>;
   errors: string[];

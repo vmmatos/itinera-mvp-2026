@@ -1,10 +1,11 @@
 import { BaseService, hasGroupPreferences, resolveGroupPreferences, deriveGroupPersonaWeights, evaluateTransportPriority, isPersonaKey, matchesPreferenceTerm, PERSONA_CATEGORIES } from '@itinera/shared';
 import type { GroupPreferences, PersonaKey } from '@itinera/shared';
 import type { TransportMode, AgentEvent, NegotiationCompleteEvent, TransportOption, TransportLeg, RouteGraph, RestrictionWarning } from '@itinera/shared';
-import type { WorkflowContext, WorkflowState, TouristSlotInput, TransportPriorityResult, ProposalDecision, ProposalDecisionStatus, SlotProposal, AgentName, AgentAction, SuggestedCut, ScoreFeedback, LowScoringTraveller } from '@itinera/shared';
+import type { WorkflowContext, WorkflowState, TouristSlotInput, TransportPriorityResult, ProposalDecision, ProposalDecisionStatus, SlotProposal, AgentName, AgentAction, SuggestedCut, ScoreFeedback, ScoreBreakdown, LowScoringTraveller } from '@itinera/shared';
 import { WorkflowStateMachine } from '@/services/WorkflowStateMachine';
 import { StateManager } from '@/services/StateManager';
 import { AgentCaller } from '@/services/AgentCaller';
+import type { ValidatorComplianceInput } from '@/services/AgentCaller';
 import { EventPublisher } from '@/services/EventPublisher';
 import type { TripService } from '@/services/TripService';
 import type { Trip } from '@/entities/Trip';
@@ -364,8 +365,14 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
   // into an instruction the merge LLM can act on — same idea as
   // buildCostCuttingInstruction, but for persona/category imbalance instead of
   // budget. Absent on the first merge attempt (no prior score yet).
+  //
+  // Skipped entirely when the score was dragged down by budget or logistics
+  // rather than persona fit: telling the merge to give underserved personas
+  // *more* activities would push an already-over-budget itinerary further out,
+  // and buildCostCuttingInstruction already covers the budget case.
   private buildPersonaRebalanceInstruction(feedback: WorkflowContext['scoreFeedback']): string {
     if (!feedback || feedback.lowScoringTravellers.length === 0) return '';
+    if (feedback.primaryCause && feedback.primaryCause !== 'persona') return '';
     const perTraveller = feedback.lowScoringTravellers
       .map((t) => {
         const missing = t.missingCategories.length > 0 ? ` — missing: ${t.missingCategories.join(', ')}` : '';
@@ -379,6 +386,29 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
       `(consult GROUP PREFERENCES personaWeights for who is actually in the group), even displacing`,
       `a zero-weight persona's activity if that's what a contested slot needs.`,
     ].filter(Boolean).join(' ');
+  }
+
+  // Covers the gap between the two instructions above: when finance *approved*
+  // but the budget axis still dragged the combined score down, there is no
+  // financeFeedback to build a cost-cutting instruction from, and the persona
+  // instruction is suppressed because the cause is not persona fit — leaving
+  // the re-merge with no guidance at all. Build the budget instruction from the
+  // score breakdown instead.
+  private buildBudgetTighteningInstruction(context: WorkflowContext): string {
+    const breakdown = context.scoreBreakdown;
+    if (context.financeFeedback) return '';
+    if (!breakdown || breakdown.financeScore === null || breakdown.financeScore >= 100) return '';
+    if (context.scoreFeedback?.primaryCause !== 'budget') return '';
+
+    const over =
+      typeof context.actualCostTotal === 'number'
+        ? ` The itinerary costs ${context.actualCostTotal} ${context.budgetCurrency} against a budget of ${context.budgetTotal} ${context.budgetCurrency}.`
+        : '';
+    return (
+      `BUDGET TIGHTENING RETRY: the previous version scored ${breakdown.combinedScore}/100, held back by cost.${over}` +
+      ` Choose cheaper venues, accommodation and meals so the total fits the budget.` +
+      ` Keep the same personas represented — cut price, not variety.`
+    );
   }
 
   private async executeMerge(context: WorkflowContext, trip: Trip): Promise<WorkflowContext> {
@@ -397,6 +427,7 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
         `Trip: ${trip.name}. Budget: ${context.budgetTotal} ${context.budgetCurrency}. Group size: ${context.groupSize}.`,
         this.buildCostCuttingInstruction(context.financeFeedback),
         this.buildPersonaRebalanceInstruction(context.scoreFeedback),
+        this.buildBudgetTighteningInstruction(context),
       ].filter(Boolean).join(' ');
       // Passed as a structured block rather than folded into tripContext, so the
       // merge prompt's must-have/avoid rules have a machine-readable source.
@@ -864,6 +895,7 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
         ...context,
         mergedItinerary: updated,
         financeFeedback,
+        actualCostTotal: budgetBreakdown?.grandTotal ?? context.actualCostTotal,
         totalTokensUsed: context.totalTokensUsed + result.tokensUsed,
       };
     } catch (err) {
@@ -906,12 +938,17 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
     if (!context.mergedItinerary) return context;
     const start = Date.now();
     try {
-      const result = await this.agentCaller.callValidatorAgent(context.tripId, 2, context.mergedItinerary, {
-        mustHaves: context.mustHaves,
-        avoids: context.avoids,
-      });
+      const result = await this.agentCaller.callValidatorAgent(
+        context.tripId,
+        2,
+        context.mergedItinerary,
+        { mustHaves: context.mustHaves, avoids: context.avoids },
+        this.buildComplianceInput(context),
+        { budgetTotal: context.budgetTotal, travellerCount: context.groupSize },
+      );
       const scoring = (result.content['scoring'] ?? {}) as Record<string, unknown>;
       const score = typeof scoring['overallScore'] === 'number' ? scoring['overallScore'] : 0;
+      const breakdown = result.content['compliance'] as ScoreBreakdown | undefined;
 
       await this.stateManager.logAgentCall({
         tripId: context.tripId,
@@ -923,12 +960,15 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
       });
 
       const scoreFeedback =
-        score < 60 ? this.buildScoreFeedback(score, scoring, trip, context.mergedItinerary) : undefined;
+        score < 60
+          ? this.buildScoreFeedback(score, scoring, trip, context.mergedItinerary, breakdown)
+          : undefined;
 
       return {
         ...context,
         validationScore: score,
         scoreFeedback,
+        scoreBreakdown: breakdown,
         totalTokensUsed: context.totalTokensUsed + result.tokensUsed,
       };
     } catch (err) {
@@ -939,17 +979,49 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
   }
 
   /**
+   * Compliance signals for the validator's finance/logistics score axes. All of
+   * this is already computed earlier in the run — finance's real cost at
+   * FINANCE_VALIDATE, transport downgrades at LOGISTICS_PLANNING, and the
+   * restriction/weather passes during the merge — it just had nowhere to go
+   * before the score became a blend.
+   */
+  private buildComplianceInput(context: WorkflowContext): ValidatorComplianceInput | undefined {
+    const merged = context.mergedItinerary ?? {};
+    const weather = merged['weatherAssessment'] as { overallRisk?: 'low' | 'medium' | 'high' } | undefined;
+    const restrictions = merged['restrictionWarnings'];
+
+    const finance =
+      typeof context.actualCostTotal === 'number' && context.budgetTotal > 0
+        ? { budgetTotal: context.budgetTotal, actualTotal: context.actualCostTotal }
+        : undefined;
+
+    const logistics = {
+      transportDowngrades: (context.transportPriorities ?? []).filter((p) => !p.wasPreferenceHonored).length,
+      restrictionWarnings: Array.isArray(restrictions) ? restrictions.length : 0,
+      weatherRisk: weather?.overallRisk ?? 'low',
+    };
+
+    if (!finance) return { logistics };
+    return { finance, logistics };
+  }
+
+  /**
    * Turns the validator's per-traveller scores into something the merge retry
    * can act on: which real travellers scored low, and which of their persona's
    * interest categories the itinerary has little/no content for. The validator
    * response only carries travellerId/label/score (see ScoringEngine.TravellerScore)
    * — persona lives on the orchestrator's own `trip.travellers`, matched back by id.
+   *
+   * `breakdown` decides `primaryCause`: a score dragged down by budget must not
+   * produce a persona-rebalance instruction, which would tell the merge LLM to
+   * add *more* content to an itinerary that is already too expensive.
    */
   private buildScoreFeedback(
     overallScore: number,
     scoring: Record<string, unknown>,
     trip: Trip,
     mergedItinerary: Record<string, unknown>,
+    breakdown?: ScoreBreakdown,
   ): ScoreFeedback {
     const rawScores = Array.isArray(scoring['scores']) ? (scoring['scores'] as Array<Record<string, unknown>>) : [];
     const itineraryCategories = this.collectItineraryCategories(mergedItinerary);
@@ -977,7 +1049,21 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
       });
     }
 
-    return { overallScore, lowScoringTravellers };
+    return { overallScore, lowScoringTravellers, primaryCause: this.pickPrimaryCause(breakdown) };
+  }
+
+  /** Lowest-scoring available axis; budget wins outright when it capped the score. */
+  private pickPrimaryCause(breakdown?: ScoreBreakdown): ScoreFeedback['primaryCause'] {
+    if (!breakdown) return 'persona';
+    if (breakdown.cappedByBudget) return 'budget';
+
+    const candidates: Array<{ cause: NonNullable<ScoreFeedback['primaryCause']>; score: number }> = [
+      { cause: 'persona', score: breakdown.personaScore },
+    ];
+    if (breakdown.financeScore !== null) candidates.push({ cause: 'budget', score: breakdown.financeScore });
+    if (breakdown.logisticsScore !== null) candidates.push({ cause: 'logistics', score: breakdown.logisticsScore });
+
+    return candidates.reduce((worst, c) => (c.score < worst.score ? c : worst)).cause;
   }
 
   private collectItineraryCategories(mergedItinerary: Record<string, unknown>): string[] {
