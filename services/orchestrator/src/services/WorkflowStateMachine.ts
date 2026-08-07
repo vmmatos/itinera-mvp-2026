@@ -72,7 +72,12 @@ export class WorkflowStateMachine {
             action: { type: 'CALL_FINAL_VALIDATION', reason: 'Finance approved — run final constraint and scoring check' },
           };
         }
-        return this.retryOrAbandon(context, 'finance', 'FINANCE_VALIDATE', 'CALL_FINANCE_VALIDATE');
+        // Retrying FINANCE_VALIDATE itself would just re-review the exact same
+        // unchanged mergedItinerary and get the exact same rejection, no matter
+        // how many retries are left. Route back to MERGE_AND_SCORE instead, so
+        // the re-merge actually happens — executeMerge reads context.financeFeedback
+        // (set by the rejection below) and asks the LLM to cut cost accordingly.
+        return this.retryOrAbandon(context, 'finance', 'MERGE_AND_SCORE', 'CALL_ORCHESTRATOR_MERGE');
       }
 
       case 'FINAL_VALIDATION': {

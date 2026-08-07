@@ -61,9 +61,12 @@ import {
 // ── Scenario 015: finance /review rejects on attempt 1, approves on attempt 2 ─
 //
 // Finance agent rejects the merged itinerary on the first review (costs exceed
-// allocation for one city). The state machine triggers LOCAL_RETRY for 'finance'.
-// Logistics, finance estimate, tourist agents, and merge must NOT be re-called.
-// Second finance call approves and the flow completes to FINISH.
+// allocation for one city). The state machine triggers LOCAL_RETRY for 'finance',
+// which routes back through a REAL re-merge (not a re-review of the identical,
+// unchanged itinerary — retrying that would just get the same rejection every
+// time regardless of how much the user raises the budget). Logistics, finance
+// estimate, and tourist agents must NOT be re-called — only merge + finance
+// validate repeat. Second finance call approves and the flow completes to FINISH.
 
 describe('Scenario 015 — WorkflowEngine v2: finance validate retry', () => {
   let stateManager: StateManager;
@@ -112,9 +115,28 @@ describe('Scenario 015 — WorkflowEngine v2: finance validate retry', () => {
     expect(agentCaller.callPreferenceAgentSlots).toHaveBeenCalledOnce();
   });
 
-  it('merge NOT re-called during finance validate retry (still exactly one call per city stay from the single merge attempt)', async () => {
+  it('merge IS re-called on finance rejection — once per city stay, for each of the two merge attempts', async () => {
     await engine.run(TRIP_ID);
-    expect(agentCaller.callOrchestratorMerge).toHaveBeenCalledTimes(2);
+    // 2 city stays × 2 merge attempts (initial + the finance-triggered retry).
+    expect(agentCaller.callOrchestratorMerge).toHaveBeenCalledTimes(4);
+  });
+
+  it('the retry merge call carries a cost-cutting instruction built from the rejection, and uses a bumped round so the cache does not just replay the first attempt', async () => {
+    await engine.run(TRIP_ID);
+    const calls = vi.mocked(agentCaller.callOrchestratorMerge).mock.calls;
+    const firstAttemptRounds = calls.slice(0, 2).map((c) => c[1]);
+    const retryAttemptRounds = calls.slice(2, 4).map((c) => c[1]);
+    expect(firstAttemptRounds).toEqual([1, 1]);
+    expect(retryAttemptRounds).toEqual([2, 2]);
+
+    for (const call of calls.slice(0, 2)) {
+      expect(call[5] as string).not.toContain('COST-CUTTING RETRY');
+    }
+    for (const call of calls.slice(2, 4)) {
+      const tripContext = call[5] as string;
+      expect(tripContext).toContain('COST-CUTTING RETRY');
+      expect(tripContext).toContain('Accommodation costs exceed allocation for Lisbon');
+    }
   });
 
   it('flow completes to FINISH after finance validate retry', async () => {
