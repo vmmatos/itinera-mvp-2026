@@ -19,6 +19,16 @@ export interface AgentTripContext {
   groupSize?: number;
 }
 
+/** Mirrors the validator's ComplianceSchema — see ComplianceScorer. */
+export interface ValidatorComplianceInput {
+  finance?: { budgetTotal: number; actualTotal: number };
+  logistics?: {
+    transportDowngrades?: number;
+    restrictionWarnings?: number;
+    weatherRisk?: 'low' | 'medium' | 'high';
+  };
+}
+
 interface AgentEventLike {
   content?: unknown;
   reasoning?: string;
@@ -109,8 +119,14 @@ export class AgentCaller extends BaseService {
     round: number,
     proposal: Record<string, unknown>,
     groupPreferences?: { mustHaves: string[]; avoids: string[] },
+    /** Finance/logistics compliance, blended with persona fit into the score
+     * FINAL_VALIDATION gates on. Omitted → persona-only scoring, as before. */
+    compliance?: ValidatorComplianceInput,
+    constraints?: { budgetTotal?: number; travellerCount?: number; durationDays?: number },
   ): Promise<AgentCallResult> {
-    return this.post<AgentCallResult>('validator', '/', { tripId, round, proposal, groupPreferences });
+    return this.post<AgentCallResult>('validator', '/', {
+      tripId, round, proposal, groupPreferences, compliance, constraints,
+    });
   }
 
   // ── WorkflowEngine v2 methods ──────────────────────────────────────────────

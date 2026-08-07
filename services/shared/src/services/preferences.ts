@@ -1,5 +1,5 @@
 import { PACE_VALUES, PERSONA_CATEGORIES, PERSONA_KEYS, PERSONA_LABELS } from '../types/preferences';
-import type { GroupPreferences, Pace, PersonaKey, TravellerPreferences } from '../types/preferences';
+import type { GroupPreferences, Pace, PersonaKey, PersonaWeights, TravellerPreferences } from '../types/preferences';
 
 /** Ordered slowest → fastest. Ties in `aggregateGroupPreferences` resolve left. */
 const PACE_ORDER: readonly Pace[] = ['low', 'medium', 'high'] as const;
@@ -171,6 +171,28 @@ export function aggregateGroupPreferences(
     mustHaves: dedupeTerms(normalized.flatMap((p) => p.mustHaves)),
     avoids: dedupeTerms(normalized.flatMap((p) => p.avoids)),
   };
+}
+
+/**
+ * Count real travellers per persona — e.g. `{ action: 1, relaxation: 1 }` for a
+ * 2-person group with no culture/gastronomy traveller. Travellers with a
+ * missing/unrecognised `persona` are simply not counted (not an error): the
+ * result stays a fair reflection of who is actually confirmed in the group.
+ * Independent of `pace`/`mustHaves`/`avoids`, which may come from the
+ * trip-level blob instead — this always reads persona straight off each
+ * traveller, regardless of `resolveGroupPreferences`'s trip-vs-traveller
+ * precedence for the rest of the brief.
+ */
+export function deriveGroupPersonaWeights(
+  travellers: ReadonlyArray<{ preferences?: Record<string, unknown> | null }>,
+): PersonaWeights {
+  const weights: PersonaWeights = {};
+  for (const t of travellers) {
+    const persona = t.preferences?.['persona'];
+    if (!isPersonaKey(persona)) continue;
+    weights[persona] = (weights[persona] ?? 0) + 1;
+  }
+  return weights;
 }
 
 /**

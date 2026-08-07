@@ -6,12 +6,24 @@ import type { FairnessCalculator, FairnessResult } from '@/validators/FairnessCa
 import type { MetricsCollector, MetricsResult } from '@/validators/MetricsCollector';
 import type { RabbitMQPublisher } from '@/services/RabbitMQPublisher';
 import type { ProposalStorageService } from '@/services/ProposalStorageService';
+import {
+  scoreFinanceCompliance,
+  scoreLogisticsCompliance,
+  combineScores,
+} from '@/validators/ComplianceScorer';
+import type {
+  ComplianceScores,
+  FinanceComplianceInput,
+  LogisticsComplianceInput,
+} from '@/validators/ComplianceScorer';
 
 export interface ValidationResult {
   constraints: ConstraintCheckResult;
   scoring: ScoringResult;
   fairness: FairnessResult;
   metrics: MetricsResult;
+  /** Per-axis breakdown. Absent when the caller sent no compliance data. */
+  compliance?: ComplianceScores;
 }
 
 export class ValidationService extends BaseService {
@@ -32,6 +44,7 @@ export class ValidationService extends BaseService {
     proposal: Record<string, unknown>,
     constraints: Constraint,
     travellers: TravellerPreference[],
+    compliance?: { finance?: FinanceComplianceInput; logistics?: LogisticsComplianceInput },
   ): Promise<ValidationResult> {
     const start = Date.now();
 
@@ -43,11 +56,24 @@ export class ValidationService extends BaseService {
       scores: scoringResult.scores,
     });
 
+    // Blend persona fit with finance/logistics compliance. Only computed when
+    // the caller sent the data — an orchestrator on an older build gets exactly
+    // the previous persona-only behaviour rather than a score of zero.
+    let complianceScores: ComplianceScores | undefined;
+    if (compliance?.finance || compliance?.logistics) {
+      const financeScore = compliance.finance ? scoreFinanceCompliance(compliance.finance) : null;
+      const logisticsScore = compliance.logistics ? scoreLogisticsCompliance(compliance.logistics) : null;
+      complianceScores = combineScores(scoringResult.overallScore, financeScore, logisticsScore);
+    }
+
     const result: ValidationResult = {
       constraints: constraintResult,
-      scoring: scoringResult,
+      scoring: complianceScores
+        ? { ...scoringResult, overallScore: complianceScores.combinedScore }
+        : scoringResult,
       fairness: fairnessResult,
       metrics: metricsResult,
+      ...(complianceScores && { compliance: complianceScores }),
     };
 
     const event: AgentEvent = {
@@ -67,7 +93,11 @@ export class ValidationService extends BaseService {
       tripId,
       round,
       passed: constraintResult.passed,
-      overallScore: scoringResult.overallScore,
+      overallScore: result.scoring.overallScore,
+      personaScore: scoringResult.overallScore,
+      financeScore: complianceScores?.financeScore ?? null,
+      logisticsScore: complianceScores?.logisticsScore ?? null,
+      cappedByBudget: complianceScores?.cappedByBudget ?? false,
       fairnessScore: fairnessResult.fairnessScore,
     });
 

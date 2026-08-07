@@ -118,41 +118,45 @@ export function createFinanceRouter(
 
     const { tripId, round, proposal, budgetTotal, budgetCurrency, groupSize, context, dateInput } = parsed.data;
 
-    const rawItinerary = Array.isArray(proposal['itinerary']) ? proposal['itinerary'] : [];
-    const itinerary: ItineraryDay[] = (rawItinerary as Array<Record<string, unknown>>).map((day) => ({
-      day: typeof day['day'] === 'number' ? day['day'] : 1,
-      activities: Array.isArray(day['activities']) ? (day['activities'] as CostItem[]) : [],
-      meals: Array.isArray(day['meals']) ? (day['meals'] as CostItem[]) : [],
-      transport: Array.isArray(day['transport']) ? (day['transport'] as TransportItem[]) : [],
-    }));
+    try {
+      const rawItinerary = Array.isArray(proposal['itinerary']) ? proposal['itinerary'] : [];
+      const itinerary: ItineraryDay[] = (rawItinerary as Array<Record<string, unknown>>).map((day) => ({
+        day: typeof day['day'] === 'number' ? day['day'] : 1,
+        activities: Array.isArray(day['activities']) ? (day['activities'] as CostItem[]) : [],
+        meals: Array.isArray(day['meals']) ? (day['meals'] as CostItem[]) : [],
+        transport: Array.isArray(day['transport']) ? (day['transport'] as TransportItem[]) : [],
+      }));
 
-    const accommodation: AccommodationItem[] = Array.isArray(proposal['accommodation'])
-      ? (proposal['accommodation'] as AccommodationItem[])
-      : [];
+      const accommodation: AccommodationItem[] = Array.isArray(proposal['accommodation'])
+        ? (proposal['accommodation'] as AccommodationItem[])
+        : [];
 
-    const breakdown = calculator.calculate(itinerary, budgetCurrency, accommodation, groupSize);
-    const validation = validator.validate(breakdown, budgetTotal, budgetCurrency);
-    const review = await finder.findAlternatives(tripId, round, proposal, breakdown, validation, context, dateInput ?? null);
+      const breakdown = calculator.calculate(itinerary, budgetCurrency, accommodation, groupSize);
+      const validation = validator.validate(breakdown, budgetTotal, budgetCurrency);
+      const review = await finder.findAlternatives(tripId, round, proposal, breakdown, validation, context, dateInput ?? null);
 
-    // Attach Finance's structured verdict so the Orchestrator can decide whether
-    // the trip has converged (or is impossible and must be rejected).
-    const reviewContent = (review.content ?? {}) as Record<string, unknown>;
-    const alternatives = reviewContent['alternatives'] as
-      { revisedBudgetEstimate?: number; totalPotentialSaving?: number; suggestions?: unknown } | undefined;
-    reviewContent['verdict'] = buildFinanceVerdict(breakdown, validation, alternatives ?? null);
+      // Attach Finance's structured verdict so the Orchestrator can decide whether
+      // the trip has converged (or is impossible and must be rejected).
+      const reviewContent = (review.content ?? {}) as Record<string, unknown>;
+      const alternatives = reviewContent['alternatives'] as
+        { revisedBudgetEstimate?: number; totalPotentialSaving?: number; suggestions?: unknown } | undefined;
+      reviewContent['verdict'] = buildFinanceVerdict(breakdown, validation, alternatives ?? null);
 
-    // Itemised per-category, per-person breakdown with overrun flags and
-    // suggested cuts (issue #73).
-    const budgetBreakdown = buildBudgetBreakdown(breakdown, itinerary, accommodation, validation);
-    budgetBreakdown.suggestedCuts = mapAlternativesToSuggestedCuts(
-      alternatives as { suggestions?: Array<{ category?: string; suggestion?: { name?: string; venue?: string; saving?: number }; rationale?: string }> } | undefined,
-      breakdown.groupSize,
-    );
-    reviewContent['budgetBreakdown'] = budgetBreakdown;
+      // Itemised per-category, per-person breakdown with overrun flags and
+      // suggested cuts (issue #73).
+      const budgetBreakdown = buildBudgetBreakdown(breakdown, itinerary, accommodation, validation);
+      budgetBreakdown.suggestedCuts = mapAlternativesToSuggestedCuts(
+        alternatives as { suggestions?: Array<{ category?: string; suggestion?: { name?: string; venue?: string; saving?: number }; rationale?: string }> } | undefined,
+        breakdown.groupSize,
+      );
+      reviewContent['budgetBreakdown'] = budgetBreakdown;
 
-    review.content = reviewContent;
+      review.content = reviewContent;
 
-    res.json({ review });
+      res.json({ review });
+    } catch (err) {
+      next(err as Error);
+    }
   });
 
   router.get('/breakdown', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -163,14 +167,19 @@ export function createFinanceRouter(
     }
 
     const { tripId, round } = parsed.data;
-    const proposal = await storage.findLatestByTripId(tripId, round);
 
-    if (!proposal) {
-      next(new NotFoundError('Finance breakdown'));
-      return;
+    try {
+      const proposal = await storage.findLatestByTripId(tripId, round);
+
+      if (!proposal) {
+        next(new NotFoundError('Finance breakdown'));
+        return;
+      }
+
+      res.json({ breakdown: proposal.content });
+    } catch (err) {
+      next(err as Error);
     }
-
-    res.json({ breakdown: proposal.content });
   });
 
   return router;

@@ -57,7 +57,7 @@ export class ItineraryMerger extends BaseOrchestratorAgent {
             'BUDGET PLAN (per-block allocations — stay within these limits):',
             JSON.stringify(budgetPlan, null, 2),
             '',
-            'GROUP PREFERENCES (pace, must-haves, hard exclusions — see GROUP PREFERENCE RULES in the system prompt):',
+            'GROUP PREFERENCES (pace, must-haves, hard exclusions, real-traveller persona weights — see GROUP PREFERENCE RULES in the system prompt):',
             JSON.stringify(preferences, null, 2),
             '',
             'TOURIST AGENT PROPOSALS (slot-based experiences to merge; only use the ones whose city matches the target city):',

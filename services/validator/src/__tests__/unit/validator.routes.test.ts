@@ -157,6 +157,50 @@ describe('POST /api/v1/validate', () => {
       .send({ tripId: VALID_UUID, round: 0, proposal: {} });
     expect(res.status).toBe(400);
   });
+
+  it('forwards finance and logistics compliance to the validation service', async () => {
+    const compliance = {
+      finance: { budgetTotal: 2200, actualTotal: 4400 },
+      logistics: { transportDowngrades: 1, restrictionWarnings: 0, weatherRisk: 'medium' },
+    };
+    await request(buildApp())
+      .post('/api/v1/validate')
+      .send({ tripId: VALID_UUID, round: 2, proposal: {}, compliance });
+
+    expect(mockValidate).toHaveBeenCalledWith(
+      VALID_UUID, 2, {}, {}, [], compliance,
+    );
+  });
+
+  // Previously hardcoded to `{}` here, which made ConstraintChecker's budget
+  // branch dead code no matter what the orchestrator sent.
+  it('forwards real constraints instead of an empty object', async () => {
+    await request(buildApp())
+      .post('/api/v1/validate')
+      .send({ tripId: VALID_UUID, round: 2, proposal: {}, constraints: { budgetTotal: 2200, travellerCount: 2 } });
+
+    expect(mockValidate).toHaveBeenCalledWith(
+      VALID_UUID, 2, {}, { budgetTotal: 2200, travellerCount: 2 }, [], undefined,
+    );
+  });
+
+  it('omitting compliance and constraints keeps the previous persona-only behaviour', async () => {
+    await request(buildApp())
+      .post('/api/v1/validate')
+      .send({ tripId: VALID_UUID, round: 2, proposal: {} });
+
+    expect(mockValidate).toHaveBeenCalledWith(VALID_UUID, 2, {}, {}, [], undefined);
+  });
+
+  it('400 when compliance carries a malformed weather risk', async () => {
+    const res = await request(buildApp())
+      .post('/api/v1/validate')
+      .send({
+        tripId: VALID_UUID, round: 2, proposal: {},
+        compliance: { logistics: { weatherRisk: 'apocalyptic' } },
+      });
+    expect(res.status).toBe(400);
+  });
 });
 
 describe('POST /api/v1/validate/itinerary', () => {

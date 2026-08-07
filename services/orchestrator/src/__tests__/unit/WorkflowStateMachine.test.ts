@@ -150,8 +150,19 @@ describe('WorkflowStateMachine.transition', () => {
     expect(action.type).toBe('FINISH');
   });
 
-  it('FINAL_VALIDATION score < 60 → ASK_REFINEMENT', () => {
+  // Same reasoning as FINANCE_VALIDATE above: a low score must route back
+  // through a real re-merge (see WorkflowEngine's buildPersonaRebalanceInstruction,
+  // fed by context.scoreFeedback), not just retry the identical scoring call.
+  it('FINAL_VALIDATION score < 60 → LOCAL_RETRY via a real re-merge, not an immediate cancel', () => {
     const ctx = { ...BASE_CONTEXT, currentState: 'FINAL_VALIDATION' as const, validationScore: 45 };
+    const { nextState, action } = fsm.transition(ctx);
+    expect(nextState).toBe('MERGE_AND_SCORE');
+    expect(action.type).toBe('LOCAL_RETRY');
+    expect(action.retryTarget).toBe('validation');
+  });
+
+  it('FINAL_VALIDATION score < 60 max retries → ASK_REFINEMENT', () => {
+    const ctx = { ...BASE_CONTEXT, currentState: 'FINAL_VALIDATION' as const, validationScore: 45, retryCount: { validation: MAX_RETRIES_PER_MODULE } };
     const { nextState, action } = fsm.transition(ctx);
     expect(nextState).toBe('ASK_REFINEMENT');
     expect(action.type).toBe('ASK_REFINEMENT');
@@ -163,11 +174,13 @@ describe('WorkflowStateMachine.routeRetry', () => {
     expect(fsm.routeRetry('logistics', 0)).toBe('LOGISTICS_PLANNING');
     expect(fsm.routeRetry('finance', 1)).toBe('FINANCE_VALIDATE');
     expect(fsm.routeRetry('merge', 0)).toBe('MERGE_AND_SCORE');
+    expect(fsm.routeRetry('validation', 0)).toBe('MERGE_AND_SCORE');
   });
 
   it('returns ASK_REFINEMENT when max retries reached', () => {
     expect(fsm.routeRetry('logistics', MAX_RETRIES_PER_MODULE)).toBe('ASK_REFINEMENT');
     expect(fsm.routeRetry('merge', MAX_RETRIES_PER_MODULE)).toBe('ASK_REFINEMENT');
+    expect(fsm.routeRetry('validation', MAX_RETRIES_PER_MODULE)).toBe('ASK_REFINEMENT');
   });
 });
 

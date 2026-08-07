@@ -242,6 +242,26 @@ describe('POST /review', () => {
       VALID_UUID, 1, expect.any(Object), expect.any(Object), expect.any(Object), '', null,
     );
   });
+
+  // The route handler previously had no try/catch around this async body —
+  // findAlternatives calls the LLM (AlternativeFinder), and this repo runs
+  // Express 4 with no express-async-errors shim, so a rejection here used to
+  // become an unhandled promise rejection in the process instead of a clean
+  // error response the orchestrator's executeFinanceValidate can catch.
+  it('returns a clean error response instead of an unhandled rejection when findAlternatives throws', async () => {
+    vi.mocked(mockFinder.findAlternatives).mockRejectedValue(new Error('Anthropic API rate limit exceeded'));
+    const app = buildApp();
+    const res = await request(app).post('/review').send({
+      tripId: VALID_UUID,
+      round: 1,
+      proposal: { itinerary: VALID_ITINERARY },
+      budgetTotal: 500,
+      budgetCurrency: 'EUR',
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toBe('Anthropic API rate limit exceeded');
+  });
 });
 
 describe('GET /breakdown', () => {
@@ -300,5 +320,14 @@ describe('GET /breakdown', () => {
     const app = buildApp();
     await request(app).get(`/breakdown?tripId=${VALID_UUID}`);
     expect(mockStorage.findLatestByTripId).toHaveBeenCalledWith(VALID_UUID, undefined);
+  });
+
+  it('returns a clean error response instead of an unhandled rejection when storage throws', async () => {
+    vi.mocked(mockStorage.findLatestByTripId).mockRejectedValue(new Error('DB connection lost'));
+    const app = buildApp();
+    const res = await request(app).get(`/breakdown?tripId=${VALID_UUID}`);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toBe('DB connection lost');
   });
 });

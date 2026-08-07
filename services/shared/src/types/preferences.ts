@@ -27,6 +27,16 @@ export interface GroupPreferences {
   mustHaves: string[];
   /** Hard exclusions — an itinerary matching one vetoes the traveller's score. */
   avoids: string[];
+  /**
+   * Count of real travellers per persona in this group — e.g. `{ action: 1,
+   * relaxation: 1 }` for a 2-person group with no culture/gastronomy traveller.
+   * Absent or omitting a key means zero real travellers hold that persona.
+   * Lets the merge prompt weight fairness by who is actually in the group,
+   * instead of treating all 4 tourist agents as equally represented — see
+   * `deriveGroupPersonaWeights`. Optional so existing bare
+   * `{ pace, mustHaves, avoids }` callers still compile.
+   */
+  personaWeights?: PersonaWeights;
 }
 
 export interface TravellerPreferences extends GroupPreferences {
@@ -41,6 +51,9 @@ export interface TravellerPreferences extends GroupPreferences {
 
 /** The four personas the UI offers, one per preference agent. */
 export type PersonaKey = 'culture' | 'relaxation' | 'action' | 'gastronomy';
+
+/** Count of real travellers per persona — see `GroupPreferences.personaWeights`. */
+export type PersonaWeights = Partial<Record<PersonaKey, number>>;
 
 export const PERSONA_KEYS: readonly PersonaKey[] = [
   'culture',

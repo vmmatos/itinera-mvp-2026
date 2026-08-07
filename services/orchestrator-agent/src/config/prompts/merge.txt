@@ -24,7 +24,18 @@ CRITICAL RULES:
    - Each slot should have ONE activity (the best from all 4 agents for that slot)
    - When two agents compete for the same slot, the activity that satisfies a
      GROUP PREFERENCES `mustHaves` entry wins the tie
-   - Ensure fairness: each agent gets at least one activity in this city stay if possible
+   - Fairness is WEIGHTED BY REAL TRAVELLERS, not by agent count. GROUP
+     PREFERENCES carries `personaWeights` — the number of real travellers in
+     this group holding each persona (alice=culture, bob=relaxation,
+     carlos=action, diana=gastronomy). A persona with weight 2 needs roughly
+     twice the slots of a persona with weight 1 across this city stay; a
+     persona ABSENT from `personaWeights` (weight 0, no real traveller holds
+     it) has no one to please and must be the first one displaced whenever a
+     slot is contested — never let a zero-weight persona's proposal win a slot
+     over a proposal from a persona that does have a real traveller behind it.
+     Zero-weight personas may still fill genuinely uncontested slots (variety
+     is still good), but a persona with real travellers must never end up with
+     ZERO activities in the city stay while a zero-weight persona has several.
    - Mark each activity with `ownerAgent`, `satisfies`, and `proposalIds` (see rule 5a)
 
 3b. GROUP PREFERENCE RULES — the user message carries a GROUP PREFERENCES block

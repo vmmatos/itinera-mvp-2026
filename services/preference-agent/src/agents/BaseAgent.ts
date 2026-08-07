@@ -6,6 +6,7 @@ import { RabbitMQPublisher } from '@/services/RabbitMQPublisher';
 import { RedisService } from '@/services/RedisService';
 import { ProposalStorageService } from '@/services/ProposalStorageService';
 import { SlotProposalsOutputSchema } from '@/schemas/slotProposalOutput.schema';
+import { findBudgetOverruns, buildBudgetCorrectionMessage } from '@/agents/budgetCheck';
 
 const CACHE_TTL_SECONDS = 3600;
 
@@ -105,7 +106,7 @@ export abstract class BaseAgent extends BaseService {
 
       const event = await this.callAIAndBuild(
         tripId, round, 'propose', messages, systemPrompt,
-        PROPOSE_SLOTS_MAX_TOKENS, SlotProposalsOutputSchema,
+        PROPOSE_SLOTS_MAX_TOKENS, SlotProposalsOutputSchema, slots,
       );
       await this.redis.set(cacheKey, event, CACHE_TTL_SECONDS);
       return event;
@@ -140,6 +141,9 @@ export abstract class BaseAgent extends BaseService {
      * silent {raw} fallback here is indistinguishable downstream from "this
      * persona had nothing to propose," which hides the failure entirely. */
     schema?: ZodTypeAny,
+    /** When provided, proposals are re-asked once if they exceed a city's
+     * `budgetPerPersonBlock` — see the budget enforcement block below. */
+    slots?: TouristSlotInput[],
   ): Promise<AgentEvent> {
     const opts = maxTokens ? { maxTokens } : undefined;
     const systemPrompt = systemPromptOverride ?? this.systemPrompt;
@@ -186,6 +190,57 @@ export abstract class BaseAgent extends BaseService {
           agent: this.agentName, tripId, round, wasTruncated,
         });
         throw new Error(`${this.agentName} agent failed to produce valid slot proposals after retry (truncated=${wasTruncated})`);
+      }
+
+      // The budget already reaches the model (TouristSlotInput.budgetPerPersonBlock
+      // is serialised into the prompt, and every *-slots.txt tells it to stay
+      // within that figure) but that is instruction-only — nothing stopped a
+      // persona proposing well past it, which is how a €2200 trip produced a
+      // ~€4400 itinerary and burned two full re-merge cycles downstream before
+      // being caught. Re-ask once with the actual numbers; if it still overshoots,
+      // let it through rather than dropping the persona's proposals entirely —
+      // starving a persona is its own failure mode, and finance now contributes
+      // to the combined validation score instead of acting as a hard gate.
+      if (slots && slots.length > 0) {
+        const proposalsForCheck =
+          (parsedContent as { slotProposals?: Array<Record<string, unknown>> }).slotProposals ?? [];
+        const overruns = findBudgetOverruns(proposalsForCheck, slots);
+
+        if (overruns.length > 0) {
+          this.logger.warn('Slot proposals exceed city experiences budget — re-asking', {
+            agent: this.agentName, tripId, round, overruns,
+          });
+
+          const retryMessages: AIMessage[] = [
+            ...messages,
+            { role: 'assistant', content: response.content },
+            { role: 'user', content: buildBudgetCorrectionMessage(overruns, slots[0]!.currency) },
+          ];
+          const retried = await this.aiProvider.complete(systemPrompt, retryMessages, opts);
+          totalTokensUsed += retried.tokensUsed;
+          totalLatencyMs += retried.latencyMs;
+
+          // Only take the re-ask if it is itself schema-valid — a malformed
+          // "cheaper" answer is worse than a valid over-budget one.
+          const retriedParsed = this.tryParseJSON(retried.content);
+          if (schema.safeParse(retriedParsed).success) {
+            parsedContent = retriedParsed;
+            response = retried;
+            const stillOver = findBudgetOverruns(
+              (retriedParsed as { slotProposals?: Array<Record<string, unknown>> }).slotProposals ?? [],
+              slots,
+            );
+            if (stillOver.length > 0) {
+              this.logger.warn('Slot proposals still over budget after re-ask — passing through to scoring', {
+                agent: this.agentName, tripId, round, overruns: stillOver,
+              });
+            }
+          } else {
+            this.logger.warn('Budget re-ask returned invalid JSON — keeping original proposals', {
+              agent: this.agentName, tripId, round,
+            });
+          }
+        }
       }
 
       // Assign a stable id per slot proposal (the LLM never generates one) so

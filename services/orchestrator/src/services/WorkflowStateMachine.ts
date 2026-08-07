@@ -88,10 +88,13 @@ export class WorkflowStateMachine {
             action: { type: 'FINISH', reason: 'All constraints passed and score meets threshold' },
           };
         }
-        return {
-          nextState: 'ASK_REFINEMENT',
-          action: { type: 'ASK_REFINEMENT', reason: `Validation score ${score} below threshold 60` },
-        };
+        // Same reasoning as the FINANCE_VALIDATE case above: retrying
+        // FINAL_VALIDATION itself would just re-score the exact same unchanged
+        // mergedItinerary and get the exact same low score. Route back to
+        // MERGE_AND_SCORE instead — executeMerge reads context.scoreFeedback
+        // (set by executeFinalValidation below) and steers the LLM toward the
+        // personas/categories the group is missing.
+        return this.retryOrAbandon(context, 'validation', 'MERGE_AND_SCORE', 'CALL_ORCHESTRATOR_MERGE');
       }
 
       case 'ASK_REFINEMENT':
@@ -145,6 +148,7 @@ export class WorkflowStateMachine {
       logistics: 'LOGISTICS_PLANNING',
       finance: 'FINANCE_VALIDATE',
       merge: 'MERGE_AND_SCORE',
+      validation: 'MERGE_AND_SCORE',
     };
     return map[target];
   }

@@ -1,5 +1,5 @@
 import type { DateInput, TransportMode, TransportOption } from './entities';
-import type { Pace } from './preferences';
+import type { Pace, PersonaKey } from './preferences';
 import type { SuggestedCut } from './budget';
 
 export type WorkflowState =
@@ -108,6 +108,43 @@ export interface FinanceFeedback {
   suggestedCuts: SuggestedCut[];
 }
 
+/** One real traveller who scored too low against the merged itinerary. */
+export interface LowScoringTraveller {
+  label: string;
+  persona: PersonaKey | null;
+  score: number;
+  /** This persona's interest categories the itinerary has little/no content for. */
+  missingCategories: string[];
+}
+
+/**
+ * Set when the validator scores the merged itinerary below the FINAL_VALIDATION
+ * threshold — read by the next merge retry so it actually steers the LLM toward
+ * the personas/categories the group is missing, instead of blindly re-submitting
+ * the same itinerary and getting the same low score. Cleared once the score
+ * clears the threshold.
+ */
+export interface ScoreFeedback {
+  overallScore: number;
+  lowScoringTravellers: LowScoringTraveller[];
+  /** Which axis dragged the score down — drives which retry instruction is
+   * built. A budget failure must not produce a persona-rebalance instruction. */
+  primaryCause?: 'persona' | 'budget' | 'logistics';
+}
+
+/**
+ * The three axes behind the single FINAL_VALIDATION score. `finance`/`logistics`
+ * are null when the validator had no data for that axis.
+ */
+export interface ScoreBreakdown {
+  personaScore: number;
+  financeScore: number | null;
+  logisticsScore: number | null;
+  combinedScore: number;
+  /** True when a budget blowout capped the combined score below the threshold. */
+  cappedByBudget?: boolean;
+}
+
 export interface RestrictionWarning {
   day: number;
   activityName: string;
@@ -164,7 +201,7 @@ export type WorkflowActionType =
   | 'REJECT'
   | 'ASK_REFINEMENT';
 
-export type WorkflowRetryTarget = 'logistics' | 'finance' | 'merge';
+export type WorkflowRetryTarget = 'logistics' | 'finance' | 'merge' | 'validation';
 
 export interface WorkflowAction {
   type: WorkflowActionType;
@@ -193,7 +230,17 @@ export interface WorkflowContext {
   touristAgentOutputs?: Record<string, unknown>;
   mergedItinerary?: Record<string, unknown>;
   financeFeedback?: FinanceFeedback;
+  /**
+   * What the merged itinerary actually costs the group, as computed by finance
+   * at FINANCE_VALIDATE. Kept separate from `financeFeedback` (which is cleared
+   * on approval) because the final validation needs the real figure whether
+   * finance approved or not, to score the budget axis — see ComplianceScorer.
+   */
+  actualCostTotal?: number;
   validationScore?: number;
+  scoreFeedback?: ScoreFeedback;
+  /** Per-axis breakdown behind `validationScore`. */
+  scoreBreakdown?: ScoreBreakdown;
   currentState: WorkflowState;
   retryCount: Partial<Record<WorkflowRetryTarget, number>>;
   errors: string[];
