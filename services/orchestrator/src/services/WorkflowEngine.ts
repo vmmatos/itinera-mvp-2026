@@ -1,9 +1,8 @@
-import { BaseService, hasGroupPreferences, resolveGroupPreferences } from '@itinera/shared';
+import { BaseService, hasGroupPreferences, resolveGroupPreferences, evaluateTransportPriority } from '@itinera/shared';
 import type { GroupPreferences } from '@itinera/shared';
-import type { TransportMode, AgentEvent, NegotiationCompleteEvent, TransportOption, RouteGraph, RestrictionWarning } from '@itinera/shared';
+import type { TransportMode, AgentEvent, NegotiationCompleteEvent, TransportOption, RouteGraph, RestrictionWarning, TransportLeg } from '@itinera/shared';
 import type { WorkflowContext, WorkflowState, TouristSlotInput, TransportPriorityResult, ProposalDecision, ProposalDecisionStatus, SlotProposal, AgentName, AgentAction } from '@itinera/shared';
 import { WorkflowStateMachine } from '@/services/WorkflowStateMachine';
-import { evaluateTransportPriority } from '@/services/TransportPriorityEngine';
 import { StateManager } from '@/services/StateManager';
 import { AgentCaller } from '@/services/AgentCaller';
 import { EventPublisher } from '@/services/EventPublisher';
@@ -633,6 +632,69 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
         });
       }
 
+      // Real pricing overlay — replaces/tags the merge LLM's own unlabelled
+      // cost guess with real attraction DB / Google Places / hotel prices
+      // where available. Non-blocking: a failure here must never stop the
+      // itinerary from being saved.
+      const pricingOverlayStart = Date.now();
+      try {
+        const overlaid = await this.agentCaller.callLogisticsPricingOverlay(
+          context.tripId,
+          (withTransport['itinerary'] as Array<Record<string, unknown>>) ?? [],
+          (withTransport['accommodation'] as Array<Record<string, unknown>>) ?? [],
+          trip.region ?? null,
+          context.dates,
+        );
+        withTransport['itinerary'] = overlaid.itinerary;
+        withTransport['accommodation'] = overlaid.accommodation;
+        await this.stateManager.logAgentCall({
+          tripId: context.tripId,
+          agent: 'logistics',
+          round: 1,
+          action: 'pricing-overlay',
+          latencyMs: Date.now() - pricingOverlayStart,
+          tokensUsed: 0,
+        });
+        await this.publishAgentEvent(context.tripId, 1, 'logistics', 'pricing-overlay', {
+          repricedCount: overlaid.repricedCount,
+        });
+      } catch (pricingErr) {
+        this.logger.warn('Pricing overlay failed — keeping LLM cost estimates', {
+          tripId: context.tripId, error: String(pricingErr),
+        });
+      }
+
+      // Local/day-trip activity transport (e.g. Pena Palace from a Lisbon
+      // base) — same non-blocking treatment. Real venues + dates only exist
+      // from this point on, same constraint as restrictions/weather above.
+      let satelliteLegs: TransportLeg[] = [];
+      const localTransportStart = Date.now();
+      try {
+        const result = await this.agentCaller.callLogisticsLocalTransport(
+          context.tripId,
+          (withTransport['itinerary'] as Array<Record<string, unknown>>) ?? [],
+          context.dates,
+          context.preferredTransport,
+        );
+        withTransport['itinerary'] = result.itinerary;
+        satelliteLegs = result.satelliteLegs;
+        await this.stateManager.logAgentCall({
+          tripId: context.tripId,
+          agent: 'logistics',
+          round: 1,
+          action: 'local-transport',
+          latencyMs: Date.now() - localTransportStart,
+          tokensUsed: 0,
+        });
+        await this.publishAgentEvent(context.tripId, 1, 'logistics', 'local-transport', {
+          satelliteLegCount: satelliteLegs.length,
+        });
+      } catch (localTransportErr) {
+        this.logger.warn('Local transport resolution failed — continuing without local transport costs', {
+          tripId: context.tripId, error: String(localTransportErr),
+        });
+      }
+
       const finalItinerary = { ...withTransport, restrictionWarnings, weatherAssessment, agentWinRates };
 
       await this.stateManager.logAgentCall({
@@ -682,6 +744,7 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
       return {
         ...context,
         mergedItinerary: finalItinerary,
+        routeGraph: satelliteLegs.length > 0 ? { ...routeGraph, satelliteLegs } : routeGraph,
         totalTokensUsed: context.totalTokensUsed + tokensUsed + weatherTokensUsed,
       };
     } catch (err) {

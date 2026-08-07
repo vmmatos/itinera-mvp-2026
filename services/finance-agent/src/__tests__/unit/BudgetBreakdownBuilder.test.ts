@@ -89,6 +89,37 @@ describe('buildBudgetBreakdown', () => {
     expect(bd.categories.transport.isEstimate).toBe(false);
   });
 
+  it('honors an explicitly-tagged heuristic transport item instead of the untagged-transport default (local/day-trip transport)', () => {
+    const itinerary: ItineraryDay[] = [{
+      day: 1, activities: [], meals: [],
+      transport: [
+        { from: 'Hotel', to: 'Museum', priceEur: 2, isEstimate: true, source: 'google_routes_transit_heuristic_fare' },
+      ],
+    }];
+    const bd = buildBudgetBreakdown(breakdown(), itinerary, [], validation());
+
+    // Explicit isEstimate:true must survive — this is exactly what
+    // ActivityTransportResolver's local-transport entries rely on, so a
+    // heuristic €/km or flat-fare cost is never silently reported as
+    // confirmed real pricing.
+    expect(bd.categories.transport.isEstimate).toBe(true);
+    expect(bd.categories.transport.source).toBe('google_routes_transit_heuristic_fare');
+  });
+
+  it('produces a transport category overrun when local/day-trip transport cost pushes the trip over budget', () => {
+    const bd = buildBudgetBreakdown(
+      breakdown({ byCategory: { accommodation: 200, activities: 100, meals: 100, transport: 250 }, grandTotal: 650 }),
+      [],
+      [],
+      validation({ budgetTotal: 500 }),
+    );
+
+    expect(bd.status).toBe('over_budget');
+    const transportOverrun = bd.overruns.find((o) => o.category === 'transport');
+    expect(transportOverrun).toBeDefined();
+    expect(transportOverrun!.overAmountTotal).toBeGreaterThan(0);
+  });
+
   it('flags overruns proportionally to each category share when over budget', () => {
     // grandTotal (incl. 10% buffer) = 550; budget 400 => over by 150
     const bd = buildBudgetBreakdown(breakdown(), [], [], validation({ budgetTotal: 400 }));

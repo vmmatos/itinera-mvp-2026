@@ -5,6 +5,11 @@ vi.mock('@itinera/shared', async (importOriginal) => {
   return {
     ...actual,
     createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+    evaluateTransportPriority: vi.fn().mockReturnValue({
+      selectedMode: 'flight',
+      selectedOption: { mode: 'flight', durationMinutes: 120, priceEur: 80, warnings: [] },
+      wasPreferenceHonored: true,
+    }),
   };
 });
 
@@ -27,20 +32,13 @@ vi.mock('@/services/StateManager');
 vi.mock('@/services/AgentCaller');
 vi.mock('@/services/EventPublisher');
 vi.mock('@/services/WorkflowStateMachine');
-vi.mock('@/services/TransportPriorityEngine', () => ({
-  evaluateTransportPriority: vi.fn().mockReturnValue({
-    selectedMode: 'flight',
-    selectedOption: { mode: 'flight', durationMinutes: 120, priceEur: 80, warnings: [] },
-    wasPreferenceHonored: true,
-  }),
-}));
 
 import { WorkflowEngine } from '@/services/WorkflowEngine';
 import { WorkflowStateMachine } from '@/services/WorkflowStateMachine';
 import { StateManager } from '@/services/StateManager';
 import { AgentCaller } from '@/services/AgentCaller';
 import { EventPublisher } from '@/services/EventPublisher';
-import { evaluateTransportPriority } from '@/services/TransportPriorityEngine';
+import { evaluateTransportPriority } from '@itinera/shared';
 import type { WorkflowContext, RouteGraph, BudgetPlan, TimeWindow } from '@itinera/shared';
 
 const TRIP_ID = '550e8400-e29b-41d4-a716-446655440001';
@@ -962,6 +960,126 @@ describe('WorkflowEngine — weather assessment (not-show-meteo)', () => {
     await engine.run(TRIP_ID);
 
     expect(mergedProposalContent()['weatherAssessment']).toEqual({});
+    expect(stateManager.transitionStatus).toHaveBeenCalledWith(TRIP_ID, 'confirmed');
+  });
+});
+
+describe('WorkflowEngine — real pricing overlay and local/day-trip transport', () => {
+  function setupCommonMergeMocks(): void {
+    setupCommonMocks(stateManager, eventPublisher);
+    vi.mocked(agentCaller.callLogisticsPlan).mockResolvedValue(ROUTE_GRAPH);
+    vi.mocked(agentCaller.callFinanceEstimate).mockResolvedValue(BUDGET_PLAN);
+    vi.mocked(agentCaller.callPreferenceAgentSlots).mockResolvedValue([
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+    ]);
+    vi.mocked(agentCaller.callOrchestratorMerge).mockResolvedValue({
+      content: JSON.parse(JSON.stringify(MERGED_ITINERARY)) as Record<string, unknown>,
+      latencyMs: 200,
+      tokensUsed: 200,
+    });
+    vi.mocked(agentCaller.callFinanceAgent).mockResolvedValue({
+      content: { verdict: { approved: true, budgetFeasible: true, issues: [] } },
+      latencyMs: 100,
+      tokensUsed: 100,
+    });
+    vi.mocked(agentCaller.callValidatorAgent).mockResolvedValue({
+      content: { scoring: { overallScore: 80 } },
+      latencyMs: 50,
+      tokensUsed: 50,
+    });
+    vi.mocked(agentCaller.callLogisticsRestrictions).mockResolvedValue([]);
+    vi.mocked(agentCaller.callLogisticsWeatherAssessment).mockResolvedValue({ content: {}, latencyMs: 0, tokensUsed: 0 });
+  }
+
+  it('threads the pricing-overlay result into the local-transport call, and both land on the saved merge proposal', async () => {
+    setupCommonMergeMocks();
+
+    const pricedItinerary = [{
+      day: 1, city: 'Barcelona',
+      activities: [{ activity: 'Museum', venue: 'Picasso Museum', estimatedCostPerPerson: 14, isEstimate: false, source: 'attraction_db' }],
+      meals: [{ estimatedCostPerPerson: 50, isEstimate: false, source: 'google_places_price_level' }],
+    }];
+    vi.mocked(agentCaller.callLogisticsPricingOverlay).mockResolvedValue({
+      itinerary: pricedItinerary,
+      accommodation: [],
+      repricedCount: 1,
+    });
+
+    const transportedItinerary = [{
+      ...pricedItinerary[0]!,
+      transport: [{ from: 'Barcelona', to: 'Sitges', mode: 'transit', isEstimate: true, source: 'google_routes_transit_heuristic_fare' }],
+    }];
+    vi.mocked(agentCaller.callLogisticsLocalTransport).mockResolvedValue({
+      itinerary: transportedItinerary,
+      satelliteLegs: [],
+    });
+
+    driveHappyPath();
+    await engine.run(TRIP_ID);
+
+    expect(agentCaller.callLogisticsPricingOverlay).toHaveBeenCalledWith(
+      TRIP_ID, MERGED_ITINERARY.itinerary, MERGED_ITINERARY.accommodation, MOCK_TRIP.region,
+      expect.objectContaining({ mode: 'fixed' }),
+    );
+    // The local-transport call must see the itinerary AFTER pricing overlay ran, not the raw merge output.
+    expect(agentCaller.callLogisticsLocalTransport).toHaveBeenCalledWith(
+      TRIP_ID, pricedItinerary, expect.objectContaining({ mode: 'fixed' }), 'flight',
+    );
+    expect(mergedProposalContent()['itinerary']).toEqual(transportedItinerary);
+    expect(stateManager.logAgentCall).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: 'logistics', action: 'pricing-overlay' }),
+    );
+    expect(stateManager.logAgentCall).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: 'logistics', action: 'local-transport' }),
+    );
+  });
+
+  it('does not block the merge or trip confirmation when pricing overlay fails', async () => {
+    setupCommonMergeMocks();
+    vi.mocked(agentCaller.callLogisticsPricingOverlay).mockRejectedValue(new Error('logistics-agent unreachable'));
+    vi.mocked(agentCaller.callLogisticsLocalTransport).mockResolvedValue({
+      itinerary: MERGED_ITINERARY.itinerary,
+      satelliteLegs: [],
+    });
+
+    driveHappyPath();
+    await engine.run(TRIP_ID);
+
+    // Falls through to local-transport with the pre-overlay itinerary, since pricing overlay threw.
+    expect(agentCaller.callLogisticsLocalTransport).toHaveBeenCalledWith(
+      TRIP_ID, MERGED_ITINERARY.itinerary, expect.objectContaining({ mode: 'fixed' }), 'flight',
+    );
+    expect(stateManager.transitionStatus).toHaveBeenCalledWith(TRIP_ID, 'confirmed');
+  });
+
+  it('does not block the merge or trip confirmation when local transport fails', async () => {
+    setupCommonMergeMocks();
+    vi.mocked(agentCaller.callLogisticsPricingOverlay).mockResolvedValue({
+      itinerary: MERGED_ITINERARY.itinerary,
+      accommodation: MERGED_ITINERARY.accommodation,
+      repricedCount: 0,
+    });
+    vi.mocked(agentCaller.callLogisticsLocalTransport).mockRejectedValue(new Error('logistics-agent unreachable'));
+
+    driveHappyPath();
+    await engine.run(TRIP_ID);
+
+    expect(mergedProposalContent()['itinerary']).toEqual(MERGED_ITINERARY.itinerary);
+    expect(stateManager.transitionStatus).toHaveBeenCalledWith(TRIP_ID, 'confirmed');
+  });
+
+  it('does not block the merge or trip confirmation when both pricing overlay and local transport fail', async () => {
+    setupCommonMergeMocks();
+    vi.mocked(agentCaller.callLogisticsPricingOverlay).mockRejectedValue(new Error('logistics-agent unreachable'));
+    vi.mocked(agentCaller.callLogisticsLocalTransport).mockRejectedValue(new Error('logistics-agent unreachable'));
+
+    driveHappyPath();
+    await engine.run(TRIP_ID);
+
+    expect(mergedProposalContent()['itinerary']).toEqual(MERGED_ITINERARY.itinerary);
     expect(stateManager.transitionStatus).toHaveBeenCalledWith(TRIP_ID, 'confirmed');
   });
 });
