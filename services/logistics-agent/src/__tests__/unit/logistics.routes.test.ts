@@ -23,6 +23,7 @@ vi.mock('@/config', () => ({
   config: {
     WEATHER_CACHE_TTL_SECONDS: 1800,
     CACHE_TTL_SECONDS: 3600,
+    MEALS_PER_DAY: 2,
     NODE_ENV: 'test',
   },
   getRabbitMQUrl: () => 'amqp://localhost',
@@ -40,6 +41,7 @@ import { RestrictionsValidator } from '@/validators/RestrictionsValidator';
 import type { Place } from '@/services/PlacesService';
 import type { TransportService } from '@/services/TransportService';
 import type { PricingEnricher } from '@/services/PricingEnricher';
+import type { ActivityTransportResolver } from '@/services/ActivityTransportResolver';
 
 const VALID_UUID = '550e8400-e29b-41d4-a716-446655440000';
 
@@ -120,6 +122,9 @@ const mockPricingEnricher = {
     activityPriceByName: {},
   }),
 } as unknown as PricingEnricher;
+const mockActivityTransportResolver = {
+  resolveForItinerary: vi.fn().mockResolvedValue({ itinerary: [], satelliteLegs: [] }),
+} as unknown as ActivityTransportResolver;
 
 function buildApp(): express.Express {
   const app = express();
@@ -127,6 +132,7 @@ function buildApp(): express.Express {
   app.use(createLogisticsRouter(
     mockWeather, mockAttractions, mockTiming, mockAnalyzer, mockRedis,
     mockHolidayService, mockRestrictionsValidator, mockTransportService, mockPricingEnricher,
+    mockActivityTransportResolver,
   ));
   app.use((err: Error & { statusCode?: number }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     res.status(err.statusCode ?? 400).json({ success: false, error: { message: err.message } });
@@ -761,6 +767,7 @@ describe('POST /restrictions', () => {
     app.use(createLogisticsRouter(
       mockWeather, mockAttractions, mockTiming, mockAnalyzer, mockRedis,
       realHolidayService, realRestrictionsValidator, mockTransportService, mockPricingEnricher,
+      mockActivityTransportResolver,
     ));
     app.use((err: Error & { statusCode?: number }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
       res.status(err.statusCode ?? 400).json({ success: false, error: { message: err.message } });

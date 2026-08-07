@@ -1,5 +1,5 @@
 import { BaseService } from '@itinera/shared';
-import type { DateInput, TransportMode, RouteGraph, BudgetPlan, TouristSlotInput, RestrictionWarning, GroupPreferences } from '@itinera/shared';
+import type { DateInput, TransportMode, RouteGraph, BudgetPlan, TouristSlotInput, RestrictionWarning, GroupPreferences, TransportLeg } from '@itinera/shared';
 import jwt from 'jsonwebtoken';
 import { config } from '@/config';
 
@@ -209,6 +209,39 @@ export class AgentCaller extends BaseService {
       { tripId, round, routeGraph, touristOutputs, budgetPlan, context, targetCity, preferences },
     );
     return toAgentCallResult(resp.merged, Date.now() - start);
+  }
+
+  /**
+   * Overlays real pricing (attraction DB, Google Places restaurant estimates,
+   * hotel lookups) onto the merged itinerary's cost fields, which otherwise
+   * only ever carry the merge LLM's own unlabelled guess.
+   */
+  async callLogisticsPricingOverlay(
+    tripId: string,
+    itinerary: Array<Record<string, unknown>>,
+    accommodation: Array<Record<string, unknown>>,
+    region: string | null,
+    dateInput: DateInput | null,
+  ): Promise<{ itinerary: Array<Record<string, unknown>>; accommodation: Array<Record<string, unknown>>; repricedCount: number }> {
+    return this.post('logistics', '/pricing-overlay', {
+      tripId, itinerary, accommodation, region: region ?? 'unknown', dateInput,
+    });
+  }
+
+  /**
+   * Resolves how to get from each day's base city to each activity's venue —
+   * day-trip round-trip legs (e.g. Sintra from a Lisbon base) or local
+   * drive/transit/walk candidates, depending on distance.
+   */
+  async callLogisticsLocalTransport(
+    tripId: string,
+    itinerary: Array<Record<string, unknown>>,
+    dateInput: DateInput | null,
+    preferredTransport: TransportMode,
+  ): Promise<{ itinerary: Array<Record<string, unknown>>; satelliteLegs: TransportLeg[] }> {
+    return this.post('logistics', '/local-transport', {
+      tripId, itinerary, dateInput, transportPreference: preferredTransport,
+    });
   }
 
   // ── End WorkflowEngine v2 methods ──────────────────────────────────────────

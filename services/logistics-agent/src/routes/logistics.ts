@@ -12,6 +12,9 @@ import type { HolidayService } from '@/services/HolidayService';
 import type { RestrictionsValidator } from '@/validators/RestrictionsValidator';
 import type { TransportService } from '@/services/TransportService';
 import type { PricingEnricher } from '@/services/PricingEnricher';
+import type { ActivityTransportResolver, DayInput } from '@/services/ActivityTransportResolver';
+import { applyPricingOverlay } from '@/services/PricingOverlay';
+import type { PricedDay, PricedAccommodation } from '@/services/PricingOverlay';
 import { buildLogisticsVerdict } from '@/services/LogisticsVerdict';
 import { toCountryCode } from '@/utils/countryCodeMapper';
 import { config } from '@/config';
@@ -338,6 +341,7 @@ export function createLogisticsRouter(
   restrictionsValidator: RestrictionsValidator,
   transportService: TransportService,
   pricingEnricher: PricingEnricher,
+  activityTransportResolver: ActivityTransportResolver,
 ): Router {
   const router = Router();
 
@@ -893,6 +897,96 @@ export function createLogisticsRouter(
     const forecast = await weather.getForecast(region, date);
     await redis.set(cacheKey, forecast, config.WEATHER_CACHE_TTL_SECONDS);
     res.json({ weather: forecast, cachedAt: new Date().toISOString() });
+  });
+
+  // Overlays real pricing (attraction DB, Google Places restaurant estimates,
+  // hotel price lookups — via the existing PricingEnricher) onto a merged
+  // itinerary's cost fields, which otherwise only ever carry the merge LLM's
+  // own unlabelled guess. Used by the orchestrator right after merge, same
+  // timing as /restrictions and /weather-assessment.
+  const PricingOverlaySchema = z.object({
+    tripId:        z.string().uuid(),
+    itinerary:     z.array(z.record(z.unknown())).default([]),
+    accommodation: z.array(z.record(z.unknown())).default([]),
+    region:        z.string().default('unknown'),
+    dateInput:     DateInputSchema,
+  });
+
+  router.post('/pricing-overlay', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const parsed = PricingOverlaySchema.safeParse(req.body);
+    if (!parsed.success) {
+      next(new ValidationError(JSON.stringify(parsed.error.flatten().fieldErrors)));
+      return;
+    }
+
+    const { itinerary, accommodation, region, dateInput } = parsed.data;
+
+    try {
+      const fixedDateInput = dateInput?.mode === 'fixed' ? dateInput : undefined;
+      const pricing = await pricingEnricher.enrich(
+        region,
+        itinerary.map((day) => ({
+          city: typeof day['city'] === 'string' ? day['city'] : undefined,
+          activities: (Array.isArray(day['activities']) ? (day['activities'] as Array<Record<string, unknown>>) : []).map(
+            (act) => ({ name: typeof act['venue'] === 'string' ? act['venue'] : undefined }),
+          ),
+        })),
+        fixedDateInput?.startDate,
+        fixedDateInput?.endDate,
+      );
+
+      const result = applyPricingOverlay(
+        itinerary as unknown as PricedDay[],
+        accommodation as unknown as PricedAccommodation[],
+        pricing,
+        config.MEALS_PER_DAY,
+      );
+
+      res.json(result);
+    } catch (err) {
+      next(err as Error);
+    }
+  });
+
+  // Resolves how to get from each day's base city to each activity's venue —
+  // day-trip round-trip legs (e.g. Sintra from a Lisbon base) via the full
+  // TransportService, or local drive/transit/walk candidates otherwise. Used
+  // by the orchestrator right after merge, same timing as /pricing-overlay.
+  const LocalTransportSchema = z.object({
+    tripId:              z.string().uuid(),
+    itinerary:           z.array(z.record(z.unknown())).default([]),
+    dateInput:           DateInputSchema,
+    transportPreference: z.enum(['flight', 'train', 'car', 'best']).default('best').optional(),
+  });
+
+  router.post('/local-transport', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const parsed = LocalTransportSchema.safeParse(req.body);
+    if (!parsed.success) {
+      next(new ValidationError(JSON.stringify(parsed.error.flatten().fieldErrors)));
+      return;
+    }
+
+    const { itinerary, dateInput, transportPreference } = parsed.data;
+
+    try {
+      const tripDates = buildTripDates(itinerary, dateInput);
+      const dateByDay = new Map<number, string>();
+      for (const day of itinerary) {
+        const dayNum = typeof day['day'] === 'number' ? day['day'] : null;
+        const date = dayNum !== null ? tripDates[dayNum - 1] : undefined;
+        if (dayNum !== null && date) dateByDay.set(dayNum, date);
+      }
+
+      const result = await activityTransportResolver.resolveForItinerary(
+        itinerary as unknown as DayInput[],
+        dateByDay,
+        (transportPreference ?? 'best') as TransportMode,
+      );
+
+      res.json(result);
+    } catch (err) {
+      next(err as Error);
+    }
   });
 
   return router;

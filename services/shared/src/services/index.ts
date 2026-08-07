@@ -19,3 +19,8 @@ export {
   resolveCategories,
   resolveGroupPreferences,
 } from './preferences';
+export {
+  evaluateTransportPriority,
+  evaluateLocalTransportPriority,
+  mapTransportModeToLocalPreference,
+} from './transportPriority';

@@ -50,7 +50,9 @@ export type AgentAction =
   | 'plan'
   | 'estimate'
   | 'merge'
-  | 'decision';
+  | 'decision'
+  | 'local-transport'
+  | 'pricing-overlay';
 
 export function buildRoutingKey(agent: AgentName, action: AgentAction): string {
   return `agent.${agent}.${action}`;

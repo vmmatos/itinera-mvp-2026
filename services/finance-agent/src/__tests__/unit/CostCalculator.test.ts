@@ -118,4 +118,28 @@ describe('CostCalculator', () => {
     const result = calc.calculate([day], 'EUR', [], 1);
     expect(result.byCategory.transport).toBe(89);
   });
+
+  // ── Local/day-trip activity transport + real pricing overlay ─────────────
+  // Characterization test: proves CostCalculator needed no changes to absorb
+  // the new local-transport and pricing-overlay entries (heuristic-tagged
+  // local hop + untagged day-trip satellite leg + priced meals), since it
+  // already sums every entry in each category array generically.
+  it('sums local and inter-city transport entries alongside a priced meals array without any code change', () => {
+    const day: ItineraryDay = {
+      day: 1,
+      activities: [{ venue: 'Picasso Museum', estimatedCostPerPerson: 14, isEstimate: false, source: 'attraction_db' } as never],
+      meals: [{ estimatedCostPerPerson: 50, isEstimate: false, source: 'google_places_price_level' } as never],
+      transport: [
+        // Local hop: hotel -> museum, heuristic-tagged.
+        { from: 'Hotel', to: 'Picasso Museum', priceEur: 2, isEstimate: true, source: 'google_routes_transit_heuristic_fare' } as never,
+        // Day-trip satellite leg: same untagged convention as ordinary inter-city legs.
+        { from: 'Barcelona', to: 'Sitges', priceEur: 24 } as never,
+      ],
+    };
+    const result = calc.calculate([day], 'EUR', [], 1);
+    expect(result.byCategory.activities).toBe(14);
+    expect(result.byCategory.meals).toBe(50);
+    expect(result.byCategory.transport).toBe(26); // 2 + 24
+    expect(result.grandTotal).toBe(90);
+  });
 });

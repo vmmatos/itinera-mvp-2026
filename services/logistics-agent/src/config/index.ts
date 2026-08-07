@@ -61,6 +61,27 @@ const EnvSchema = z.object({
   TRANSPORT_WEIGHT_DURATION: z.coerce.number().default(40),
   TRANSPORT_WEIGHT_PREFERENCE: z.coerce.number().default(0.18),
   TRANSPORT_WEIGHT_TRANSFERS: z.coerce.number().default(15),
+  // Per-person taxi/rideshare (Uber has no API in this stack) proxy heuristic —
+  // deliberately higher than CAR_COST_EUR_PER_KM, which is a fuel-only rate for
+  // a road-trip leg, not a paid-driver local trip.
+  LOCAL_DRIVE_COST_EUR_PER_KM: z.coerce.number().default(1.5),
+  // Flat local bus/metro fare heuristic — no ticket-price API exists for this,
+  // so real duration/line data (Google Routes transitDetails) is paired with
+  // one flat fare rather than Google's transitFare field (inconsistent
+  // per-city coverage, deliberately not attempted).
+  LOCAL_TRANSIT_FLAT_FARE_EUR: z.coerce.number().default(2.0),
+  // At/above this geodesic distance from the day's base city, an activity's
+  // venue is treated as a day trip (e.g. Sintra from Lisbon) and resolved via
+  // the full inter-city TransportService instead of local drive/transit/walk.
+  DAY_TRIP_DISTANCE_THRESHOLD_KM: z.coerce.number().default(20),
+  // Above this distance walking is never offered as a local transport candidate.
+  LOCAL_WALK_MAX_KM: z.coerce.number().default(1.5),
+  // Net-new Routes API quota consumption (one call per non-placeholder
+  // activity) — mock in dev to avoid burning quota while testing the feature.
+  LOCAL_TRANSIT_MOCK: z.coerce.boolean().default(false),
+  // Meals assumed per day (lunch + dinner) when injecting the previously-
+  // always-empty day.meals budget category from the blended restaurant estimate.
+  MEALS_PER_DAY: z.coerce.number().default(2),
 });
 
 const parsed = EnvSchema.safeParse(process.env);
