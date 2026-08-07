@@ -1,7 +1,7 @@
-import { BaseService, hasGroupPreferences, resolveGroupPreferences, evaluateTransportPriority } from '@itinera/shared';
-import type { GroupPreferences } from '@itinera/shared';
-import type { TransportMode, AgentEvent, NegotiationCompleteEvent, TransportOption, RouteGraph, RestrictionWarning } from '@itinera/shared';
-import type { WorkflowContext, WorkflowState, TouristSlotInput, TransportPriorityResult, ProposalDecision, ProposalDecisionStatus, SlotProposal, AgentName, AgentAction, SuggestedCut } from '@itinera/shared';
+import { BaseService, hasGroupPreferences, resolveGroupPreferences, deriveGroupPersonaWeights, evaluateTransportPriority, isPersonaKey, matchesPreferenceTerm, PERSONA_CATEGORIES } from '@itinera/shared';
+import type { GroupPreferences, PersonaKey } from '@itinera/shared';
+import type { TransportMode, AgentEvent, NegotiationCompleteEvent, TransportOption, TransportLeg, RouteGraph, RestrictionWarning } from '@itinera/shared';
+import type { WorkflowContext, WorkflowState, TouristSlotInput, TransportPriorityResult, ProposalDecision, ProposalDecisionStatus, SlotProposal, AgentName, AgentAction, SuggestedCut, ScoreFeedback, LowScoringTraveller } from '@itinera/shared';
 import { WorkflowStateMachine } from '@/services/WorkflowStateMachine';
 import { StateManager } from '@/services/StateManager';
 import { AgentCaller } from '@/services/AgentCaller';
@@ -360,20 +360,43 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
     ].filter(Boolean).join(' ');
   }
 
+  // Turns a low validator score (scoreFeedback, set by executeFinalValidation)
+  // into an instruction the merge LLM can act on — same idea as
+  // buildCostCuttingInstruction, but for persona/category imbalance instead of
+  // budget. Absent on the first merge attempt (no prior score yet).
+  private buildPersonaRebalanceInstruction(feedback: WorkflowContext['scoreFeedback']): string {
+    if (!feedback || feedback.lowScoringTravellers.length === 0) return '';
+    const perTraveller = feedback.lowScoringTravellers
+      .map((t) => {
+        const missing = t.missingCategories.length > 0 ? ` — missing: ${t.missingCategories.join(', ')}` : '';
+        return `${t.label}${t.persona ? ` (${t.persona})` : ''} scored ${t.score}/100${missing}`;
+      })
+      .join('; ');
+    return [
+      `PERSONA REBALANCE RETRY: the previous version of this itinerary scored ${feedback.overallScore}/100 —`,
+      `too little content for real travellers in this group: ${perTraveller}.`,
+      `Give more weight to the flagged personas' proposals for their missing categories`,
+      `(consult GROUP PREFERENCES personaWeights for who is actually in the group), even displacing`,
+      `a zero-weight persona's activity if that's what a contested slot needs.`,
+    ].filter(Boolean).join(' ');
+  }
+
   private async executeMerge(context: WorkflowContext, trip: Trip): Promise<WorkflowContext> {
     if (!context.routeGraph || !context.touristAgentOutputs || !context.budgetPlan) return context;
     const start = Date.now();
     try {
       const routeGraph = context.routeGraph;
       const budgetPlan = context.budgetPlan;
-      // Bumped on every finance-triggered re-merge (never on the first attempt)
-      // so ItineraryMerger's cache key (keyed by round+city) actually differs —
-      // without this, a retry would hit the cached first-attempt response
-      // verbatim and get the identical rejection no matter what tripContext says.
-      const mergeRound = 1 + (context.retryCount['finance'] ?? 0);
+      // Bumped on every finance- or validation-triggered re-merge (never on the
+      // first attempt) so ItineraryMerger's cache key (keyed by round+city)
+      // actually differs — without this, a retry would hit the cached
+      // first-attempt response verbatim and get the identical rejection/score
+      // no matter what tripContext says.
+      const mergeRound = 1 + (context.retryCount['finance'] ?? 0) + (context.retryCount['validation'] ?? 0);
       const tripContext = [
         `Trip: ${trip.name}. Budget: ${context.budgetTotal} ${context.budgetCurrency}. Group size: ${context.groupSize}.`,
         this.buildCostCuttingInstruction(context.financeFeedback),
+        this.buildPersonaRebalanceInstruction(context.scoreFeedback),
       ].filter(Boolean).join(' ');
       // Passed as a structured block rather than folded into tripContext, so the
       // merge prompt's must-have/avoid rules have a machine-readable source.
@@ -381,6 +404,7 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
         pace: context.pace,
         mustHaves: context.mustHaves,
         avoids: context.avoids,
+        personaWeights: deriveGroupPersonaWeights(trip.travellers ?? []),
       };
       const touristAgentOutputs = context.touristAgentOutputs as Record<string, { slotProposals?: SlotProposal[] }>;
 
@@ -898,9 +922,13 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
         tokensUsed: result.tokensUsed,
       });
 
+      const scoreFeedback =
+        score < 60 ? this.buildScoreFeedback(score, scoring, trip, context.mergedItinerary) : undefined;
+
       return {
         ...context,
         validationScore: score,
+        scoreFeedback,
         totalTokensUsed: context.totalTokensUsed + result.tokensUsed,
       };
     } catch (err) {
@@ -908,6 +936,65 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
       context.errors.push(`final-validation: ${String(err)}`);
       return context;
     }
+  }
+
+  /**
+   * Turns the validator's per-traveller scores into something the merge retry
+   * can act on: which real travellers scored low, and which of their persona's
+   * interest categories the itinerary has little/no content for. The validator
+   * response only carries travellerId/label/score (see ScoringEngine.TravellerScore)
+   * — persona lives on the orchestrator's own `trip.travellers`, matched back by id.
+   */
+  private buildScoreFeedback(
+    overallScore: number,
+    scoring: Record<string, unknown>,
+    trip: Trip,
+    mergedItinerary: Record<string, unknown>,
+  ): ScoreFeedback {
+    const rawScores = Array.isArray(scoring['scores']) ? (scoring['scores'] as Array<Record<string, unknown>>) : [];
+    const itineraryCategories = this.collectItineraryCategories(mergedItinerary);
+
+    const lowScoringTravellers: LowScoringTraveller[] = [];
+    for (const row of rawScores) {
+      const rowScore = typeof row['score'] === 'number' ? row['score'] : 0;
+      if (rowScore >= 60) continue;
+
+      const travellerId = typeof row['travellerId'] === 'string' ? row['travellerId'] : undefined;
+      const matched = trip.travellers?.find((t) => t.id === travellerId);
+      const personaRaw = matched?.preferences?.['persona'];
+      const persona: PersonaKey | null = isPersonaKey(personaRaw) ? personaRaw : null;
+      const missingCategories = persona
+        ? PERSONA_CATEGORIES[persona].filter(
+            (c) => !itineraryCategories.some((ic) => matchesPreferenceTerm(c, ic)),
+          )
+        : [];
+
+      lowScoringTravellers.push({
+        label: typeof row['label'] === 'string' ? row['label'] : 'Traveller',
+        persona,
+        score: rowScore,
+        missingCategories,
+      });
+    }
+
+    return { overallScore, lowScoringTravellers };
+  }
+
+  private collectItineraryCategories(mergedItinerary: Record<string, unknown>): string[] {
+    const itinerary = mergedItinerary['itinerary'];
+    if (!Array.isArray(itinerary)) return [];
+    const categories: string[] = [];
+    for (const day of itinerary) {
+      if (typeof day !== 'object' || day === null) continue;
+      const activities = (day as Record<string, unknown>)['activities'];
+      if (!Array.isArray(activities)) continue;
+      for (const activity of activities) {
+        if (typeof activity !== 'object' || activity === null) continue;
+        const category = (activity as Record<string, unknown>)['category'];
+        if (typeof category === 'string' && category.length > 0) categories.push(category);
+      }
+    }
+    return categories;
   }
 
   private async finalize(tripId: string, context: WorkflowContext, engineStart: number): Promise<void> {

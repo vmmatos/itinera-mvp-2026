@@ -871,6 +871,126 @@ describe('WorkflowEngine — finance rejection retries with a real re-merge (cos
   });
 });
 
+// Reproduces the 4866de5c-shaped failure: a single-city, 2-traveller group
+// (action + relaxation personas) whose merged itinerary is all culture/museum
+// content — nobody real is well served, so the validator scores it low.
+describe('WorkflowEngine — validation-score rejection retries with a real re-merge (persona rebalance)', () => {
+  const TRIP_WITH_PERSONAS = {
+    ...MOCK_TRIP,
+    travellers: [
+      { id: 't1', preferences: { persona: 'action' } },
+      { id: 't2', preferences: { persona: 'relaxation' } },
+    ],
+  } as unknown as typeof MOCK_TRIP;
+
+  const CULTURE_ONLY_ITINERARY = {
+    itinerary: [
+      { day: 1, city: 'Barcelona', activities: [{ activity: 'Museu Picasso', venue: 'Museu Picasso', category: 'museum' }] },
+    ],
+    accommodation: [],
+    _financeApproved: true,
+    _budgetFeasible: true,
+  };
+
+  function driveValidationRetryPath(): void {
+    driveStateMachine(stateMachine, [
+      { nextState: 'LOGISTICS_PLANNING', action: { type: 'CALL_LOGISTICS_PLAN' } },
+      { nextState: 'FINANCE_ENVELOPE_CHECK', action: { type: 'CALL_FINANCE_ESTIMATE' } },
+      { nextState: 'PARALLEL_TURISTIC_PLANNING', action: { type: 'CALL_TOURIST_AGENTS' } },
+      { nextState: 'MERGE_AND_SCORE', action: { type: 'CALL_ORCHESTRATOR_MERGE' } },
+      { nextState: 'FINANCE_VALIDATE', action: { type: 'CALL_FINANCE_VALIDATE' } },
+      { nextState: 'FINAL_VALIDATION', action: { type: 'CALL_FINAL_VALIDATION' } },
+      // Low score — per WorkflowStateMachine's fix, the retry routes back
+      // through a real re-merge (MERGE_AND_SCORE), not an immediate cancel.
+      { nextState: 'MERGE_AND_SCORE', action: { type: 'LOCAL_RETRY', retryTarget: 'validation' } },
+      { nextState: 'FINANCE_VALIDATE', action: { type: 'CALL_FINANCE_VALIDATE' } },
+      { nextState: 'FINAL_VALIDATION', action: { type: 'CALL_FINAL_VALIDATION' } },
+      { nextState: 'FINISH', action: { type: 'FINISH' } },
+    ]);
+  }
+
+  it('re-merges with a persona-rebalance instruction built from the low score, using a bumped round', async () => {
+    setupCommonMocks(stateManager, eventPublisher);
+    vi.mocked(stateManager.getTrip).mockResolvedValue(TRIP_WITH_PERSONAS as never);
+    vi.mocked(agentCaller.callLogisticsPlan).mockResolvedValue(ROUTE_GRAPH);
+    vi.mocked(agentCaller.callFinanceEstimate).mockResolvedValue(BUDGET_PLAN);
+    vi.mocked(agentCaller.callPreferenceAgentSlots).mockResolvedValue([
+      { content: {}, latencyMs: 10, tokensUsed: 1 },
+      { content: {}, latencyMs: 10, tokensUsed: 1 },
+      { content: {}, latencyMs: 10, tokensUsed: 1 },
+      { content: {}, latencyMs: 10, tokensUsed: 1 },
+    ]);
+    vi.mocked(agentCaller.callOrchestratorMerge).mockResolvedValue({
+      content: JSON.parse(JSON.stringify(CULTURE_ONLY_ITINERARY)) as Record<string, unknown>,
+      latencyMs: 20,
+      tokensUsed: 20,
+    });
+    vi.mocked(agentCaller.callFinanceAgent).mockResolvedValue({
+      content: { verdict: { approved: true, budgetFeasible: true, issues: [] } },
+      latencyMs: 10,
+      tokensUsed: 10,
+    });
+    vi.mocked(agentCaller.callValidatorAgent)
+      .mockResolvedValueOnce({
+        content: {
+          scoring: {
+            overallScore: 25,
+            scores: [
+              { travellerId: 't1', label: 'Vitor', score: 20 },
+              { travellerId: 't2', label: 'Joana', score: 30 },
+            ],
+          },
+        },
+        latencyMs: 10,
+        tokensUsed: 10,
+      })
+      .mockResolvedValueOnce({
+        content: { scoring: { overallScore: 75, scores: [] } },
+        latencyMs: 10,
+        tokensUsed: 10,
+      });
+
+    driveValidationRetryPath();
+    await engine.run(TRIP_ID);
+
+    expect(agentCaller.callOrchestratorMerge).toHaveBeenCalledTimes(2);
+    const firstMergeArgs = vi.mocked(agentCaller.callOrchestratorMerge).mock.calls[0]!;
+    const secondMergeArgs = vi.mocked(agentCaller.callOrchestratorMerge).mock.calls[1]!;
+
+    // Round bumps so ItineraryMerger's cache key (round+city) actually differs.
+    expect(firstMergeArgs[1]).toBe(1);
+    expect(secondMergeArgs[1]).toBe(2);
+
+    // Personas actually held by real travellers reach the merge prompt.
+    const firstPreferences = firstMergeArgs[7] as { personaWeights?: Record<string, number> };
+    expect(firstPreferences.personaWeights).toEqual({ action: 1, relaxation: 1 });
+
+    // First attempt carries no rebalance instruction (nothing scored yet).
+    expect(firstMergeArgs[5]).not.toContain('PERSONA REBALANCE RETRY');
+
+    // Second attempt's tripContext must reflect the low score and name the
+    // underserved travellers/categories, or the LLM has no way to act on it.
+    const secondTripContext = secondMergeArgs[5] as string;
+    expect(secondTripContext).toContain('PERSONA REBALANCE RETRY');
+    expect(secondTripContext).toContain('scored 25/100');
+    expect(secondTripContext).toContain('Vitor (action) scored 20/100');
+    expect(secondTripContext).toContain('hiking');
+    expect(secondTripContext).toContain('Joana (relaxation) scored 30/100');
+
+    expect(agentCaller.callValidatorAgent).toHaveBeenCalledTimes(2);
+    expect(stateManager.transitionStatus).toHaveBeenCalledWith(TRIP_ID, 'confirmed');
+
+    // scoreFeedback must be populated right after the low score (so the retry
+    // can read it) and cleared right after the passing score that follows.
+    const savedContexts = vi.mocked(stateManager.saveWorkflowContext).mock.calls.map((c) => c[1] as WorkflowContext);
+    const afterLowScore = savedContexts.find((c) => c.scoreFeedback !== undefined);
+    expect(afterLowScore?.scoreFeedback).toMatchObject({ overallScore: 25 });
+    expect(afterLowScore?.scoreFeedback?.lowScoringTravellers).toHaveLength(2);
+    const afterPass = savedContexts[savedContexts.length - 1];
+    expect(afterPass?.scoreFeedback).toBeUndefined();
+  });
+});
+
 describe('WorkflowEngine — per-leg transport priority', () => {
   it('stores per-leg results in context and surfaces the downgrade reason in the injected transport warnings', async () => {
     setupTwoCityMocks();
@@ -1505,7 +1625,7 @@ describe('WorkflowEngine — group preferences reach the agents (pace / must-hav
     await runThroughMerge(tripWithPreferences({ pace: 'high', mustHaves: ['praias'], avoids: [] }));
 
     const preferences = vi.mocked(agentCaller.callOrchestratorMerge).mock.calls[0]![7];
-    expect(preferences).toEqual({ pace: 'high', mustHaves: ['praias'], avoids: [] });
+    expect(preferences).toEqual({ pace: 'high', mustHaves: ['praias'], avoids: [], personaWeights: {} });
   });
 
   it('the trip-level brief wins over stale per-traveller copies', async () => {
@@ -1563,7 +1683,7 @@ describe('WorkflowEngine — group preferences reach the agents (pace / must-hav
     );
 
     const preferences = vi.mocked(agentCaller.callOrchestratorMerge).mock.calls[0]![7];
-    expect(preferences).toEqual({ pace: 'high', mustHaves: ['museus'], avoids: ['casinos'] });
+    expect(preferences).toEqual({ pace: 'high', mustHaves: ['museus'], avoids: ['casinos'], personaWeights: {} });
   });
 
   it('maps the legacy dealBreakers key onto avoids for trips created before the rename', async () => {

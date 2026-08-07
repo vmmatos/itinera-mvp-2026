@@ -200,6 +200,31 @@ describe('ItineraryMerger', () => {
     expect(userMessage).toContain('discotecas');
   });
 
+  it('merge: serialises personaWeights into the user message so fairness can be weighted by real travellers', async () => {
+    vi.mocked(anthropic.complete).mockResolvedValue({
+      content: VALID_MERGE_JSON,
+      latencyMs: 500,
+      tokensUsed: 300,
+      truncated: false,
+    });
+
+    await merger.merge(VALID_TRIP_ID, 1, ROUTE_GRAPH, TOURIST_OUTPUTS, BUDGET_PLAN, 'Lucerne trip', 'Lucerne', {
+      pace: 'medium',
+      mustHaves: [],
+      avoids: [],
+      personaWeights: { action: 1, relaxation: 1 },
+    });
+
+    const [, messages] = vi.mocked(anthropic.complete).mock.calls[0]!;
+    const userMessage = messages[0]!.content;
+    expect(userMessage).toContain('"personaWeights"');
+    expect(userMessage).toContain('"action": 1');
+    expect(userMessage).toContain('"relaxation": 1');
+    // culture/gastronomy have no real traveller behind them in this group.
+    expect(userMessage).not.toContain('"culture"');
+    expect(userMessage).not.toContain('"gastronomy"');
+  });
+
   it('merge: falls back to neutral defaults when no preferences are supplied', async () => {
     vi.mocked(anthropic.complete).mockResolvedValue({
       content: VALID_MERGE_JSON,

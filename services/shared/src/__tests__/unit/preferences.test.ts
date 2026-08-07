@@ -4,6 +4,7 @@ import {
   DEFAULT_PREFERENCES,
   aggregateGroupPreferences,
   categoriesForPersona,
+  deriveGroupPersonaWeights,
   foldTerm,
   hasGroupPreferences,
   isPersonaKey,
@@ -157,6 +158,42 @@ describe('aggregateGroupPreferences', () => {
       { preferences: { persona: 'gastronomy' } },
     ]);
     expect(result).not.toHaveProperty('categories');
+  });
+});
+
+describe('deriveGroupPersonaWeights', () => {
+  it('counts real travellers per persona', () => {
+    const result = deriveGroupPersonaWeights([
+      { preferences: { persona: 'action' } },
+      { preferences: { persona: 'relaxation' } },
+      { preferences: { persona: 'action' } },
+    ]);
+    expect(result).toEqual({ action: 2, relaxation: 1 });
+  });
+
+  it('a single-persona group never carries the other three personas at all — not even weight 0', () => {
+    const result = deriveGroupPersonaWeights([
+      { preferences: { persona: 'action' } },
+      { preferences: { persona: 'relaxation' } },
+    ]);
+    expect(result).toEqual({ action: 1, relaxation: 1 });
+    expect(result.culture).toBeUndefined();
+    expect(result.gastronomy).toBeUndefined();
+  });
+
+  it('does not count travellers with a missing or unrecognised persona', () => {
+    const result = deriveGroupPersonaWeights([
+      { preferences: { persona: 'action' } },
+      { preferences: { persona: 'wine' } },
+      { preferences: {} },
+      { preferences: null },
+      {},
+    ]);
+    expect(result).toEqual({ action: 1 });
+  });
+
+  it('returns an empty object for an empty group', () => {
+    expect(deriveGroupPersonaWeights([])).toEqual({});
   });
 });
 

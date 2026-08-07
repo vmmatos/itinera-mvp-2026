@@ -10,6 +10,7 @@ export {
   DEFAULT_PREFERENCES,
   aggregateGroupPreferences,
   categoriesForPersona,
+  deriveGroupPersonaWeights,
   foldTerm,
   hasGroupPreferences,
   isPersonaKey,

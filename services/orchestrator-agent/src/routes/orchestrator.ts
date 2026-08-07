@@ -38,9 +38,11 @@ const MergeSchema = z.object({
   targetCity:    z.string().min(1),
   // Optional with defaults so an orchestrator running an older build still merges.
   preferences:   z.object({
-    pace:      z.enum(['low', 'medium', 'high']).default('medium'),
-    mustHaves: z.array(z.string()).default([]),
-    avoids:    z.array(z.string()).default([]),
+    pace:           z.enum(['low', 'medium', 'high']).default('medium'),
+    mustHaves:      z.array(z.string()).default([]),
+    avoids:         z.array(z.string()).default([]),
+    // Count of real travellers per persona — absent on an older orchestrator build.
+    personaWeights: z.record(z.number()).optional(),
   }).optional().default({}),
 });
 
