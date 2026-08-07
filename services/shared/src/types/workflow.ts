@@ -1,5 +1,6 @@
 import type { DateInput, TransportMode, TransportOption } from './entities';
 import type { Pace } from './preferences';
+import type { SuggestedCut } from './budget';
 
 export type WorkflowState =
   | 'INTAKE_COMPLETE'
@@ -94,6 +95,19 @@ export interface TransportPriorityResult {
   downgradeReason?: string;
 }
 
+/**
+ * Set when finance rejects the merged itinerary — read by the next merge
+ * retry so it actually steers the LLM toward cutting cost in the flagged
+ * categories, instead of blindly re-submitting the same itinerary and
+ * getting the same rejection. Cleared once finance approves.
+ */
+export interface FinanceFeedback {
+  overAmountTotal: number;
+  overAmountPerPerson: number;
+  issues: string[];
+  suggestedCuts: SuggestedCut[];
+}
+
 export interface RestrictionWarning {
   day: number;
   activityName: string;
@@ -178,6 +192,7 @@ export interface WorkflowContext {
   budgetPlan?: BudgetPlan;
   touristAgentOutputs?: Record<string, unknown>;
   mergedItinerary?: Record<string, unknown>;
+  financeFeedback?: FinanceFeedback;
   validationScore?: number;
   currentState: WorkflowState;
   retryCount: Partial<Record<WorkflowRetryTarget, number>>;

@@ -770,6 +770,107 @@ describe('WorkflowEngine — duplicate transit-day dedupe (G: one card per calen
   });
 });
 
+describe('WorkflowEngine — finance rejection retries with a real re-merge (cost-cutting)', () => {
+  function driveFinanceRetryPath(): void {
+    driveStateMachine(stateMachine, [
+      { nextState: 'LOGISTICS_PLANNING', action: { type: 'CALL_LOGISTICS_PLAN' } },
+      { nextState: 'FINANCE_ENVELOPE_CHECK', action: { type: 'CALL_FINANCE_ESTIMATE' } },
+      { nextState: 'PARALLEL_TURISTIC_PLANNING', action: { type: 'CALL_TOURIST_AGENTS' } },
+      { nextState: 'MERGE_AND_SCORE', action: { type: 'CALL_ORCHESTRATOR_MERGE' } },
+      { nextState: 'FINANCE_VALIDATE', action: { type: 'CALL_FINANCE_VALIDATE' } },
+      // Finance rejected — per WorkflowStateMachine's fix, the retry routes back
+      // through a real re-merge (MERGE_AND_SCORE), not a re-review of FINANCE_VALIDATE itself.
+      { nextState: 'MERGE_AND_SCORE', action: { type: 'LOCAL_RETRY', retryTarget: 'finance' } },
+      { nextState: 'FINANCE_VALIDATE', action: { type: 'CALL_FINANCE_VALIDATE' } },
+      { nextState: 'FINAL_VALIDATION', action: { type: 'CALL_FINAL_VALIDATION' } },
+      { nextState: 'FINISH', action: { type: 'FINISH' } },
+    ]);
+  }
+
+  it('re-merges with a cost-cutting instruction built from the rejection, using a bumped round so the cache does not just replay the first attempt', async () => {
+    setupCommonMocks(stateManager, eventPublisher);
+    vi.mocked(agentCaller.callLogisticsPlan).mockResolvedValue(ROUTE_GRAPH);
+    vi.mocked(agentCaller.callFinanceEstimate).mockResolvedValue(BUDGET_PLAN);
+    vi.mocked(agentCaller.callPreferenceAgentSlots).mockResolvedValue([
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+    ]);
+    vi.mocked(agentCaller.callOrchestratorMerge).mockResolvedValue({
+      content: JSON.parse(JSON.stringify(MERGED_ITINERARY)) as Record<string, unknown>,
+      latencyMs: 200,
+      tokensUsed: 200,
+    });
+    vi.mocked(agentCaller.callLogisticsRestrictions).mockResolvedValue([]);
+    vi.mocked(agentCaller.callLogisticsWeatherAssessment).mockResolvedValue({ content: {}, latencyMs: 0, tokensUsed: 0 });
+    vi.mocked(agentCaller.callValidatorAgent).mockResolvedValue({
+      content: { scoring: { overallScore: 80 } },
+      latencyMs: 50,
+      tokensUsed: 50,
+    });
+    vi.mocked(agentCaller.callFinanceAgent)
+      .mockResolvedValueOnce({
+        content: {
+          verdict: {
+            approved: false,
+            budgetFeasible: true,
+            issues: ['Over budget by 1138 EUR (112.64% of budget used)'],
+          },
+          budgetBreakdown: {
+            grandTotal: 10138,
+            budgetTotal: 9000,
+            suggestedCuts: [
+              { category: 'accommodation', description: 'Switch to a 3-star hotel', savingPerPerson: 214, savingTotal: 429 },
+            ],
+          },
+        },
+        latencyMs: 100,
+        tokensUsed: 100,
+      })
+      .mockResolvedValueOnce({
+        content: { verdict: { approved: true, budgetFeasible: true, issues: [] } },
+        latencyMs: 100,
+        tokensUsed: 100,
+      });
+
+    driveFinanceRetryPath();
+    await engine.run(TRIP_ID);
+
+    expect(agentCaller.callOrchestratorMerge).toHaveBeenCalledTimes(2);
+    const firstMergeArgs = vi.mocked(agentCaller.callOrchestratorMerge).mock.calls[0]!;
+    const secondMergeArgs = vi.mocked(agentCaller.callOrchestratorMerge).mock.calls[1]!;
+
+    // Round bumps so ItineraryMerger's cache key (round+city) actually differs —
+    // otherwise the retry would just replay the cached first-attempt response.
+    expect(firstMergeArgs[1]).toBe(1);
+    expect(secondMergeArgs[1]).toBe(2);
+
+    // First attempt carries no cost-cutting instruction (nothing rejected yet).
+    expect(firstMergeArgs[5]).not.toContain('COST-CUTTING RETRY');
+
+    // Second attempt's tripContext (6th positional arg) must actually reflect
+    // the rejection, or the LLM has no way to know to cut anything.
+    const secondTripContext = secondMergeArgs[5] as string;
+    expect(secondTripContext).toContain('COST-CUTTING RETRY');
+    expect(secondTripContext).toContain('over budget by €1138');
+    expect(secondTripContext).toContain('Switch to a 3-star hotel');
+
+    expect(agentCaller.callFinanceAgent).toHaveBeenCalledTimes(2);
+    expect(stateManager.transitionStatus).toHaveBeenCalledWith(TRIP_ID, 'confirmed');
+
+    // financeFeedback must be populated in the saved context right after the
+    // rejection (so the retry can read it) and cleared right after the
+    // approval that follows (nothing left to cut, and a stale rejection must
+    // never leak into a later, unrelated retry).
+    const savedContexts = vi.mocked(stateManager.saveWorkflowContext).mock.calls.map((c) => c[1] as WorkflowContext);
+    const afterFirstReject = savedContexts.find((c) => c.financeFeedback !== undefined);
+    expect(afterFirstReject?.financeFeedback).toMatchObject({ overAmountTotal: 1138 });
+    const afterApproval = savedContexts[savedContexts.length - 1];
+    expect(afterApproval?.financeFeedback).toBeUndefined();
+  });
+});
+
 describe('WorkflowEngine — per-leg transport priority', () => {
   it('stores per-leg results in context and surfaces the downgrade reason in the injected transport warnings', async () => {
     setupTwoCityMocks();

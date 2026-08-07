@@ -1,7 +1,7 @@
 import { BaseService, hasGroupPreferences, resolveGroupPreferences, evaluateTransportPriority } from '@itinera/shared';
 import type { GroupPreferences } from '@itinera/shared';
-import type { TransportMode, AgentEvent, NegotiationCompleteEvent, TransportOption, RouteGraph, RestrictionWarning, TransportLeg } from '@itinera/shared';
-import type { WorkflowContext, WorkflowState, TouristSlotInput, TransportPriorityResult, ProposalDecision, ProposalDecisionStatus, SlotProposal, AgentName, AgentAction } from '@itinera/shared';
+import type { TransportMode, AgentEvent, NegotiationCompleteEvent, TransportOption, RouteGraph, RestrictionWarning } from '@itinera/shared';
+import type { WorkflowContext, WorkflowState, TouristSlotInput, TransportPriorityResult, ProposalDecision, ProposalDecisionStatus, SlotProposal, AgentName, AgentAction, SuggestedCut } from '@itinera/shared';
 import { WorkflowStateMachine } from '@/services/WorkflowStateMachine';
 import { StateManager } from '@/services/StateManager';
 import { AgentCaller } from '@/services/AgentCaller';
@@ -342,13 +342,39 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
     }
   }
 
+  // Turns finance's rejection (issues + suggestedCuts, from BudgetBreakdownBuilder)
+  // into an instruction the merge LLM can actually act on, instead of the retry
+  // silently re-submitting the exact same itinerary and getting the exact same
+  // rejection. Absent on the first merge attempt (no prior rejection yet).
+  private buildCostCuttingInstruction(feedback: WorkflowContext['financeFeedback']): string {
+    if (!feedback) return '';
+    const cuts = feedback.suggestedCuts
+      .map((c) => `${c.category}: ${c.description} (save ~€${c.savingPerPerson}/person)`)
+      .join('; ');
+    return [
+      `COST-CUTTING RETRY: the previous version of this itinerary was rejected by finance —`,
+      `over budget by €${feedback.overAmountTotal} total (~€${feedback.overAmountPerPerson}/person).`,
+      feedback.issues.join(' '),
+      cuts ? `Apply these suggested cuts where they still satisfy the must-haves: ${cuts}.` : '',
+      `Prefer cheaper venues/accommodation in the flagged categories over dropping a must-have.`,
+    ].filter(Boolean).join(' ');
+  }
+
   private async executeMerge(context: WorkflowContext, trip: Trip): Promise<WorkflowContext> {
     if (!context.routeGraph || !context.touristAgentOutputs || !context.budgetPlan) return context;
     const start = Date.now();
     try {
       const routeGraph = context.routeGraph;
       const budgetPlan = context.budgetPlan;
-      const tripContext = `Trip: ${trip.name}. Budget: ${context.budgetTotal} ${context.budgetCurrency}. Group size: ${context.groupSize}.`;
+      // Bumped on every finance-triggered re-merge (never on the first attempt)
+      // so ItineraryMerger's cache key (keyed by round+city) actually differs —
+      // without this, a retry would hit the cached first-attempt response
+      // verbatim and get the identical rejection no matter what tripContext says.
+      const mergeRound = 1 + (context.retryCount['finance'] ?? 0);
+      const tripContext = [
+        `Trip: ${trip.name}. Budget: ${context.budgetTotal} ${context.budgetCurrency}. Group size: ${context.groupSize}.`,
+        this.buildCostCuttingInstruction(context.financeFeedback),
+      ].filter(Boolean).join(' ');
       // Passed as a structured block rather than folded into tripContext, so the
       // merge prompt's must-have/avoid rules have a machine-readable source.
       const groupPreferences: GroupPreferences = {
@@ -418,7 +444,7 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
         routeGraph.cityStays.map(async (stay): Promise<CityMergeResult> => {
           const result = await this.agentCaller.callOrchestratorMerge(
             context.tripId,
-            1,
+            mergeRound,
             routeGraph,
             touristAgentOutputs,
             budgetPlan,
@@ -773,6 +799,9 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
       const verdict = (result.content['verdict'] ?? {}) as Record<string, unknown>;
       const approved = verdict['approved'] === true;
       const budgetFeasible = verdict['budgetFeasible'] !== false;
+      const budgetBreakdown = result.content['budgetBreakdown'] as
+        | { grandTotal?: number; budgetTotal?: number; suggestedCuts?: SuggestedCut[] }
+        | undefined;
 
       await this.stateManager.logAgentCall({
         tripId: context.tripId,
@@ -795,9 +824,22 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
       // Attach finance verdict marker so state machine can read it
       const updated = { ...context.mergedItinerary, _financeApproved: approved, _budgetFeasible: budgetFeasible };
 
+      // Feeds the next merge retry (see buildCostCuttingInstruction) — cleared
+      // on approval since there's nothing left to cut.
+      const overAmountTotal = Math.max(0, (budgetBreakdown?.grandTotal ?? 0) - (budgetBreakdown?.budgetTotal ?? 0));
+      const financeFeedback = approved
+        ? undefined
+        : {
+            overAmountTotal,
+            overAmountPerPerson: context.groupSize > 0 ? Math.round(overAmountTotal / context.groupSize) : overAmountTotal,
+            issues: Array.isArray(verdict['issues']) ? (verdict['issues'] as string[]) : [],
+            suggestedCuts: budgetBreakdown?.suggestedCuts ?? [],
+          };
+
       return {
         ...context,
         mergedItinerary: updated,
+        financeFeedback,
         totalTokensUsed: context.totalTokensUsed + result.tokensUsed,
       };
     } catch (err) {

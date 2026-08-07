@@ -124,10 +124,14 @@ describe('WorkflowStateMachine.transition', () => {
     expect(action.type).toBe('CALL_FINAL_VALIDATION');
   });
 
-  it('FINANCE_VALIDATE not approved → LOCAL_RETRY', () => {
+  // Retrying FINANCE_VALIDATE on itself would re-review the exact same
+  // unchanged mergedItinerary and get the exact same rejection every time —
+  // it must route back through a real re-merge instead (see WorkflowEngine's
+  // buildCostCuttingInstruction, fed by context.financeFeedback).
+  it('FINANCE_VALIDATE not approved → LOCAL_RETRY via a real re-merge, not a re-review of the same itinerary', () => {
     const ctx = { ...BASE_CONTEXT, currentState: 'FINANCE_VALIDATE' as const, mergedItinerary: { ...MERGED, _financeApproved: false } };
     const { nextState, action } = fsm.transition(ctx);
-    expect(nextState).toBe('FINANCE_VALIDATE');
+    expect(nextState).toBe('MERGE_AND_SCORE');
     expect(action.type).toBe('LOCAL_RETRY');
     expect(action.retryTarget).toBe('finance');
   });
