@@ -47,6 +47,13 @@ export interface RouteGraph {
   cityStays: CityStay[];
   totalTransportCostEurPerPerson: number;
   totalDurationDays: number;
+  /**
+   * Day-trip round-trip legs detected post-merge (e.g. Sintra from a Lisbon
+   * base) — populated after MERGE_AND_SCORE, once venues are known.
+   * Traceability/admin display only; the actual budget effect flows through
+   * the merged itinerary's day.transport[] entries, not this field.
+   */
+  satelliteLegs?: TransportLeg[];
 }
 
 export interface BudgetBlock {
