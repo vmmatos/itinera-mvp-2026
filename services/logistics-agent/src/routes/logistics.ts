@@ -162,6 +162,58 @@ async function fetchWeatherForecasts(
 }
 
 /**
+ * Resolves weather per the itinerary's OWN per-day `city` field rather than
+ * the trip's single free-text `region` string. A multi-city trip's region
+ * (e.g. "Barcelona + Dublin + Comporta", however the user typed/separated it)
+ * is not one geocodable place, and even when geocoding survives it, blending
+ * one city's forecast across every day of a multi-city trip is simply wrong
+ * for the other cities' days. Each unique city is fetched (and cached) once;
+ * each day's date is then matched to the forecast from the city that day
+ * actually belongs to. Falls back to `fallbackRegion` for days with no city
+ * (legacy /validate proposal shape) or when dates can't be computed (flexible,
+ * no preferred month).
+ */
+async function fetchWeatherForecastsForItinerary(
+  rawItinerary: Array<Record<string, unknown>>,
+  fallbackRegion: string,
+  dateInput: z.infer<typeof DateInputSchema>,
+  redis: RedisService,
+  weather: WeatherService,
+): Promise<WeatherForecast[]> {
+  const tripDates = buildTripDates(rawItinerary, dateInput);
+
+  const cityByDate = new Map<string, string>();
+  rawItinerary.forEach((day, i) => {
+    const date = tripDates[i];
+    if (!date) return;
+    const city = typeof day['city'] === 'string' && day['city'].trim() ? day['city'] : fallbackRegion;
+    cityByDate.set(date, city);
+  });
+
+  const uniqueCities = [...new Set(cityByDate.size > 0 ? cityByDate.values() : [fallbackRegion])];
+  const forecastEntries = await Promise.all(
+    uniqueCities.map(async (city): Promise<[string, WeatherForecast[]]> => [
+      city,
+      await fetchWeatherForecasts(city, dateInput, rawItinerary.length, redis, weather),
+    ]),
+  );
+  const forecastsByCity = new Map(forecastEntries);
+
+  // Flexible dates with no preferred month have no calendar to match against —
+  // return whatever the fallback region's own forecast came back as.
+  if (cityByDate.size === 0) {
+    return forecastsByCity.get(fallbackRegion) ?? forecastEntries[0]?.[1] ?? [];
+  }
+
+  const result: WeatherForecast[] = [];
+  for (const [date, city] of cityByDate) {
+    const match = forecastsByCity.get(city)?.find((f) => f.date === date);
+    if (match) result.push(match);
+  }
+  return result;
+}
+
+/**
  * Public holiday / Sunday-Monday closure / opening-hours checks — pure code,
  * no LLM, no weather, no transport. Shared by /validate (legacy, still
  * exercised by its own tests) and the lean /restrictions endpoint.
@@ -286,7 +338,7 @@ async function computeWeatherAssessment(
   });
 
   const timingResult = timing.validate(activities, transportLegs);
-  const forecasts = await fetchWeatherForecasts(region, dateInput, rawItinerary.length, redis, weather);
+  const forecasts = await fetchWeatherForecastsForItinerary(rawItinerary, region, dateInput, redis, weather);
 
   const event = await analyzer.analyze(tripId, round, rawItinerary, forecasts, timingResult, dateInput ?? null, restrictionWarnings);
   return mergeRealForecastIntoAssessment(event, forecasts);
@@ -459,7 +511,7 @@ export function createLogisticsRouter(
       .catch(() => undefined);
     // --- end pricing ---
 
-    const forecasts = await fetchWeatherForecasts(region, dateInput, rawItinerary.length, redis, weather);
+    const forecasts = await fetchWeatherForecastsForItinerary(rawItinerary, region, dateInput, redis, weather);
 
     const hasTransport = Object.keys(transportOptions).length > 0;
     const validation = await analyzer.analyze(

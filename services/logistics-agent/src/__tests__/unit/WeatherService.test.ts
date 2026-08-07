@@ -144,6 +144,52 @@ describe('WeatherService', () => {
     });
   });
 
+  describe('multi-city region fallback', () => {
+    // Regression for a real bug: DestinationParser accepts "+"/","-separated
+    // multi-city free text (e.g. "Barcelona + Dublin + Comporta") and correctly
+    // splits it into destinations, but WeatherService's own fallback only knew
+    // about word conjunctions ("e"/"and"/"y"/"et") — so the whole multi-city
+    // string never geocoded and weather silently came back empty for every
+    // trip typed that way.
+    it('falls back to the first "+"-separated city when the full multi-city string fails to geocode', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+        if (String(url).includes('/geo/1.0/direct')) {
+          const isFirstCityOnly = String(url).includes('q=Barcelona&');
+          return Promise.resolve({ ok: true, json: () => Promise.resolve(isFirstCityOnly ? GEO_OK : []), text: () => Promise.resolve('') });
+        }
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(FORECAST_OK), text: () => Promise.resolve('') });
+      }));
+
+      const results = await service.getMultiDayForecast('Barcelona + Dublin + Comporta', 2);
+
+      expect(results.length).toBeGreaterThan(0);
+    });
+
+    it('falls back to the first ","-separated city when the full multi-city string fails to geocode', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockImplementation((url: string) => {
+        if (String(url).includes('/geo/1.0/direct')) {
+          const isFirstCityOnly = String(url).includes('q=Porto&');
+          return Promise.resolve({ ok: true, json: () => Promise.resolve(isFirstCityOnly ? GEO_OK : []), text: () => Promise.resolve('') });
+        }
+        return Promise.resolve({ ok: true, json: () => Promise.resolve(FORECAST_OK), text: () => Promise.resolve('') });
+      }));
+
+      const results = await service.getMultiDayForecast('Porto, Lisboa, Faro', 2);
+
+      expect(results.length).toBeGreaterThan(0);
+    });
+
+    it('still returns empty when every fallback candidate fails to geocode, without throwing', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true, json: () => Promise.resolve([]), text: () => Promise.resolve(''),
+      }));
+
+      const results = await service.getMultiDayForecast('Nowhereville + AlsoNowhere', 2);
+
+      expect(results).toEqual([]);
+    });
+  });
+
   describe('error handling', () => {
     it('returns null when geocoding API returns non-ok status', async () => {
       vi.stubGlobal('fetch', vi.fn().mockResolvedValue({

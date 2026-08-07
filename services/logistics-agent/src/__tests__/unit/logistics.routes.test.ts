@@ -986,6 +986,55 @@ describe('POST /weather-assessment', () => {
     );
   });
 
+  it('resolves each day\'s forecast from ITS OWN city, not a single blended region — proving a multi-city trip does not get one city\'s weather smeared across every day', async () => {
+    const PARIS_FORECAST: WeatherForecast = {
+      ...MOCK_FORECAST, region: 'Paris', date: '2026-06-01', temperature: { min: 15, max: 25, unit: 'celsius' },
+    };
+    const ROME_FORECAST: WeatherForecast = {
+      ...MOCK_FORECAST, region: 'Rome', date: '2026-06-02', temperature: { min: 22, max: 33, unit: 'celsius' }, conditions: 'Sunny',
+    };
+    vi.mocked(mockWeather.getMultiDayForecast).mockImplementation(async (city: string) => {
+      if (city === 'Paris') return [PARIS_FORECAST];
+      if (city === 'Rome') return [ROME_FORECAST];
+      return [];
+    });
+    vi.mocked(mockAnalyzer.analyze).mockResolvedValue({
+      ...MOCK_AGENT_EVENT,
+      content: {
+        overallRisk: 'low',
+        dayAssessments: [
+          { day: 1, date: '2026-06-01', weatherRisk: 'low', affectedActivities: [] },
+          { day: 2, date: '2026-06-02', weatherRisk: 'low', affectedActivities: [] },
+        ],
+        timingIssues: [],
+        summary: 'Good weather.',
+      },
+    });
+
+    const app = buildApp();
+    const res = await request(app).post('/weather-assessment').send({
+      tripId: VALID_UUID,
+      round: 1,
+      itinerary: [
+        { ...V2_ITINERARY_DAY, day: 1, date: '2026-06-01', city: 'Paris' },
+        { ...V2_ITINERARY_DAY, day: 2, date: '2026-06-02', city: 'Rome' },
+      ],
+      region: 'Paris + Rome',
+      dateInput: { mode: 'fixed', startDate: '2026-06-01', endDate: '2026-06-02' },
+    });
+
+    expect(res.status).toBe(200);
+    // Each city geocoded/fetched on its own real name — never the blended "Paris + Rome" string.
+    expect(mockWeather.getMultiDayForecast).toHaveBeenCalledWith('Paris', expect.any(Number));
+    expect(mockWeather.getMultiDayForecast).toHaveBeenCalledWith('Rome', expect.any(Number));
+    expect(mockWeather.getMultiDayForecast).not.toHaveBeenCalledWith('Paris + Rome', expect.any(Number));
+
+    const [day1, day2] = res.body.assessment.content.dayAssessments;
+    expect(day1.tempHigh).toBe(25); // Paris
+    expect(day2.tempHigh).toBe(33); // Rome — not Paris' forecast leaking onto Rome's day
+    expect(day2.condition).toBe('Sunny');
+  });
+
   it('reuses the Redis-cached forecast (same cache key convention as /validate)', async () => {
     vi.mocked(mockRedis.get).mockResolvedValue([MOCK_FORECAST]);
 

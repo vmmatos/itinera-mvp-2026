@@ -56,9 +56,17 @@ export class WeatherService extends BaseService {
   async getMultiDayForecast(region: string, days: number): Promise<WeatherForecast[]> {
     let coords: { lat: number; lon: number } | null = null;
 
-    // Try the region as-is, then try the first comma-separated part as a fallback
-    // (handles multi-language names like "Portugal e Espanha")
-    const candidates = [region, region.split(/[,\s]+(?:e|and|y|et)\s*/i)[0]?.trim() ?? ''].filter(Boolean);
+    // Try the region as-is, then fall back to just its first destination.
+    // Two separator conventions can reach here: a multi-language conjunction
+    // ("Portugal e Espanha") or the same "+"/"," delimiters DestinationParser
+    // uses for multi-city free-text input ("Barcelona + Dublin + Comporta") —
+    // without this second split, a multi-city region string never geocodes at
+    // all and every multi-city trip silently gets zero weather data.
+    const candidates = [
+      region,
+      region.split(/[,\s]+(?:e|and|y|et)\s*/i)[0]?.trim() ?? '',
+      region.split(/[+,]/)[0]?.trim() ?? '',
+    ].filter(Boolean);
 
     for (const candidate of candidates) {
       try {
