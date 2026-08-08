@@ -17,6 +17,12 @@ export interface FinanceVerdict {
    * suggested savings — drives the Orchestrator's reject decision.
    */
   budgetFeasible: boolean;
+  /**
+   * True when the proposal exceeds the budget but stays inside the configured
+   * tolerance band (BUDGET_TOLERANCE_PCT) — approved, but the overrun should
+   * surface to the user as a warning.
+   */
+  withinTolerance?: boolean;
   /** Human-readable blocking reasons (over-budget amounts, category overruns). */
   issues: string[];
   reasoning: string;
@@ -37,6 +43,10 @@ export interface NegotiationCompleteEvent {
   forcedConvergence: boolean;
   consensusScore: number;
   rejected: boolean;
+  /** Why the negotiation ended the way it did — always set for non-happy endings. */
+  reason?: string;
+  /** Present when a best-effort itinerary shipped above budget. */
+  overBudget?: { amountTotal: number; pct: number };
 }
 
 /** One tourist agent's proposed activity for a single route-graph slot. */

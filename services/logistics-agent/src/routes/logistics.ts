@@ -14,6 +14,7 @@ import type { TransportService } from '@/services/TransportService';
 import type { PricingEnricher } from '@/services/PricingEnricher';
 import type { ActivityTransportResolver, DayInput } from '@/services/ActivityTransportResolver';
 import { applyPricingOverlay } from '@/services/PricingOverlay';
+import { DEFAULT_MEAL_PRICE_EUR } from '@/services/RestaurantPricing';
 import type { PricedDay, PricedAccommodation } from '@/services/PricingOverlay';
 import { buildLogisticsVerdict } from '@/services/LogisticsVerdict';
 import { toCountryCode } from '@/utils/countryCodeMapper';
@@ -744,8 +745,15 @@ export function createLogisticsRouter(
     });
 
     // Build city stays with time windows
-    const experienceBudgetPerPerson = Math.max(0, budgetTotal / groupSize - totalTransportCostEurPerPerson);
     const totalNights = destinations.reduce((s, d) => s + d.nights, 0);
+    // The pricing overlay injects MEALS_PER_DAY meals on every itinerary day
+    // after the merge — reserve that money now, or the accommodation and
+    // experiences envelopes hand out budget that meals will claw back later.
+    const mealsReserveEurPerPerson = (totalNights + 1) * config.MEALS_PER_DAY * DEFAULT_MEAL_PRICE_EUR;
+    const experienceBudgetPerPerson = Math.max(
+      0,
+      budgetTotal / groupSize - totalTransportCostEurPerPerson - mealsReserveEurPerPerson,
+    );
     const accommodationBudgetPerPersonPerNight =
       totalNights > 0 ? (experienceBudgetPerPerson * ACCOMMODATION_RATIO) / totalNights : 0;
 
@@ -902,6 +910,7 @@ export function createLogisticsRouter(
       cityStays,
       totalTransportCostEurPerPerson: Math.round(totalTransportCostEurPerPerson),
       totalDurationDays: totalNights,
+      mealsReserveEurPerPerson: Math.round(mealsReserveEurPerPerson),
     };
 
     res.json({ routeGraph });

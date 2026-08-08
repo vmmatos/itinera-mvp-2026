@@ -50,6 +50,7 @@ export type AgentAction =
   | 'plan'
   | 'estimate'
   | 'merge'
+  | 'repair'
   | 'decision'
   | 'local-transport'
   | 'pricing-overlay';
