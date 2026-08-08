@@ -442,6 +442,7 @@ export type WorkflowState =
   | 'PARALLEL_TURISTIC_PLANNING'
   | 'MERGE_AND_SCORE'
   | 'FINANCE_VALIDATE'
+  | 'ITINERARY_REPAIR'
   | 'FINAL_VALIDATION'
 
 export interface SlotProposal {
@@ -523,6 +524,10 @@ export interface NegotiationSession {
   status:      'negotiating' | 'complete'
   startedAt:   number | null
   lastEventAt: number | null
+  /** Why the negotiation ended (from negotiation_complete) — null on a clean finish. */
+  reason?:     string | null
+  /** Present when the itinerary shipped above budget (best-effort delivery). */
+  overBudget?: { amountTotal: number; pct: number } | null
 }
 
 export interface NegotiationState {

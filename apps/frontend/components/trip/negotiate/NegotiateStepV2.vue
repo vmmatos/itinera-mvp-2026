@@ -41,7 +41,7 @@ onUnmounted(() => store.reset())
 <template>
   <div v-if="negotiationStatus === 'cancelled'" style="padding:var(--s-6);background:rgba(255,93,93,0.06);border:1px solid rgba(255,93,93,0.24);border-radius:var(--r-2);text-align:center;margin:var(--s-6)">
     <p style="color:var(--red);font-size:var(--t-15);margin:0 0 var(--s-3)">{{ t('trip.negotiate.stepV2.negotiationFailed') }}</p>
-    <p class="helper" style="margin:0 0 var(--s-4)">{{ t('trip.negotiate.stepV2.negotiationFailedBody') }}</p>
+    <p class="helper" style="margin:0 0 var(--s-4);text-transform:none;letter-spacing:0">{{ rejectionReason || t('trip.negotiate.stepV2.negotiationFailedBody') }}</p>
     <button class="btn" @click="emit('cancel')">{{ t('trip.negotiate.stepV2.backToDashboard') }}</button>
   </div>
 
