@@ -6,6 +6,7 @@ import type { ConflictAnalyzer } from '@/agents/ConflictAnalyzer';
 import type { CompromiseGenerator } from '@/agents/CompromiseGenerator';
 import type { ProposalRefiner } from '@/agents/ProposalRefiner';
 import type { ItineraryMerger } from '@/agents/ItineraryMerger';
+import type { ItineraryRepairer } from '@/agents/ItineraryRepairer';
 
 const AnalyzeSchema = z.object({
   tripId: z.string().uuid(),
@@ -46,11 +47,29 @@ const MergeSchema = z.object({
   }).optional().default({}),
 });
 
+const RepairSchema = z.object({
+  tripId:          z.string().uuid(),
+  round:           z.number().int().min(1),
+  itinerary:       z.array(z.record(z.unknown())).min(1),
+  accommodation:   z.array(z.record(z.unknown())).optional().default([]),
+  financeFeedback: z.object({
+    overAmountTotal:     z.number(),
+    overAmountPerPerson: z.number(),
+    issues:              z.array(z.string()).default([]),
+    suggestedCuts:       z.array(z.record(z.unknown())).default([]),
+  }),
+  budgetTotal:     z.coerce.number().positive(),
+  budgetCurrency:  z.string().min(1).default('EUR'),
+  groupSize:       z.coerce.number().int().min(1).default(1),
+  targetTotal:     z.coerce.number().positive(),
+});
+
 export function createOrchestratorRouter(
   analyzer: ConflictAnalyzer,
   generator: CompromiseGenerator,
   refiner: ProposalRefiner,
   merger?: ItineraryMerger,
+  repairer?: ItineraryRepairer,
 ): Router {
   const router = Router();
 
@@ -127,6 +146,38 @@ export function createOrchestratorRouter(
         preferences,
       );
       res.json({ merged });
+    } catch (err) {
+      next(err as Error);
+    }
+  });
+
+  // Repair endpoint for WorkflowEngine v2: over-budget itinerary + finance
+  // feedback → targeted edit list (never a rewritten itinerary).
+  router.post('/repair', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    if (!repairer) {
+      next(new ValidationError('Repair endpoint not available in this configuration'));
+      return;
+    }
+    const parsed = RepairSchema.safeParse(req.body);
+    if (!parsed.success) {
+      next(new ValidationError(parsed.error.flatten().fieldErrors.toString()));
+      return;
+    }
+
+    const { tripId, round, itinerary, accommodation, financeFeedback, budgetTotal, budgetCurrency, groupSize, targetTotal } = parsed.data;
+    try {
+      const repair = await repairer.repair(
+        tripId,
+        round,
+        itinerary,
+        accommodation,
+        financeFeedback as unknown as Parameters<ItineraryRepairer['repair']>[4],
+        budgetTotal,
+        budgetCurrency,
+        groupSize,
+        targetTotal,
+      );
+      res.json({ repair });
     } catch (err) {
       next(err as Error);
     }

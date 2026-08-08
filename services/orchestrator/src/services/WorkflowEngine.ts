@@ -1,7 +1,8 @@
 import { BaseService, hasGroupPreferences, resolveGroupPreferences, deriveGroupPersonaWeights, evaluateTransportPriority, isPersonaKey, matchesPreferenceTerm, PERSONA_CATEGORIES } from '@itinera/shared';
 import type { GroupPreferences, PersonaKey } from '@itinera/shared';
 import type { TransportMode, AgentEvent, NegotiationCompleteEvent, TransportOption, TransportLeg, RouteGraph, RestrictionWarning } from '@itinera/shared';
-import type { WorkflowContext, WorkflowState, TouristSlotInput, TransportPriorityResult, ProposalDecision, ProposalDecisionStatus, SlotProposal, AgentName, AgentAction, SuggestedCut, ScoreFeedback, ScoreBreakdown, LowScoringTraveller } from '@itinera/shared';
+import type { WorkflowContext, WorkflowState, TouristSlotInput, TransportPriorityResult, ProposalDecision, ProposalDecisionStatus, SlotProposal, AgentName, AgentAction, SuggestedCut, ScoreFeedback, ScoreBreakdown, LowScoringTraveller, RepairEdit } from '@itinera/shared';
+import { config } from '@/config';
 import { WorkflowStateMachine } from '@/services/WorkflowStateMachine';
 import { StateManager } from '@/services/StateManager';
 import { AgentCaller } from '@/services/AgentCaller';
@@ -68,9 +69,15 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
 
       await this.stateManager.saveWorkflowContext(tripId, context);
 
+      // Carried into finalize so a terminal non-FINISH always has a concrete,
+      // persistable reason ("finance failed after 2 retries") instead of the
+      // reasonless cancel this used to produce.
+      let lastActionReason: string | undefined;
+
       while (!this.stateMachine.isTerminal(context.currentState)) {
         const { nextState, action } = this.stateMachine.transition(context);
         this.logger.info('Workflow transition', { tripId, from: context.currentState, to: nextState, action: action.type });
+        if (action.reason) lastActionReason = action.reason;
 
         if (action.type === 'LOCAL_RETRY' && action.retryTarget) {
           context.retryCount[action.retryTarget] = (context.retryCount[action.retryTarget] ?? 0) + 1;
@@ -89,10 +96,12 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
         await this.publishStateEvent(tripId, context);
       }
 
-      await this.finalize(tripId, context, engineStart);
+      await this.finalize(tripId, context, engineStart, lastActionReason);
     } catch (err: unknown) {
       this.logger.error('WorkflowEngine failed', { tripId, error: String(err) });
-      await this.stateManager.transitionStatus(tripId, 'cancelled').catch(() => undefined);
+      await this.stateManager
+        .transitionStatus(tripId, 'cancelled', undefined, `Negotiation failed with an internal error: ${String(err)}`)
+        .catch(() => undefined);
     }
   }
 
@@ -153,6 +162,9 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
 
       case 'FINANCE_VALIDATE':
         return this.executeFinanceValidate(updated, trip);
+
+      case 'ITINERARY_REPAIR':
+        return this.executeRepair(updated);
 
       case 'FINAL_VALIDATION':
         return this.executeFinalValidation(updated, trip);
@@ -835,6 +847,267 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
     }
   }
 
+  /**
+   * ITINERARY_REPAIR: turn finance's rejection into targeted edits on the
+   * EXISTING merged itinerary (post-overlay, real prices) instead of the full
+   * re-merge this used to trigger. One small LLM call for the edit list; the
+   * edits themselves are applied deterministically here so a hallucinated edit
+   * can only fail to match an item, never corrupt unrelated days.
+   */
+  private async executeRepair(context: WorkflowContext): Promise<WorkflowContext> {
+    const merged = context.mergedItinerary;
+    const feedback = context.financeFeedback;
+    if (!merged || !feedback) {
+      // Nothing to repair against — FINANCE_VALIDATE will re-review unchanged,
+      // and the state machine's retry/abandon budget handles the rest.
+      return context;
+    }
+
+    const itinerary = Array.isArray(merged['itinerary'])
+      ? (merged['itinerary'] as Array<Record<string, unknown>>)
+      : [];
+    const accommodation = Array.isArray(merged['accommodation'])
+      ? (merged['accommodation'] as Array<Record<string, unknown>>)
+      : [];
+    if (itinerary.length === 0) return context;
+
+    const start = Date.now();
+    const repairRound = 1 + (context.retryCount['finance'] ?? 0);
+    try {
+      const targetTotal = Math.round(context.budgetTotal * (1 + config.BUDGET_TOLERANCE_PCT / 100));
+      const result = await this.agentCaller.callOrchestratorRepair(
+        context.tripId,
+        repairRound,
+        itinerary,
+        accommodation,
+        feedback,
+        context.budgetTotal,
+        context.budgetCurrency,
+        context.groupSize,
+        targetTotal,
+      );
+
+      await this.stateManager.logAgentCall({
+        tripId: context.tripId,
+        agent: 'orchestrator',
+        round: repairRound,
+        action: 'repair',
+        latencyMs: Date.now() - start,
+        tokensUsed: result.tokensUsed,
+      });
+
+      const edits = Array.isArray(result.content['edits'])
+        ? (result.content['edits'] as RepairEdit[])
+        : [];
+      const outcome = this.applyRepairEdits(itinerary, accommodation, edits);
+
+      // One event per edit — the admin/step-3 feed shows the finance ↔
+      // orchestrator cost-cutting negotiation as it happens.
+      for (const [edit, applied] of [
+        ...outcome.applied.map((e): [RepairEdit, boolean] => [e, true]),
+        ...outcome.skipped.map((e): [RepairEdit, boolean] => [e, false]),
+      ]) {
+        await this.publishAgentEvent(context.tripId, repairRound, 'orchestrator', 'repair', {
+          ...edit,
+          applied,
+          overAmountTotal: feedback.overAmountTotal,
+        });
+      }
+
+      this.logger.info('Repair edits processed', {
+        tripId: context.tripId,
+        applied: outcome.applied.length,
+        skipped: outcome.skipped.length,
+      });
+
+      if (outcome.applied.length === 0) {
+        return { ...context, totalTokensUsed: context.totalTokensUsed + result.tokensUsed };
+      }
+
+      const repairedItinerary = { ...merged, itinerary: outcome.itinerary, accommodation: outcome.accommodation };
+
+      // Persist the FULL repaired itinerary (not just the edit list): the
+      // results page picks the highest-round orchestrator proposal that has an
+      // `itinerary` array, so this row is what the user actually sees.
+      await this.stateManager.saveProposal({
+        tripId: context.tripId,
+        agent: 'orchestrator',
+        round: repairRound + 1,
+        content: {
+          ...repairedItinerary,
+          repair: {
+            edits: outcome.applied,
+            skippedEdits: outcome.skipped,
+            summary: result.content['summary'],
+          },
+        },
+        action: 'repair',
+        reasoning: result.reasoning,
+      });
+
+      return {
+        ...context,
+        mergedItinerary: repairedItinerary,
+        totalTokensUsed: context.totalTokensUsed + result.tokensUsed,
+      };
+    } catch (err) {
+      this.logger.error('Repair failed — itinerary unchanged', { tripId: context.tripId, error: String(err) });
+      context.errors.push(`repair: ${String(err)}`);
+      return context;
+    }
+  }
+
+  /**
+   * Applies the repair agent's edit list. Every edit must match an existing
+   * item (by day + name/venue) to take effect; `downgrade` additionally
+   * requires the new cost to be lower than the current one. Non-matching or
+   * rule-breaking edits are skipped, never guessed at.
+   */
+  private applyRepairEdits(
+    itinerary: Array<Record<string, unknown>>,
+    accommodation: Array<Record<string, unknown>>,
+    edits: RepairEdit[],
+  ): {
+    itinerary: Array<Record<string, unknown>>;
+    accommodation: Array<Record<string, unknown>>;
+    applied: RepairEdit[];
+    skipped: RepairEdit[];
+  } {
+    const applied: RepairEdit[] = [];
+    const skipped: RepairEdit[] = [];
+    const days = itinerary.map((d) => ({ ...d }));
+    const acc = accommodation.map((a) => ({ ...a }));
+    const norm = (s: unknown): string => String(s ?? '').trim().toLowerCase();
+
+    for (const edit of edits) {
+      let ok = false;
+
+      if (edit.target === 'accommodation') {
+        const entry = acc.find(
+          (a) => norm(a['name']).includes(norm(edit.name)) || norm(a['city']) === norm(edit.name),
+        );
+        // Removing accommodation is never valid — the group has to sleep somewhere.
+        if (
+          entry &&
+          edit.type === 'downgrade' &&
+          typeof edit.newCostPerPerson === 'number' &&
+          edit.newCostPerPerson < Number(entry['pricePerNightPerPerson'] ?? Infinity)
+        ) {
+          entry['pricePerNightPerPerson'] = edit.newCostPerPerson;
+          entry['isEstimate'] = true;
+          entry['source'] = 'repair_downgrade';
+          if (edit.note) entry['repairNote'] = edit.note;
+          ok = true;
+        }
+      } else {
+        const day = days.find((d) => Number(d['day']) === edit.day);
+        if (day) {
+          if (edit.target === 'activity') {
+            const acts = Array.isArray(day['activities'])
+              ? [...(day['activities'] as Array<Record<string, unknown>>)]
+              : [];
+            // Merge output names the activity in `activity`; older fixtures and
+            // pricing-overlay items use `name` — match either, plus the venue.
+            const idx = acts.findIndex(
+              (a) =>
+                norm(a['activity']) === norm(edit.name) ||
+                norm(a['name']) === norm(edit.name) ||
+                norm(a['venue']) === norm(edit.name),
+            );
+            if (idx >= 0) {
+              const item = { ...acts[idx]! };
+              if (edit.type === 'remove') {
+                // Never empty a day — a repaired trip must still be a trip.
+                if (acts.length > 1) {
+                  const removedVenue = norm(item['venue']);
+                  acts.splice(idx, 1);
+                  day['activities'] = acts;
+                  // Cascade: drop day-trip/local transport legs to that venue,
+                  // or the dead activity's transport cost survives the cut.
+                  if (Array.isArray(day['transport'])) {
+                    day['transport'] = (day['transport'] as Array<Record<string, unknown>>).filter(
+                      (t) => norm(t['to']) !== removedVenue && norm(t['to']) !== norm(edit.name),
+                    );
+                  }
+                  ok = true;
+                }
+              } else if (
+                typeof edit.newCostPerPerson === 'number' &&
+                edit.newCostPerPerson < Number(item['estimatedCostPerPerson'] ?? Infinity)
+              ) {
+                item['estimatedCostPerPerson'] = edit.newCostPerPerson;
+                item['isEstimate'] = true;
+                item['source'] = 'repair_downgrade';
+                if (edit.note) item['repairNote'] = edit.note;
+                acts[idx] = item;
+                day['activities'] = acts;
+                ok = true;
+              }
+            }
+          } else if (edit.target === 'meal') {
+            const meals = Array.isArray(day['meals'])
+              ? [...(day['meals'] as Array<Record<string, unknown>>)]
+              : [];
+            const current = meals[0] ? Number(meals[0]['estimatedCostPerPerson'] ?? meals[0]['cost'] ?? Infinity) : Infinity;
+            if (
+              meals[0] &&
+              edit.type === 'downgrade' &&
+              typeof edit.newCostPerPerson === 'number' &&
+              edit.newCostPerPerson < current
+            ) {
+              meals[0] = {
+                ...meals[0],
+                estimatedCostPerPerson: edit.newCostPerPerson,
+                isEstimate: true,
+                source: 'repair_downgrade',
+                ...(edit.note ? { repairNote: edit.note } : {}),
+              };
+              day['meals'] = meals;
+              ok = true;
+            }
+          } else if (edit.target === 'transport') {
+            const transport = Array.isArray(day['transport'])
+              ? [...(day['transport'] as Array<Record<string, unknown>>)]
+              : [];
+            const tidx = transport.findIndex(
+              (t) =>
+                norm(t['to']) === norm(edit.name) ||
+                `${norm(t['from'])} → ${norm(t['to'])}` === norm(edit.name) ||
+                (norm(edit.name).length > 2 && norm(t['to']).includes(norm(edit.name))),
+            );
+            if (tidx >= 0) {
+              const leg = { ...transport[tidx]! };
+              const current = Number(leg['priceEur'] ?? leg['cost'] ?? Infinity);
+              if (
+                edit.type === 'downgrade' &&
+                typeof edit.newCostPerPerson === 'number' &&
+                edit.newCostPerPerson < current
+              ) {
+                // Finance reads priceEur ?? cost — update whichever carries the price.
+                if (leg['priceEur'] !== undefined) leg['priceEur'] = edit.newCostPerPerson;
+                else leg['cost'] = edit.newCostPerPerson;
+                leg['isEstimate'] = true;
+                leg['source'] = 'repair_downgrade';
+                if (edit.note) leg['repairNote'] = edit.note;
+                transport[tidx] = leg;
+                day['transport'] = transport;
+                ok = true;
+              } else if (edit.type === 'remove') {
+                transport.splice(tidx, 1);
+                day['transport'] = transport;
+                ok = true;
+              }
+            }
+          }
+        }
+      }
+
+      (ok ? applied : skipped).push(edit);
+    }
+
+    return { itinerary: days, accommodation: acc, applied, skipped };
+  }
+
   private async executeFinanceValidate(context: WorkflowContext, trip: Trip): Promise<WorkflowContext> {
     if (!context.mergedItinerary) return context;
     const start = Date.now();
@@ -1083,17 +1356,25 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
     return categories;
   }
 
-  private async finalize(tripId: string, context: WorkflowContext, engineStart: number): Promise<void> {
+  private async finalize(tripId: string, context: WorkflowContext, engineStart: number, lastActionReason?: string): Promise<void> {
     const totalTimeMs = Date.now() - engineStart;
     const isFinish = context.currentState === 'FINISH';
     const budgetFeasible = context.mergedItinerary
       ? (context.mergedItinerary as Record<string, unknown>)['_budgetFeasible'] !== false
       : true;
+    const hasItinerary = Boolean(
+      context.mergedItinerary &&
+      Array.isArray(context.mergedItinerary['itinerary']) &&
+      (context.mergedItinerary['itinerary'] as unknown[]).length > 0,
+    );
+    const overAmount = typeof context.actualCostTotal === 'number'
+      ? Math.max(0, Math.round(context.actualCostTotal - context.budgetTotal))
+      : 0;
+    const overPct = context.budgetTotal > 0 && typeof context.actualCostTotal === 'number'
+      ? Math.round((context.actualCostTotal / context.budgetTotal) * 10000) / 100
+      : 0;
 
-    if (isFinish) {
-      await this.stateManager.transitionStatus(tripId, 'confirmed');
-      this.logger.info('Trip confirmed', { tripId, validationScore: context.validationScore });
-
+    const publishItineraryReady = async (): Promise<void> => {
       try {
         await this.eventPublisher.publishToExchange(
           NOTIFICATIONS_EXCHANGE,
@@ -1103,12 +1384,35 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
       } catch (err) {
         this.logger.warn('Failed to publish itinerary-ready event', { tripId, error: String(err) });
       }
-    } else {
-      if (!budgetFeasible) {
-        await this.stateManager.rejectTrip(tripId, 'Budget is insufficient for this route');
-      } else {
-        await this.stateManager.transitionStatus(tripId, 'cancelled');
+    };
+
+    if (isFinish) {
+      await this.stateManager.transitionStatus(tripId, 'confirmed');
+      this.logger.info('Trip confirmed', { tripId, validationScore: context.validationScore });
+      await publishItineraryReady();
+    } else if (hasItinerary && budgetFeasible) {
+      // Best-effort delivery: retries are exhausted but a complete itinerary
+      // exists and the budget isn't structurally impossible. Shipping it
+      // flagged over-budget beats cancelling €18 from the target (the exact
+      // failure that motivated this path) — the user decides what to do next.
+      if (overAmount > 0) {
+        context.overBudget = { amountTotal: overAmount, pct: overPct };
+        await this.stateManager.saveWorkflowContext(tripId, context);
       }
+      await this.stateManager.transitionStatus(tripId, 'confirmed');
+      this.logger.info('Trip confirmed best-effort (over budget)', {
+        tripId, overAmount, overPct, reason: lastActionReason,
+      });
+      await publishItineraryReady();
+    } else if (!budgetFeasible) {
+      const detail = overAmount > 0
+        ? `Budget is insufficient for this route — costs ~${Math.round(context.actualCostTotal ?? 0)} ${context.budgetCurrency} against a ${context.budgetTotal} ${context.budgetCurrency} budget, even after cost cutting.`
+        : 'Budget is insufficient for this route';
+      await this.stateManager.rejectTrip(tripId, detail);
+    } else {
+      const reason = lastActionReason
+        ?? (context.errors.length > 0 ? context.errors[context.errors.length - 1]! : 'Negotiation ended without an itinerary');
+      await this.stateManager.transitionStatus(tripId, 'cancelled', undefined, reason);
     }
 
     await this.stateManager.saveFinalMetric({
@@ -1130,6 +1434,8 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
       forcedConvergence: false,
       consensusScore: context.validationScore ?? 0,
       rejected: !isFinish && !budgetFeasible,
+      ...(isFinish ? {} : { reason: lastActionReason }),
+      ...(context.overBudget ? { overBudget: context.overBudget } : {}),
     };
 
     try {

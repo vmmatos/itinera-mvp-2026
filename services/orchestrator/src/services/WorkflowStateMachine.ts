@@ -9,6 +9,9 @@ import type {
 export const MAX_RETRIES_PER_MODULE = 2;
 
 export class WorkflowStateMachine {
+  /** Per-module retry budget — injectable via WORKFLOW_MAX_RETRIES. */
+  constructor(private readonly maxRetries: number = MAX_RETRIES_PER_MODULE) {}
+
   transition(context: WorkflowContext): { nextState: WorkflowState; action: WorkflowAction } {
     switch (context.currentState) {
       case 'INTAKE_COMPLETE':
@@ -73,12 +76,22 @@ export class WorkflowStateMachine {
           };
         }
         // Retrying FINANCE_VALIDATE itself would just re-review the exact same
-        // unchanged mergedItinerary and get the exact same rejection, no matter
-        // how many retries are left. Route back to MERGE_AND_SCORE instead, so
-        // the re-merge actually happens — executeMerge reads context.financeFeedback
-        // (set by the rejection below) and asks the LLM to cut cost accordingly.
-        return this.retryOrAbandon(context, 'finance', 'MERGE_AND_SCORE', 'CALL_ORCHESTRATOR_MERGE');
+        // unchanged mergedItinerary and get the exact same rejection. Route to
+        // ITINERARY_REPAIR instead: the repair agent turns finance's
+        // suggestedCuts into targeted edits on the existing itinerary — an
+        // order of magnitude cheaper than the full re-merge this used to
+        // trigger, and it operates on the REAL post-overlay costs the merge
+        // LLM never sees.
+        return this.retryOrAbandon(context, 'finance', 'ITINERARY_REPAIR', 'CALL_ITINERARY_REPAIR');
       }
+
+      case 'ITINERARY_REPAIR':
+        // Repair (or its no-op fallback) has run — send the edited itinerary
+        // back through finance for a fresh review.
+        return {
+          nextState: 'FINANCE_VALIDATE',
+          action: { type: 'CALL_FINANCE_VALIDATE', reason: 'Repair applied — re-validate actual costs against budget' },
+        };
 
       case 'FINAL_VALIDATION': {
         const score = context.validationScore ?? 0;
@@ -112,7 +125,7 @@ export class WorkflowStateMachine {
   routeRetry(
     target: WorkflowRetryTarget,
     retryCount: number,
-    maxRetries: number = MAX_RETRIES_PER_MODULE,
+    maxRetries: number = this.maxRetries,
   ): WorkflowState {
     if (retryCount < maxRetries) {
       return this.stateForTarget(target);
@@ -131,22 +144,22 @@ export class WorkflowStateMachine {
     retryAction: WorkflowActionType,
   ): { nextState: WorkflowState; action: WorkflowAction } {
     const count = context.retryCount[target] ?? 0;
-    if (count < MAX_RETRIES_PER_MODULE) {
+    if (count < this.maxRetries) {
       return {
         nextState: retryState,
-        action: { type: 'LOCAL_RETRY', retryTarget: target, reason: `Retry ${count + 1}/${MAX_RETRIES_PER_MODULE} for ${target}` },
+        action: { type: 'LOCAL_RETRY', retryTarget: target, reason: `Retry ${count + 1}/${this.maxRetries} for ${target}` },
       };
     }
     return {
       nextState: 'ASK_REFINEMENT',
-      action: { type: 'ASK_REFINEMENT', reason: `${target} failed after ${MAX_RETRIES_PER_MODULE} retries` },
+      action: { type: 'ASK_REFINEMENT', reason: `${target} failed after ${this.maxRetries} retries` },
     };
   }
 
   private stateForTarget(target: WorkflowRetryTarget): WorkflowState {
     const map: Record<WorkflowRetryTarget, WorkflowState> = {
       logistics: 'LOGISTICS_PLANNING',
-      finance: 'FINANCE_VALIDATE',
+      finance: 'ITINERARY_REPAIR',
       merge: 'MERGE_AND_SCORE',
       validation: 'MERGE_AND_SCORE',
     };
