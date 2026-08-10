@@ -136,6 +136,30 @@ describe('AlternativeFinder', () => {
     });
   });
 
+  describe('within_tolerance', () => {
+    const WITHIN_TOLERANCE_VALIDATION: BudgetValidation = {
+      status: 'within_tolerance',
+      percentageUsed: 104,
+      remaining: -40,
+      overAmount: 40,
+      budgetTotal: 1000,
+      currency: 'EUR',
+      tolerancePct: 10,
+    };
+
+    it('does not call Claude when overrun is inside the tolerance band', async () => {
+      await finder.findAlternatives(VALID_TRIP_ID, 1, MOCK_PROPOSAL, MOCK_BREAKDOWN, WITHIN_TOLERANCE_VALIDATION, '');
+      expect(anthropic.complete).not.toHaveBeenCalled();
+    });
+
+    it('event content includes budgetValidation but no alternatives', async () => {
+      const event = await finder.findAlternatives(VALID_TRIP_ID, 1, MOCK_PROPOSAL, MOCK_BREAKDOWN, WITHIN_TOLERANCE_VALIDATION, '');
+      const content = event.content as Record<string, unknown>;
+      expect(content.budgetValidation).toBeDefined();
+      expect(content.alternatives).toBeUndefined();
+    });
+  });
+
   describe('over_budget', () => {
     it('calls Claude when over budget', async () => {
       await finder.findAlternatives(VALID_TRIP_ID, 1, MOCK_PROPOSAL, MOCK_BREAKDOWN, OVER_BUDGET_VALIDATION, '');

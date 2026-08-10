@@ -18,6 +18,9 @@ const PRICE_LEVEL_TO_EUR_PER_MEAL: Record<number, number> = {
 
 const DEFAULT_PRICE_LEVEL = 2;
 
+/** Default per-meal estimate (€€ level) — also used by /plan's envelope reserve. */
+export const DEFAULT_MEAL_PRICE_EUR = PRICE_LEVEL_TO_EUR_PER_MEAL[DEFAULT_PRICE_LEVEL]!;
+
 /** Blends a region's restaurant search results into a single per-meal estimate. */
 export function estimateMealPriceEur(restaurants: Place[]): PriceDetail {
   const levels = restaurants

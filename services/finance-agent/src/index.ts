@@ -38,7 +38,9 @@ async function start(): Promise<void> {
 
   app.use(createHealthRouter(publisher, redis));
   app.use(authMiddleware);
-  app.use(createFinanceRouter(calculator, validator, finder, storage));
+  app.use(createFinanceRouter(calculator, validator, finder, storage, {
+    budgetTolerancePct: config.BUDGET_TOLERANCE_PCT,
+  }));
   app.use(errorHandler);
 
   const server = app.listen(config.PORT, () => {

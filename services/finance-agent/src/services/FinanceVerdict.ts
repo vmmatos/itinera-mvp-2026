@@ -32,6 +32,20 @@ export function buildFinanceVerdict(
   }
 
   const over = validation.overAmount ?? Math.max(0, breakdown.grandTotal - budgetTotal);
+
+  if (validation.status === 'within_tolerance') {
+    const tolerancePct = validation.tolerancePct ?? 0;
+    return {
+      approved: true,
+      budgetFeasible: true,
+      withinTolerance: true,
+      issues: [
+        `Over budget by ${over} ${currency} (${validation.percentageUsed}% — within ${tolerancePct}% tolerance)`,
+      ],
+      reasoning: `Over budget by ${over} ${currency} but inside the ${tolerancePct}% tolerance band — approved with warning.`,
+    };
+  }
+
   const issues: string[] = [
     `Over budget by ${over} ${currency} (${validation.percentageUsed}% of budget used)`,
   ];

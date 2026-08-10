@@ -25,6 +25,11 @@ const EnvSchema = z.object({
   // Anthropic API — used by DestinationParser LLM fallback.
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.string().default('claude-sonnet-4-20250514'),
+  // Per-module retry budget for the workflow state machine.
+  WORKFLOW_MAX_RETRIES: z.coerce.number().int().min(0).max(10).default(2),
+  // Must match the finance-agent's own BUDGET_TOLERANCE_PCT — used here to
+  // compute the repair target (budget × (1 + pct/100)).
+  BUDGET_TOLERANCE_PCT: z.coerce.number().min(0).max(50).default(10),
 });
 
 const parsed = EnvSchema.safeParse(process.env);

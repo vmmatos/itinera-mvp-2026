@@ -36,8 +36,10 @@ export function createFinanceRouter(
   validator: BudgetValidator,
   finder: AlternativeFinder,
   storage: ProposalStorageService,
+  options: { budgetTolerancePct?: number } = {},
 ): Router {
   const router = Router();
+  const budgetTolerancePct = options.budgetTolerancePct ?? 0;
 
   // Early budget envelope check: validates transport + accommodation costs against budget
   // before tourist agents run. Pure code — no LLM. Uses existing CostCalculator + BudgetValidator.
@@ -52,6 +54,7 @@ export function createFinanceRouter(
       })),
       totalTransportCostEurPerPerson: z.number(),
       totalDurationDays: z.number(),
+      mealsReserveEurPerPerson: z.number().optional().default(0),
     }),
     budgetTotal:    z.coerce.number().positive(),
     budgetCurrency: z.string().min(1).default('EUR'),
@@ -72,10 +75,11 @@ export function createFinanceRouter(
     const budgetPerPerson = budgetTotal / groupSize;
 
     const transportTotal = routeGraph.totalTransportCostEurPerPerson;
+    const mealsReserve = routeGraph.mealsReserveEurPerPerson;
     const accommodationTotal = routeGraph.cityStays.reduce(
       (sum, stay) => sum + stay.budgetPerPersonPerNight * stay.nights, 0,
     );
-    const experiencesTotal = Math.max(0, budgetPerPerson - transportTotal - accommodationTotal);
+    const experiencesTotal = Math.max(0, budgetPerPerson - transportTotal - mealsReserve - accommodationTotal);
 
     const perBlock: BudgetBlock[] = routeGraph.cityStays.map((stay) => {
       const stayTransport = routeGraph.orderedLegs
@@ -93,9 +97,9 @@ export function createFinanceRouter(
       } satisfies BudgetBlock;
     });
 
-    const totalEurPerPerson = Math.round(transportTotal + accommodationTotal + experiencesTotal);
-    const feasible = experiencesTotal >= 0 && transportTotal + accommodationTotal <= budgetPerPerson;
-    const bufferPct = Math.round(((budgetPerPerson - transportTotal - accommodationTotal) / budgetPerPerson) * 100);
+    const totalEurPerPerson = Math.round(transportTotal + mealsReserve + accommodationTotal + experiencesTotal);
+    const feasible = experiencesTotal >= 0 && transportTotal + mealsReserve + accommodationTotal <= budgetPerPerson;
+    const bufferPct = Math.round(((budgetPerPerson - transportTotal - mealsReserve - accommodationTotal) / budgetPerPerson) * 100);
 
     const budgetPlan: BudgetPlan = {
       perBlock,
@@ -132,7 +136,7 @@ export function createFinanceRouter(
         : [];
 
       const breakdown = calculator.calculate(itinerary, budgetCurrency, accommodation, groupSize);
-      const validation = validator.validate(breakdown, budgetTotal, budgetCurrency);
+      const validation = validator.validate(breakdown, budgetTotal, budgetCurrency, budgetTolerancePct);
       const review = await finder.findAlternatives(tripId, round, proposal, breakdown, validation, context, dateInput ?? null);
 
       // Attach Finance's structured verdict so the Orchestrator can decide whether

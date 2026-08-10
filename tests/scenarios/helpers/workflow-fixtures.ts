@@ -197,6 +197,42 @@ export const FINANCE_REJECTED_RESULT = {
   tokensUsed: 280,
 };
 
+// Rejected but fixable: over budget with concrete suggested cuts — the shape
+// the repair loop (ITINERARY_REPAIR) consumes.
+export const FINANCE_REJECTED_FIXABLE_RESULT = {
+  content: {
+    verdict: {
+      approved: false,
+      budgetFeasible: true,
+      issues: ['Over budget by 200 EUR (109% of budget used)'],
+      warnings: [],
+      reasoning: 'Over budget but fixable via suggested alternatives.',
+    },
+    budgetBreakdown: {
+      grandTotal: 2400,
+      budgetTotal: 2200,
+      suggestedCuts: [
+        { category: 'activities', description: 'Drop the wine tasting in Gaia', savingPerPerson: 55, savingTotal: 110 },
+      ],
+    },
+  },
+  latencyMs: 240,
+  tokensUsed: 280,
+};
+
+// Edit list the orchestrator-agent /repair endpoint returns — matches the
+// 'Wine tasting in Gaia' activity in MERGED_ITINERARY_CONTENT above.
+export const REPAIR_EDITS_RESULT = {
+  content: {
+    edits: [
+      { type: 'remove', day: 1, target: 'activity', name: 'Wine tasting in Gaia', note: 'Finance suggested cut' },
+    ],
+    summary: 'Dropped the most expensive discretionary activity.',
+  },
+  latencyMs: 900,
+  tokensUsed: 500,
+};
+
 export const VALIDATION_PASS_RESULT = {
   content: { scoring: { overallScore: 78 } },
   latencyMs: 180,

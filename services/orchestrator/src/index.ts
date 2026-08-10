@@ -30,7 +30,7 @@ async function start(): Promise<void> {
   const stateManager = new StateManager();
   const agentCaller = new AgentCaller();
 
-  const engine = new WorkflowEngine(new WorkflowStateMachine(), stateManager, agentCaller, eventPublisher);
+  const engine = new WorkflowEngine(new WorkflowStateMachine(config.WORKFLOW_MAX_RETRIES), stateManager, agentCaller, eventPublisher);
 
   const aiProvider = config.ANTHROPIC_API_KEY
     ? new AnthropicService(config.ANTHROPIC_API_KEY, config.ANTHROPIC_MODEL)

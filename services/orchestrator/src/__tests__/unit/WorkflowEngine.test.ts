@@ -24,6 +24,8 @@ vi.mock('@/config', () => ({
     LOGISTICS_AGENT_URL: 'http://log:3005',
     VALIDATOR_URL: 'http://val:3006',
     JWT_ISSUER: 'itinera',
+    WORKFLOW_MAX_RETRIES: 2,
+    BUDGET_TOLERANCE_PCT: 10,
   },
   getRabbitMQUrl: () => 'amqp://localhost',
 }));
@@ -1936,5 +1938,258 @@ describe('WorkflowEngine — activity category backfill and validator hand-off',
     driveHappyPath();
 
     await expect(engine.run(TRIP_ID)).resolves.toBeUndefined();
+  });
+});
+
+describe('WorkflowEngine ITINERARY_REPAIR', () => {
+  const OVER_BUDGET_ITINERARY = {
+    itinerary: [
+      {
+        day: 1,
+        city: 'Barcelona',
+        activities: [
+          { activity: 'Sagrada Familia', venue: 'Sagrada Familia', estimatedCostPerPerson: 26 },
+          { activity: 'Helicopter tour', venue: 'Heliport BCN', estimatedCostPerPerson: 180 },
+        ],
+        meals: [{ estimatedCostPerPerson: 50 }],
+        transport: [{ from: 'Barcelona', to: 'Heliport BCN', priceEur: 30 }],
+      },
+    ],
+    accommodation: [{ city: 'Barcelona', name: 'Eixample Hotel', pricePerNightPerPerson: 90, nights: 3 }],
+  };
+
+  const FINANCE_FEEDBACK = {
+    overAmountTotal: 200,
+    overAmountPerPerson: 200,
+    issues: ['Over budget by 200 EUR'],
+    suggestedCuts: [],
+  };
+
+  function makeRepairContext(): WorkflowContext {
+    return makeContext({
+      currentState: 'ITINERARY_REPAIR',
+      mergedItinerary: { ...OVER_BUDGET_ITINERARY },
+      financeFeedback: FINANCE_FEEDBACK,
+      retryCount: { finance: 1 },
+    });
+  }
+
+  function driveRepairThenApprove(): void {
+    driveStateMachine(stateMachine, [
+      { nextState: 'ITINERARY_REPAIR', action: { type: 'CALL_ITINERARY_REPAIR' } },
+      { nextState: 'FINANCE_VALIDATE', action: { type: 'CALL_FINANCE_VALIDATE' } },
+      { nextState: 'FINAL_VALIDATION', action: { type: 'CALL_FINAL_VALIDATION' } },
+      { nextState: 'FINISH', action: { type: 'FINISH' } },
+    ]);
+  }
+
+  beforeEach(() => {
+    setupCommonMocks(stateManager, eventPublisher);
+    vi.mocked(stateManager.loadWorkflowContext).mockResolvedValue(makeRepairContext());
+    vi.mocked(agentCaller.callFinanceAgent).mockResolvedValue({
+      content: { verdict: { approved: true, budgetFeasible: true, issues: [] } },
+      latencyMs: 10,
+      tokensUsed: 10,
+    });
+    vi.mocked(agentCaller.callValidatorAgent).mockResolvedValue({
+      content: { scoring: { overallScore: 80 } },
+      latencyMs: 10,
+      tokensUsed: 10,
+    });
+  });
+
+  it('applies a matching remove edit, drops its transport leg, and re-validates with finance', async () => {
+    vi.mocked(agentCaller.callOrchestratorRepair).mockResolvedValue({
+      content: {
+        edits: [{ type: 'remove', day: 1, target: 'activity', name: 'Helicopter tour', note: 'most expensive' }],
+        summary: 'Dropped helicopter tour',
+      },
+      latencyMs: 30,
+      tokensUsed: 500,
+    });
+    driveRepairThenApprove();
+
+    await engine.run(TRIP_ID);
+
+    expect(agentCaller.callOrchestratorRepair).toHaveBeenCalledOnce();
+    // The full re-merge must NOT run on a finance retry any more.
+    expect(agentCaller.callOrchestratorMerge).not.toHaveBeenCalled();
+
+    // Finance re-validates the EDITED itinerary: helicopter activity and its
+    // transport leg are gone, the untouched activity survives.
+    const financeCall = vi.mocked(agentCaller.callFinanceAgent).mock.calls[0]!;
+    const reviewed = financeCall[2] as { itinerary: Array<{ activities: Array<{ activity: string }>; transport: unknown[] }> };
+    expect(reviewed.itinerary[0]!.activities).toHaveLength(1);
+    expect(reviewed.itinerary[0]!.activities[0]!.activity).toBe('Sagrada Familia');
+    expect(reviewed.itinerary[0]!.transport).toHaveLength(0);
+  });
+
+  it('persists the full repaired itinerary as a proposal so the results page can render it', async () => {
+    vi.mocked(agentCaller.callOrchestratorRepair).mockResolvedValue({
+      content: { edits: [{ type: 'remove', day: 1, target: 'activity', name: 'Helicopter tour' }] },
+      latencyMs: 30,
+      tokensUsed: 500,
+    });
+    driveRepairThenApprove();
+
+    await engine.run(TRIP_ID);
+
+    expect(stateManager.saveProposal).toHaveBeenCalledWith(
+      expect.objectContaining({
+        agent: 'orchestrator',
+        action: 'repair',
+        content: expect.objectContaining({ itinerary: expect.any(Array) }),
+      }),
+    );
+  });
+
+  it('publishes one agent.repair event per edit, marking non-matching edits as not applied', async () => {
+    vi.mocked(agentCaller.callOrchestratorRepair).mockResolvedValue({
+      content: {
+        edits: [
+          { type: 'remove', day: 1, target: 'activity', name: 'Helicopter tour' },
+          { type: 'remove', day: 9, target: 'activity', name: 'Nonexistent thing' },
+        ],
+      },
+      latencyMs: 30,
+      tokensUsed: 500,
+    });
+    driveRepairThenApprove();
+
+    await engine.run(TRIP_ID);
+
+    const repairEvents = vi.mocked(eventPublisher.publish).mock.calls
+      .filter(([, action]) => action === 'repair')
+      .map(([, , event]) => (event as { content: { name: string; applied: boolean } }).content);
+    expect(repairEvents).toHaveLength(2);
+    expect(repairEvents.find((e) => e.name === 'Helicopter tour')?.applied).toBe(true);
+    expect(repairEvents.find((e) => e.name === 'Nonexistent thing')?.applied).toBe(false);
+  });
+
+  it('downgrade edits only apply when the new cost is lower than the current one', async () => {
+    vi.mocked(agentCaller.callOrchestratorRepair).mockResolvedValue({
+      content: {
+        edits: [
+          { type: 'downgrade', day: 1, target: 'meal', name: 'meals', newCostPerPerson: 30 },
+          // Bogus "downgrade" that raises the price — must be skipped.
+          { type: 'downgrade', day: 1, target: 'activity', name: 'Sagrada Familia', newCostPerPerson: 90 },
+        ],
+      },
+      latencyMs: 30,
+      tokensUsed: 500,
+    });
+    driveRepairThenApprove();
+
+    await engine.run(TRIP_ID);
+
+    const financeCall = vi.mocked(agentCaller.callFinanceAgent).mock.calls[0]!;
+    const reviewed = financeCall[2] as {
+      itinerary: Array<{ activities: Array<{ estimatedCostPerPerson: number }>; meals: Array<{ estimatedCostPerPerson: number }> }>;
+    };
+    expect(reviewed.itinerary[0]!.meals[0]!.estimatedCostPerPerson).toBe(30);
+    expect(reviewed.itinerary[0]!.activities[0]!.estimatedCostPerPerson).toBe(26);
+  });
+
+  it('repair agent failure leaves the itinerary unchanged and records the error', async () => {
+    vi.mocked(agentCaller.callOrchestratorRepair).mockRejectedValue(new Error('repair agent down'));
+    driveRepairThenApprove();
+
+    await engine.run(TRIP_ID);
+
+    // Finance still re-reviews the ORIGINAL itinerary — the flow survives.
+    const financeCall = vi.mocked(agentCaller.callFinanceAgent).mock.calls[0]!;
+    const reviewed = financeCall[2] as { itinerary: Array<{ activities: unknown[] }> };
+    expect(reviewed.itinerary[0]!.activities).toHaveLength(2);
+  });
+
+  it('does not call the repair agent when there is no finance feedback', async () => {
+    vi.mocked(stateManager.loadWorkflowContext).mockResolvedValue(
+      makeContext({
+        currentState: 'ITINERARY_REPAIR',
+        mergedItinerary: { ...OVER_BUDGET_ITINERARY },
+        retryCount: { finance: 1 },
+      }),
+    );
+    driveRepairThenApprove();
+
+    await engine.run(TRIP_ID);
+
+    expect(agentCaller.callOrchestratorRepair).not.toHaveBeenCalled();
+  });
+});
+
+describe('WorkflowEngine.finalize best-effort & reasons', () => {
+  const COMPLETE_ITINERARY = {
+    itinerary: [{ day: 1, city: 'Barcelona', activities: [{ activity: 'Sagrada Familia', estimatedCostPerPerson: 26 }] }],
+    accommodation: [],
+    _financeApproved: false,
+    _budgetFeasible: true,
+  };
+
+  function driveStraightToTerminal(terminal: 'ASK_REFINEMENT'): void {
+    driveStateMachine(stateMachine, [
+      { nextState: terminal, action: { type: 'ASK_REFINEMENT', reason: 'finance failed after 2 retries' } },
+    ]);
+  }
+
+  beforeEach(() => {
+    setupCommonMocks(stateManager, eventPublisher);
+  });
+
+  it('delivers best-effort: ASK_REFINEMENT with a complete itinerary confirms the trip and persists overBudget', async () => {
+    vi.mocked(stateManager.loadWorkflowContext).mockResolvedValue(
+      makeContext({
+        currentState: 'FINANCE_VALIDATE',
+        mergedItinerary: COMPLETE_ITINERARY,
+        actualCostTotal: 1518, // budget 1500 → €18 over, 101.2%
+      }),
+    );
+    driveStraightToTerminal('ASK_REFINEMENT');
+
+    await engine.run(TRIP_ID);
+
+    expect(stateManager.transitionStatus).toHaveBeenCalledWith(TRIP_ID, 'confirmed');
+    expect(stateManager.rejectTrip).not.toHaveBeenCalled();
+    // overBudget evidence saved for the UI warning.
+    const savedContexts = vi.mocked(stateManager.saveWorkflowContext).mock.calls.map((c) => c[1]);
+    const withOverBudget = savedContexts.find((c) => c.overBudget);
+    expect(withOverBudget?.overBudget).toEqual({ amountTotal: 18, pct: 101.2 });
+    // The user still gets the itinerary-ready email.
+    expect(eventPublisher.publishToExchange).toHaveBeenCalledWith(
+      'notifications',
+      expect.any(String),
+      expect.objectContaining({ type: 'itinerary_ready' }),
+    );
+  });
+
+  it('rejects with a figure-bearing reason when the budget is structurally infeasible', async () => {
+    vi.mocked(stateManager.loadWorkflowContext).mockResolvedValue(
+      makeContext({
+        currentState: 'FINANCE_VALIDATE',
+        mergedItinerary: { ...COMPLETE_ITINERARY, _budgetFeasible: false },
+        actualCostTotal: 3686,
+      }),
+    );
+    driveStraightToTerminal('ASK_REFINEMENT');
+
+    await engine.run(TRIP_ID);
+
+    expect(stateManager.rejectTrip).toHaveBeenCalledWith(TRIP_ID, expect.stringContaining('3686'));
+    expect(stateManager.transitionStatus).not.toHaveBeenCalledWith(TRIP_ID, 'confirmed');
+  });
+
+  it('cancels WITH a persisted reason when no itinerary exists', async () => {
+    vi.mocked(stateManager.loadWorkflowContext).mockResolvedValue(
+      makeContext({ currentState: 'MERGE_AND_SCORE' }),
+    );
+    driveStateMachine(stateMachine, [
+      { nextState: 'ASK_REFINEMENT', action: { type: 'ASK_REFINEMENT', reason: 'merge failed after 2 retries' } },
+    ]);
+
+    await engine.run(TRIP_ID);
+
+    expect(stateManager.transitionStatus).toHaveBeenCalledWith(
+      TRIP_ID, 'cancelled', undefined, 'merge failed after 2 retries',
+    );
   });
 });

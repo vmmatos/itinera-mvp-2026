@@ -1,5 +1,5 @@
 import { BaseService } from '@itinera/shared';
-import type { DateInput, TransportMode, RouteGraph, BudgetPlan, TouristSlotInput, RestrictionWarning, GroupPreferences, TransportLeg } from '@itinera/shared';
+import type { DateInput, TransportMode, RouteGraph, BudgetPlan, TouristSlotInput, RestrictionWarning, GroupPreferences, TransportLeg, FinanceFeedback } from '@itinera/shared';
 import jwt from 'jsonwebtoken';
 import { config } from '@/config';
 
@@ -225,6 +225,32 @@ export class AgentCaller extends BaseService {
       { tripId, round, routeGraph, touristOutputs, budgetPlan, context, targetCity, preferences },
     );
     return toAgentCallResult(resp.merged, Date.now() - start);
+  }
+
+  /**
+   * Asks the orchestrator-agent for a targeted edit list that brings an
+   * over-budget itinerary down to `targetTotal` (budget × tolerance). The
+   * edits are applied deterministically by the WorkflowEngine — the agent
+   * never returns a rewritten itinerary.
+   */
+  async callOrchestratorRepair(
+    tripId: string,
+    round: number,
+    itinerary: Array<Record<string, unknown>>,
+    accommodation: Array<Record<string, unknown>>,
+    financeFeedback: FinanceFeedback,
+    budgetTotal: number,
+    budgetCurrency: string,
+    groupSize: number,
+    targetTotal: number,
+  ): Promise<AgentCallResult> {
+    const start = Date.now();
+    const resp = await this.post<{ repair: AgentEventLike }>(
+      'orchestrator-agent',
+      '/repair',
+      { tripId, round, itinerary, accommodation, financeFeedback, budgetTotal, budgetCurrency, groupSize, targetTotal },
+    );
+    return toAgentCallResult(resp.repair, Date.now() - start);
   }
 
   /**

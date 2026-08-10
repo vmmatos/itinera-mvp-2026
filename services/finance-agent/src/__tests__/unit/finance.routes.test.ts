@@ -85,6 +85,32 @@ describe('POST /review', () => {
     vi.mocked(mockFinder.findAlternatives).mockResolvedValue(MOCK_EVENT);
   });
 
+  it('passes the configured tolerance to the validator', async () => {
+    const app = express();
+    app.use(express.json());
+    app.use(createFinanceRouter(mockCalculator, mockValidator, mockFinder, mockStorage, { budgetTolerancePct: 10 }));
+    await request(app).post('/review').send({
+      tripId: VALID_UUID,
+      round: 1,
+      proposal: { itinerary: VALID_ITINERARY },
+      budgetTotal: 500,
+      budgetCurrency: 'EUR',
+    });
+    expect(mockValidator.validate).toHaveBeenCalledWith(expect.anything(), 500, 'EUR', 10);
+  });
+
+  it('defaults to strict validation (tolerance 0) when no option is given', async () => {
+    const app = buildApp();
+    await request(app).post('/review').send({
+      tripId: VALID_UUID,
+      round: 1,
+      proposal: { itinerary: VALID_ITINERARY },
+      budgetTotal: 500,
+      budgetCurrency: 'EUR',
+    });
+    expect(mockValidator.validate).toHaveBeenCalledWith(expect.anything(), 500, 'EUR', 0);
+  });
+
   it('400 when tripId is missing', async () => {
     const app = buildApp();
     const res = await request(app).post('/review').send({
@@ -261,6 +287,59 @@ describe('POST /review', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error.message).toBe('Anthropic API rate limit exceeded');
+  });
+});
+
+describe('POST /estimate', () => {
+  const ESTIMATE_BASE = {
+    tripId: VALID_UUID,
+    budgetTotal: 2000,
+    budgetCurrency: 'EUR',
+    groupSize: 2,
+    routeGraph: {
+      orderedLegs: [{ totalCostEurPerPerson: 100 }],
+      cityStays: [
+        { city: 'Lisbon', nights: 2, budgetPerPersonPerNight: 100 },
+      ],
+      totalTransportCostEurPerPerson: 100,
+      totalDurationDays: 2,
+    },
+  };
+
+  it('subtracts the meals reserve from the experiences envelope', async () => {
+    const app = buildApp();
+    const res = await request(app).post('/estimate').send({
+      ...ESTIMATE_BASE,
+      routeGraph: { ...ESTIMATE_BASE.routeGraph, mealsReserveEurPerPerson: 150 },
+    });
+
+    expect(res.status).toBe(200);
+    // budgetPerPerson 1000 − transport 100 − meals 150 − accommodation 200 = 550 experiences.
+    expect(res.body.budgetPlan.perBlock[0].experiencesBudgetEurPerPerson).toBe(550);
+    // Total per person includes the meals reserve.
+    expect(res.body.budgetPlan.totalEurPerPerson).toBe(1000);
+    expect(res.body.budgetPlan.feasible).toBe(true);
+  });
+
+  it('is backwards compatible when no meals reserve is sent', async () => {
+    const app = buildApp();
+    const res = await request(app).post('/estimate').send(ESTIMATE_BASE);
+
+    expect(res.status).toBe(200);
+    expect(res.body.budgetPlan.perBlock[0].experiencesBudgetEurPerPerson).toBe(700);
+  });
+
+  it('marks the plan infeasible when fixed costs plus meals exceed the budget', async () => {
+    const app = buildApp();
+    const res = await request(app).post('/estimate').send({
+      ...ESTIMATE_BASE,
+      budgetTotal: 800,
+      routeGraph: { ...ESTIMATE_BASE.routeGraph, mealsReserveEurPerPerson: 150 },
+    });
+
+    expect(res.status).toBe(200);
+    // budgetPerPerson 400 − 100 − 150 − 200 = −50 → clamped to 0 experiences, infeasible.
+    expect(res.body.budgetPlan.feasible).toBe(false);
   });
 });
 

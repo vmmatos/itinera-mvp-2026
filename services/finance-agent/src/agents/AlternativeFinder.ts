@@ -28,7 +28,9 @@ export class AlternativeFinder extends BaseFinanceAgent {
     context: string,
     dateInput?: { mode: string; preferredMonth?: string; window?: string; days?: number } | null,
   ): Promise<AgentEvent> {
-    if (validation.status === 'within_budget') {
+    // Tolerance-band overruns are approved with a warning — spending an LLM
+    // call hunting for cuts the orchestrator won't act on is pure waste.
+    if (validation.status === 'within_budget' || validation.status === 'within_tolerance') {
       const content = {
         costBreakdown: breakdown,
         budgetValidation: validation,

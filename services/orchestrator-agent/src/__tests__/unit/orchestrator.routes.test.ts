@@ -24,11 +24,13 @@ import type { ConflictAnalyzer } from '@/agents/ConflictAnalyzer';
 import type { CompromiseGenerator } from '@/agents/CompromiseGenerator';
 import type { ProposalRefiner } from '@/agents/ProposalRefiner';
 import type { ItineraryMerger } from '@/agents/ItineraryMerger';
+import type { ItineraryRepairer } from '@/agents/ItineraryRepairer';
 
 const mockAnalyzer = { analyze: vi.fn() } as unknown as ConflictAnalyzer;
 const mockGenerator = { generateCompromise: vi.fn() } as unknown as CompromiseGenerator;
 const mockRefiner = { refine: vi.fn() } as unknown as ProposalRefiner;
 const mockMerger = { merge: vi.fn() } as unknown as ItineraryMerger;
+const mockRepairer = { repair: vi.fn() } as unknown as ItineraryRepairer;
 
 function buildApp(): express.Express {
   const app = express();
@@ -43,7 +45,7 @@ function buildApp(): express.Express {
 function buildAppWithMerger(): express.Express {
   const app = express();
   app.use(express.json());
-  app.use(createOrchestratorRouter(mockAnalyzer, mockGenerator, mockRefiner, mockMerger));
+  app.use(createOrchestratorRouter(mockAnalyzer, mockGenerator, mockRefiner, mockMerger, mockRepairer));
   app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     res.status(400).json({ success: false, error: { message: err.message } });
   });
@@ -279,5 +281,72 @@ describe('POST /merge', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error.message).toContain('failed to produce a valid itinerary');
+  });
+});
+
+describe('POST /repair', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  const REPAIR_BODY = {
+    tripId: VALID_UUID,
+    round: 2,
+    itinerary: [{ day: 1, activities: [] }],
+    accommodation: [],
+    financeFeedback: {
+      overAmountTotal: 200,
+      overAmountPerPerson: 100,
+      issues: ['Over budget by 200 EUR'],
+      suggestedCuts: [],
+    },
+    budgetTotal: 2200,
+    budgetCurrency: 'EUR',
+    groupSize: 2,
+    targetTotal: 2420,
+  };
+
+  it('400 via ValidationError when repairer is not configured', async () => {
+    const app = buildApp(); // built without a repairer
+    const res = await request(app).post('/repair').send(REPAIR_BODY);
+    expect(res.status).toBe(400);
+  });
+
+  it('400 when the itinerary is empty', async () => {
+    const app = buildAppWithMerger();
+    const res = await request(app).post('/repair').send({ ...REPAIR_BODY, itinerary: [] });
+    expect(res.status).toBe(400);
+  });
+
+  it('400 when financeFeedback is missing', async () => {
+    const app = buildAppWithMerger();
+    const res = await request(app).post('/repair').send({ ...REPAIR_BODY, financeFeedback: undefined });
+    expect(res.status).toBe(400);
+  });
+
+  it('200 returns the repair AgentEvent with the edit list', async () => {
+    const mockRepair = { ...MOCK_EVENT, type: 'agent.repair', content: { edits: [{ type: 'remove', day: 1, target: 'activity', name: 'X' }] } };
+    vi.mocked(mockRepairer.repair).mockResolvedValue(mockRepair as never);
+
+    const app = buildAppWithMerger();
+    const res = await request(app).post('/repair').send(REPAIR_BODY);
+
+    expect(res.status).toBe(200);
+    expect(res.body.repair.content.edits).toHaveLength(1);
+    expect(mockRepairer.repair).toHaveBeenCalledWith(
+      VALID_UUID, 2, expect.any(Array), expect.any(Array),
+      expect.objectContaining({ overAmountTotal: 200 }),
+      2200, 'EUR', 2, 2420,
+    );
+  });
+
+  it('propagates a repair failure as an error response instead of hanging the request', async () => {
+    vi.mocked(mockRepairer.repair).mockRejectedValue(
+      new Error('orchestrator agent failed to produce a valid repair edit list after retry'),
+    );
+
+    const app = buildAppWithMerger();
+    const res = await request(app).post('/repair').send(REPAIR_BODY);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toContain('repair edit list');
   });
 });
