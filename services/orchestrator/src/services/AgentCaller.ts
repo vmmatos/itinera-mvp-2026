@@ -43,6 +43,19 @@ const SERVICE_URLS: Record<string, string> = {
   validator: config.VALIDATOR_URL,
 };
 
+/** Backoff between network-failure retries — short, these are already 4-6 min calls. */
+const RETRY_BACKOFF_MS = 2000;
+
+interface PostOptions {
+  /**
+   * Extra attempts on a NETWORK-level failure only (fetch() itself throwing —
+   * timeout/abort, DNS, connection reset). An HTTP error response (4xx/5xx)
+   * means the downstream service ran and answered; that is never retried
+   * here; the caller's status-code handling still applies unchanged.
+   */
+  retries?: number;
+}
+
 function buildServiceToken(): string {
   return jwt.sign(
     { sub: 'orchestrator', role: 'service', iss: config.JWT_ISSUER ?? 'itinera' },
@@ -65,18 +78,48 @@ export class AgentCaller extends BaseService {
     super('agent-caller');
   }
 
-  private async post<T>(service: string, path: string, body: unknown): Promise<T> {
+  private async post<T>(service: string, path: string, body: unknown, options: PostOptions = {}): Promise<T> {
     const baseUrl = SERVICE_URLS[service];
     if (!baseUrl) throw new Error(`Unknown service: ${service}`);
+    const maxAttempts = 1 + (options.retries ?? 0);
     const start = Date.now();
-    const response = await fetch(`${baseUrl}${path}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${buildServiceToken()}`,
-      },
-      body: JSON.stringify(body),
-    });
+
+    let response: Response | undefined;
+    let networkError: unknown;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), config.AGENT_CALL_TIMEOUT_MS);
+      try {
+        response = await fetch(`${baseUrl}${path}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${buildServiceToken()}`,
+          },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        });
+        break; // Got a response (ok or not) — the fetch itself succeeded, stop retrying.
+      } catch (err) {
+        networkError = err;
+        response = undefined;
+        if (attempt < maxAttempts) {
+          this.logger.warn('Agent call network failure — retrying', {
+            service, path, attempt, maxAttempts, error: String(err),
+          });
+          await new Promise((res) => setTimeout(res, RETRY_BACKOFF_MS));
+        }
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+
+    if (!response) {
+      const cause = networkError instanceof Error ? networkError.message : String(networkError);
+      throw new Error(`${service} unreachable after ${maxAttempts} attempt(s): ${cause}`);
+    }
+
     if (!response.ok) {
       const text = await response.text();
       throw new Error(`${service} returned ${response.status}: ${text}`);
@@ -204,6 +247,7 @@ export class AgentCaller extends BaseService {
       'preference-agent',
       '/propose-slots',
       { tripId, round, slots },
+      { retries: 2 },
     );
     return (resp.proposals ?? []).map((p) => toAgentCallResult(p, Date.now() - start));
   }
@@ -223,6 +267,7 @@ export class AgentCaller extends BaseService {
       'orchestrator-agent',
       '/merge',
       { tripId, round, routeGraph, touristOutputs, budgetPlan, context, targetCity, preferences },
+      { retries: 2 },
     );
     return toAgentCallResult(resp.merged, Date.now() - start);
   }
@@ -238,9 +283,11 @@ export class AgentCaller extends BaseService {
     accommodation: Array<Record<string, unknown>>,
     region: string | null,
     dateInput: DateInput | null,
+    /** Per-city EUR/person/night ceiling from the /plan envelope — steers the hotel search toward affordable properties. */
+    accommodationCeilingByCity?: Record<string, number>,
   ): Promise<{ itinerary: Array<Record<string, unknown>>; accommodation: Array<Record<string, unknown>>; repricedCount: number }> {
     return this.post('logistics', '/pricing-overlay', {
-      tripId, itinerary, accommodation, region: region ?? 'unknown', dateInput,
+      tripId, itinerary, accommodation, region: region ?? 'unknown', dateInput, accommodationCeilingByCity,
     });
   }
 

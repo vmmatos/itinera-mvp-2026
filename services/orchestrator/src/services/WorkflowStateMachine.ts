@@ -48,10 +48,15 @@ export class WorkflowStateMachine {
             action: { type: 'CALL_ORCHESTRATOR_MERGE', reason: 'All tourist agents complete — merge into unified itinerary' },
           };
         }
-        return {
-          nextState: 'PARALLEL_TURISTIC_PLANNING',
-          action: { type: 'CALL_TOURIST_AGENTS', reason: 'Waiting for tourist agent outputs' },
-        };
+        // callPreferenceAgentSlots is a single call returning all 4 personas
+        // at once — touristAgentOutputs is either fully set or entirely
+        // absent (a caught network/schema failure), never partial. Re-entering
+        // this case therefore always means the previous attempt failed, so it
+        // must be bounded the same way as the other stages — this used to
+        // loop back to CALL_TOURIST_AGENTS with no counter at all, which on a
+        // network outage would retry forever (see the "TypeError: fetch
+        // failed" storm on trip ec37526e).
+        return this.retryOrAbandon(context, 'tourist', 'PARALLEL_TURISTIC_PLANNING', 'CALL_TOURIST_AGENTS');
 
       case 'MERGE_AND_SCORE':
         if (context.mergedItinerary) {
@@ -149,6 +154,7 @@ export class WorkflowStateMachine {
       finance: 'FINANCE_VALIDATE',
       merge: 'MERGE_AND_SCORE',
       validation: 'MERGE_AND_SCORE',
+      tourist: 'PARALLEL_TURISTIC_PLANNING',
     };
     return map[target];
   }

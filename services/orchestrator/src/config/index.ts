@@ -25,6 +25,12 @@ const EnvSchema = z.object({
   // Anthropic API — used by DestinationParser LLM fallback.
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.string().default('claude-sonnet-4-20250514'),
+  // Above Node/undici's own default socket timeout (5 min) — long merge-city
+  // and repair calls (up to ~6 min observed on real trips) were hitting that
+  // default and throwing a generic "TypeError: fetch failed" with no
+  // explicit timeout ever configured. This makes the ceiling explicit and
+  // gives AgentCaller a real timer to abort on instead of relying on it.
+  AGENT_CALL_TIMEOUT_MS: z.coerce.number().int().positive().default(360000),
 });
 
 const parsed = EnvSchema.safeParse(process.env);

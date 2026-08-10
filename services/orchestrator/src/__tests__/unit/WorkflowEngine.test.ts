@@ -1305,6 +1305,7 @@ describe('WorkflowEngine — real pricing overlay and local/day-trip transport',
     expect(agentCaller.callLogisticsPricingOverlay).toHaveBeenCalledWith(
       TRIP_ID, MERGED_ITINERARY.itinerary, MERGED_ITINERARY.accommodation, MOCK_TRIP.region,
       expect.objectContaining({ mode: 'fixed' }),
+      { Barcelona: 80 },
     );
     // The local-transport call must see the itinerary AFTER pricing overlay ran, not the raw merge output.
     expect(agentCaller.callLogisticsLocalTransport).toHaveBeenCalledWith(
