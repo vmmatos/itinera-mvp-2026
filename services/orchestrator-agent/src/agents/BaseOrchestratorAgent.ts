@@ -4,6 +4,7 @@ import { RabbitMQPublisher } from '@/services/RabbitMQPublisher';
 import { RedisService } from '@/services/RedisService';
 import { ProposalStorageService } from '@/services/ProposalStorageService';
 import { ProposalOutputSchema } from '@/schemas/proposalOutput.schema';
+import { RepairOutputSchema } from '@/schemas/repairOutput.schema';
 import { auditPrices } from '@/services/PriceGuard';
 
 /**
@@ -84,6 +85,41 @@ export abstract class BaseOrchestratorAgent extends BaseService {
       // G4: price sanity audit — log suspicious costs but never hard-fail.
       if (validation.success) {
         auditPrices(validation.data, this.logger);
+      }
+    }
+
+    // Repair output is an edit list, not an itinerary — validated against its
+    // own schema with the same retry-once recipe as proposals above.
+    if (action === 'repair') {
+      let validation = RepairOutputSchema.safeParse(parsedContent);
+      if (!validation.success) {
+        const issues = validation.error.issues
+          .slice(0, 5)
+          .map((i) => `${i.path.join('.')}: ${i.message}`)
+          .join('; ');
+        this.logger.warn('Repair output failed schema validation — retrying', { tripId, round, issues });
+
+        const retryMessages: AIMessage[] = [
+          ...messages,
+          { role: 'assistant', content: response.content },
+          {
+            role: 'user',
+            content: `Your response failed JSON schema validation: ${issues}. Please reply with corrected JSON only, no explanation.`,
+          },
+        ];
+        const retried = await this.aiProvider.complete(this.systemPrompt, retryMessages, opts);
+        totalTokensUsed += retried.tokensUsed;
+        totalLatencyMs += retried.latencyMs;
+        wasTruncated = retried.truncated ?? false;
+        parsedContent = this.tryParseJSON(retried.content);
+        validation = RepairOutputSchema.safeParse(parsedContent);
+      }
+
+      if (strict && !validation.success) {
+        this.logger.error('Repair output still invalid after retry — aborting', {
+          tripId, round, agent: this.agentName, wasTruncated,
+        });
+        throw new Error(`${this.agentName} agent failed to produce a valid repair edit list after retry`);
       }
     }
 

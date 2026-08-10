@@ -514,6 +514,27 @@ describe('POST /plan — transit slot blocking', () => {
     vi.mocked(mockRedis.set).mockResolvedValue(undefined);
   });
 
+  it('reserves meals in the budget envelope before splitting accommodation/experiences', async () => {
+    vi.mocked(mockTransportService.resolveTransportOptions).mockResolvedValue([{
+      mode: 'bus',
+      durationMinutes: 120,
+      departureTime: '07:00',
+      arrivalTime: '09:00',
+      priceEur: 100,
+      warnings: [],
+    }]);
+
+    const app = buildApp();
+    const res = await request(app).post('/plan').send(PLAN_BASE);
+
+    expect(res.status).toBe(200);
+    // 2 nights → 3 days × 2 meals × €25 = €150/person reserved for meals.
+    expect(res.body.routeGraph.mealsReserveEurPerPerson).toBe(150);
+    // budgetPerPerson 1000 − transport 100 − meals 150 = 750 experience budget;
+    // accommodation = 750 × 0.35 / 2 nights = 131.25 → 131/night.
+    expect(res.body.routeGraph.cityStays[0].budgetPerPersonPerNight).toBe(131);
+  });
+
   it('short inbound (2h, 07:00→09:00): only morning blocked as inbound-transit', async () => {
     vi.mocked(mockTransportService.resolveTransportOptions).mockResolvedValue([{
       mode: 'bus',

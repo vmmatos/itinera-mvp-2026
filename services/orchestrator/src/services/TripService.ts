@@ -27,6 +27,8 @@ export interface TripSummary {
   dateInput: DateInput | null;
   rejectionReason: string | null;
   workflowState: string | null;
+  /** Present when a best-effort itinerary shipped above budget — drives the UI warning. */
+  overBudget: { amountTotal: number; pct: number } | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -246,6 +248,7 @@ export class TripService extends BaseService {
       dateInput: trip.dateInput ?? null,
       rejectionReason: trip.rejectionReason ?? null,
       workflowState: trip.workflowState ?? null,
+      overBudget: trip.workflowContext?.overBudget ?? null,
       createdAt: trip.createdAt,
       updatedAt: trip.updatedAt,
     };

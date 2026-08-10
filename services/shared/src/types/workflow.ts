@@ -9,6 +9,7 @@ export type WorkflowState =
   | 'PARALLEL_TURISTIC_PLANNING'
   | 'MERGE_AND_SCORE'
   | 'FINANCE_VALIDATE'
+  | 'ITINERARY_REPAIR'
   | 'FINAL_VALIDATION'
   | 'ASK_REFINEMENT'
   | 'FINISH';
@@ -47,6 +48,13 @@ export interface RouteGraph {
   cityStays: CityStay[];
   totalTransportCostEurPerPerson: number;
   totalDurationDays: number;
+  /**
+   * Per-person reserve for meals across the whole trip — the pricing overlay
+   * injects MEALS_PER_DAY meals on every itinerary day after the merge, so the
+   * budget envelope must set this money aside before splitting what remains
+   * between accommodation and experiences.
+   */
+  mealsReserveEurPerPerson?: number;
   /**
    * Day-trip round-trip legs detected post-merge (e.g. Sintra from a Lisbon
    * base) — populated after MERGE_AND_SCORE, once venues are known.
@@ -195,6 +203,7 @@ export type WorkflowActionType =
   | 'CALL_TOURIST_AGENTS'
   | 'CALL_ORCHESTRATOR_MERGE'
   | 'CALL_FINANCE_VALIDATE'
+  | 'CALL_ITINERARY_REPAIR'
   | 'CALL_FINAL_VALIDATION'
   | 'LOCAL_RETRY'
   | 'FINISH'
@@ -202,6 +211,25 @@ export type WorkflowActionType =
   | 'ASK_REFINEMENT';
 
 export type WorkflowRetryTarget = 'logistics' | 'finance' | 'merge' | 'validation' | 'tourist';
+
+/**
+ * One targeted change the repair agent asks for on an over-budget itinerary.
+ * Applied deterministically by the orchestrator (never trusted as a full
+ * rewritten itinerary) so a hallucinated edit can only fail to match, not
+ * corrupt unrelated days.
+ */
+export interface RepairEdit {
+  type: 'remove' | 'downgrade';
+  /** 1-based itinerary day. Omitted for accommodation-level edits. */
+  day?: number;
+  target: 'activity' | 'meal' | 'transport' | 'accommodation';
+  /** Name of the item to edit, as it appears in the itinerary. */
+  name: string;
+  /** downgrade only: the new (lower) per-person cost. */
+  newCostPerPerson?: number;
+  /** Short human-readable justification (shown in the admin feed). */
+  note?: string;
+}
 
 export interface WorkflowAction {
   type: WorkflowActionType;
@@ -238,6 +266,11 @@ export interface WorkflowContext {
    */
   actualCostTotal?: number;
   validationScore?: number;
+  /**
+   * Set at finalize when a best-effort itinerary ships above budget — the
+   * user-facing evidence for the over-budget warning (amount + % of budget).
+   */
+  overBudget?: { amountTotal: number; pct: number };
   scoreFeedback?: ScoreFeedback;
   /** Per-axis breakdown behind `validationScore`. */
   scoreBreakdown?: ScoreBreakdown;

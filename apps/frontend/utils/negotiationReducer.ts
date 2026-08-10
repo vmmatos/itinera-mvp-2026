@@ -29,6 +29,7 @@ export const STAGE_LABELS: Record<WorkflowState, string> = {
   PARALLEL_TURISTIC_PLANNING: 'Experiences',
   MERGE_AND_SCORE: 'Merge & resolve',
   FINANCE_VALIDATE: 'Finance validate',
+  ITINERARY_REPAIR: 'Cost repair',
   FINAL_VALIDATION: 'Final check',
 }
 
@@ -38,6 +39,7 @@ const STATE_ACTIVE_AGENTS: Record<WorkflowState, string[]> = {
   PARALLEL_TURISTIC_PLANNING: ['alice', 'bob', 'carlos', 'diana'],
   MERGE_AND_SCORE: [],
   FINANCE_VALIDATE: ['finance'],
+  ITINERARY_REPAIR: ['finance'],
   FINAL_VALIDATION: ['validator'],
 }
 
@@ -203,11 +205,25 @@ function handleWorkflowEvent(state: NegotiationState, event: AgentStreamEvent): 
     who: 'orchestrator',
     color: 'neutral',
     kind: 'workflow',
-    body: idx !== -1 ? STAGE_LABELS[rawState as WorkflowState] : rawState,
+    body: (STAGE_LABELS as Record<string, string>)[rawState] ?? rawState,
     facts: [],
     chip: 'applied',
     timestamp: event.timestamp,
   })
+  // Mid-flow state without its own pipeline cell: finance rejected and the
+  // orchestrator is cutting costs on the existing itinerary. Keep the
+  // Finance-validate cell running — do NOT fall through to the terminal-state
+  // sweep below, the negotiation is very much alive.
+  if (rawState === 'ITINERARY_REPAIR') {
+    const financeIdx = WORKFLOW_STAGE_ORDER.indexOf('FINANCE_VALIDATE')
+    state.stages.forEach((s, i) => {
+      s.status = i < financeIdx ? 'done' : i === financeIdx ? 'running' : 'queued'
+    })
+    state.agents.forEach((a) => {
+      a.state = a.id === 'finance' ? 'thinking' : 'idle'
+    })
+    return
+  }
   if (idx === -1) {
     // Terminal states aren't pipeline cells themselves, but FINISH means every
     // real stage completed — the last one otherwise never flips to "done"
@@ -420,6 +436,67 @@ function handleMergeEvent(state: NegotiationState, event: AgentStreamEvent): voi
   })
 }
 
+// One card per repair edit — the finance ↔ orchestrator cost-cutting
+// negotiation, visible as it happens instead of an opaque retry.
+function handleRepairEvent(state: NegotiationState, event: AgentStreamEvent): void {
+  const content = event.content as {
+    type?: string
+    day?: number
+    target?: string
+    name?: string
+    newCostPerPerson?: number
+    note?: string
+    applied?: boolean
+  } | null | undefined
+  if (!content?.name || !content.type) return
+
+  const dayLabel = typeof content.day === 'number' ? ` (day ${content.day})` : ''
+  const body = content.type === 'remove'
+    ? `Cut ${content.target ?? 'item'}: ${content.name}${dayLabel}`
+    : `Downgrade ${content.target ?? 'item'}: ${content.name}${dayLabel} → €${content.newCostPerPerson ?? '?'}/person`
+
+  setAgentState(state, 'finance', 'thinking', 'negotiating cost cuts')
+  pushOrUpdateEvent(state, {
+    id: `repair-${event.timestamp}-${content.name}`,
+    who: 'orchestrator',
+    color: colorFor('finance'),
+    kind: 'agent · repair',
+    body,
+    facts: content.note ? [['why', content.note]] : [],
+    chip: content.applied === false ? 'rejected' : 'applied',
+    timestamp: event.timestamp,
+  })
+}
+
+// Validator's three-axis score — previously published on the wire but
+// silently dropped here, so the user never saw WHY a trip scored low.
+function handleScoreEvent(state: NegotiationState, event: AgentStreamEvent): void {
+  const content = event.content as {
+    scoring?: { overallScore?: number }
+    compliance?: { personaScore?: number; financeScore?: number | null; logisticsScore?: number | null; combinedScore?: number; cappedByBudget?: boolean }
+  } | null | undefined
+  const combined = content?.compliance?.combinedScore ?? content?.scoring?.overallScore
+  if (typeof combined !== 'number') return
+
+  const facts: Array<[string, string]> = []
+  const c = content?.compliance
+  if (typeof c?.personaScore === 'number') facts.push(['persona', String(Math.round(c.personaScore))])
+  if (typeof c?.financeScore === 'number') facts.push(['budget', String(Math.round(c.financeScore))])
+  if (typeof c?.logisticsScore === 'number') facts.push(['logistics', String(Math.round(c.logisticsScore))])
+  if (c?.cappedByBudget) facts.push(['capped', 'over budget'])
+
+  pushOrUpdateEvent(state, {
+    id: `score-${event.timestamp}`,
+    who: 'validator',
+    color: colorFor('validator'),
+    kind: 'agent · score',
+    body: `Validation score: ${Math.round(combined)}/100`,
+    facts,
+    chip: combined >= 60 ? 'accepted' : 'rejected',
+    timestamp: event.timestamp,
+  })
+}
+
 /**
  * Mutates `state` in place to reflect one incoming AgentStreamEvent. Never
  * throws — an unrecognised or malformed event is a defensive no-op rather
@@ -444,8 +521,15 @@ export function reconcile(state: NegotiationState, event: AgentStreamEvent): voi
       handleDecisionEvent(state, event)
     } else if (event.type === 'agent.merge') {
       handleMergeEvent(state, event)
+    } else if (event.type === 'agent.repair') {
+      handleRepairEvent(state, event)
+    } else if (event.type === 'agent.score') {
+      handleScoreEvent(state, event)
     } else if (event.type === 'negotiation_complete') {
       state.session.status = 'complete'
+      const content = event.content as { reason?: string; overBudget?: { amountTotal: number; pct: number } } | null | undefined
+      state.session.reason = content?.reason ?? null
+      state.session.overBudget = content?.overBudget ?? null
     }
     // Unrecognised type — intentionally ignored.
   } catch {

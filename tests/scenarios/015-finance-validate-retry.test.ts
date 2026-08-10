@@ -10,6 +10,7 @@ vi.mock('@/config', () => ({
     RABBITMQ_EXCHANGE: 'agent.events', PORT: 3001, JWT_SECRET: 'test', JWT_ISSUER: 'itinera',
     PREFERENCE_AGENT_URL: 'http://pref:3002', ORCHESTRATOR_AGENT_URL: 'http://orch:3003',
     FINANCE_AGENT_URL: 'http://fin:3004', LOGISTICS_AGENT_URL: 'http://log:3005', VALIDATOR_URL: 'http://val:3006',
+    WORKFLOW_MAX_RETRIES: 2, BUDGET_TOLERANCE_PCT: 10,
   },
   getRabbitMQUrl: () => 'amqp://localhost',
 }));
@@ -35,6 +36,7 @@ vi.mock('@/services/AgentCaller', () => ({
     callFinanceEstimate: vi.fn(),
     callPreferenceAgentSlots: vi.fn(),
     callOrchestratorMerge: vi.fn(),
+    callOrchestratorRepair: vi.fn(),
     callFinanceAgent: vi.fn(),
     callValidatorAgent: vi.fn(),
   })),
@@ -55,29 +57,34 @@ import { EventPublisher } from '@/services/EventPublisher';
 import {
   TRIP_ID, MOCK_TRIP, ROUTE_GRAPH_NO_LEGS, BUDGET_PLAN_FEASIBLE,
   TOURIST_SLOT_RESULTS, MERGED_ITINERARY_CONTENT,
-  FINANCE_REJECTED_RESULT, FINANCE_APPROVED_RESULT, VALIDATION_PASS_RESULT,
+  FINANCE_REJECTED_FIXABLE_RESULT, FINANCE_APPROVED_RESULT, VALIDATION_PASS_RESULT,
+  REPAIR_EDITS_RESULT,
 } from './helpers/workflow-fixtures';
 
-// ── Scenario 015: finance /review rejects on attempt 1, approves on attempt 2 ─
+// ── Scenario 015: finance /review rejects on attempt 1, repair fixes it ──────
 //
-// Finance agent rejects the merged itinerary on the first review (costs exceed
-// allocation for one city). The state machine triggers LOCAL_RETRY for 'finance',
-// which routes back through a REAL re-merge (not a re-review of the identical,
-// unchanged itinerary — retrying that would just get the same rejection every
-// time regardless of how much the user raises the budget). Logistics, finance
-// estimate, and tourist agents must NOT be re-called — only merge + finance
-// validate repeat. Second finance call approves and the flow completes to FINISH.
+// Finance rejects the merged itinerary on the first review (over budget with
+// concrete suggested cuts). The state machine triggers LOCAL_RETRY for
+// 'finance', which now routes through ITINERARY_REPAIR: one small edit-list
+// call against the EXISTING itinerary, applied deterministically — NOT the
+// full per-city re-merge this used to trigger (~170k tokens per cycle on real
+// trips, spent in the one stage that cannot influence post-merge costs).
+// Logistics, finance estimate, tourist agents, and the merge itself must NOT
+// be re-called. The second finance review sees the edited itinerary, approves,
+// and the flow completes to FINISH.
 
-describe('Scenario 015 — WorkflowEngine v2: finance validate retry', () => {
+describe('Scenario 015 — WorkflowEngine v2: finance validate retry via repair', () => {
   let stateManager: StateManager;
   let agentCaller: AgentCaller;
   let engine: WorkflowEngine;
+  let eventPublisher: EventPublisher;
 
   beforeEach(() => {
     vi.clearAllMocks();
     stateManager = new StateManager();
     agentCaller = new AgentCaller();
-    engine = new WorkflowEngine(new WorkflowStateMachine(), stateManager, agentCaller, new EventPublisher());
+    eventPublisher = new EventPublisher();
+    engine = new WorkflowEngine(new WorkflowStateMachine(), stateManager, agentCaller, eventPublisher);
 
     vi.mocked(stateManager.getTrip).mockResolvedValue(MOCK_TRIP as never);
     vi.mocked(agentCaller.callLogisticsPlan).mockResolvedValue(ROUTE_GRAPH_NO_LEGS);
@@ -86,10 +93,11 @@ describe('Scenario 015 — WorkflowEngine v2: finance validate retry', () => {
     vi.mocked(agentCaller.callOrchestratorMerge).mockResolvedValue({
       content: MERGED_ITINERARY_CONTENT, latencyMs: 350, tokensUsed: 800,
     });
+    vi.mocked(agentCaller.callOrchestratorRepair).mockResolvedValue(REPAIR_EDITS_RESULT as never);
 
     // Finance rejects on first review, approves on second
     vi.mocked(agentCaller.callFinanceAgent)
-      .mockResolvedValueOnce(FINANCE_REJECTED_RESULT)
+      .mockResolvedValueOnce(FINANCE_REJECTED_FIXABLE_RESULT as never)
       .mockResolvedValue(FINANCE_APPROVED_RESULT);
 
     vi.mocked(agentCaller.callValidatorAgent).mockResolvedValue(VALIDATION_PASS_RESULT);
@@ -115,28 +123,37 @@ describe('Scenario 015 — WorkflowEngine v2: finance validate retry', () => {
     expect(agentCaller.callPreferenceAgentSlots).toHaveBeenCalledOnce();
   });
 
-  it('merge IS re-called on finance rejection — once per city stay, for each of the two merge attempts', async () => {
+  it('merge NOT re-called on finance rejection — repair replaces the re-merge entirely', async () => {
     await engine.run(TRIP_ID);
-    // 2 city stays × 2 merge attempts (initial + the finance-triggered retry).
-    expect(agentCaller.callOrchestratorMerge).toHaveBeenCalledTimes(4);
+    // 2 city stays × exactly 1 merge attempt. The old flow burned another
+    // full per-city merge round here.
+    expect(agentCaller.callOrchestratorMerge).toHaveBeenCalledTimes(2);
+    expect(agentCaller.callOrchestratorRepair).toHaveBeenCalledOnce();
   });
 
-  it('the retry merge call carries a cost-cutting instruction built from the rejection, and uses a bumped round so the cache does not just replay the first attempt', async () => {
+  it('repair receives the finance feedback and a tolerance-inclusive budget target', async () => {
     await engine.run(TRIP_ID);
-    const calls = vi.mocked(agentCaller.callOrchestratorMerge).mock.calls;
-    const firstAttemptRounds = calls.slice(0, 2).map((c) => c[1]);
-    const retryAttemptRounds = calls.slice(2, 4).map((c) => c[1]);
-    expect(firstAttemptRounds).toEqual([1, 1]);
-    expect(retryAttemptRounds).toEqual([2, 2]);
+    const call = vi.mocked(agentCaller.callOrchestratorRepair).mock.calls[0]!;
+    const feedback = call[4] as { overAmountTotal: number; suggestedCuts: unknown[] };
+    expect(feedback.overAmountTotal).toBe(200);
+    expect(feedback.suggestedCuts).toHaveLength(1);
+    // Trip budget 2200 × 1.10 tolerance = 2420.
+    expect(call[8]).toBe(Math.round((MOCK_TRIP.budgetTotal as number) * 1.1));
+  });
 
-    for (const call of calls.slice(0, 2)) {
-      expect(call[5] as string).not.toContain('COST-CUTTING RETRY');
-    }
-    for (const call of calls.slice(2, 4)) {
-      const tripContext = call[5] as string;
-      expect(tripContext).toContain('COST-CUTTING RETRY');
-      expect(tripContext).toContain('Accommodation costs exceed allocation for Lisbon');
-    }
+  it('the second finance review sees the repaired itinerary (cut activity gone)', async () => {
+    await engine.run(TRIP_ID);
+    const secondReview = vi.mocked(agentCaller.callFinanceAgent).mock.calls[1]!;
+    const proposal = secondReview[2] as { itinerary: Array<{ activities: Array<{ name: string }> }> };
+    const day1Names = proposal.itinerary[0]!.activities.map((a) => a.name);
+    expect(day1Names).not.toContain('Wine tasting in Gaia');
+    expect(day1Names).toContain('Ribeira Market walk');
+  });
+
+  it('publishes agent.repair events so the negotiation feed shows the cost cut', async () => {
+    await engine.run(TRIP_ID);
+    const repairEvents = vi.mocked(eventPublisher.publish).mock.calls.filter(([, action]) => action === 'repair');
+    expect(repairEvents.length).toBeGreaterThan(0);
   });
 
   it('flow completes to FINISH after finance validate retry', async () => {

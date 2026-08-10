@@ -143,12 +143,26 @@ describe('WorkflowStateMachine.transition', () => {
   // unchanged mergedItinerary and get the exact same rejection every time —
   // it must route back through a real re-merge instead (see WorkflowEngine's
   // buildCostCuttingInstruction, fed by context.financeFeedback).
-  it('FINANCE_VALIDATE not approved → LOCAL_RETRY via a real re-merge, not a re-review of the same itinerary', () => {
+  it('FINANCE_VALIDATE not approved → LOCAL_RETRY via ITINERARY_REPAIR, not a full re-merge', () => {
     const ctx = { ...BASE_CONTEXT, currentState: 'FINANCE_VALIDATE' as const, mergedItinerary: { ...MERGED, _financeApproved: false } };
     const { nextState, action } = fsm.transition(ctx);
-    expect(nextState).toBe('MERGE_AND_SCORE');
+    expect(nextState).toBe('ITINERARY_REPAIR');
     expect(action.type).toBe('LOCAL_RETRY');
     expect(action.retryTarget).toBe('finance');
+  });
+
+  it('ITINERARY_REPAIR → FINANCE_VALIDATE for a fresh review of the edited itinerary', () => {
+    const ctx = { ...BASE_CONTEXT, currentState: 'ITINERARY_REPAIR' as const, mergedItinerary: MERGED };
+    const { nextState, action } = fsm.transition(ctx);
+    expect(nextState).toBe('FINANCE_VALIDATE');
+    expect(action.type).toBe('CALL_FINANCE_VALIDATE');
+  });
+
+  it('honours an injected retry budget (WORKFLOW_MAX_RETRIES)', () => {
+    const oneRetryFsm = new WorkflowStateMachine(1);
+    const ctx = { ...BASE_CONTEXT, currentState: 'FINANCE_VALIDATE' as const, mergedItinerary: { ...MERGED, _financeApproved: false }, retryCount: { finance: 1 } };
+    const { nextState } = oneRetryFsm.transition(ctx);
+    expect(nextState).toBe('ASK_REFINEMENT');
   });
 
   it('FINANCE_VALIDATE max retries → ASK_REFINEMENT', () => {
@@ -187,7 +201,7 @@ describe('WorkflowStateMachine.transition', () => {
 describe('WorkflowStateMachine.routeRetry', () => {
   it('returns state for target when retries remain', () => {
     expect(fsm.routeRetry('logistics', 0)).toBe('LOGISTICS_PLANNING');
-    expect(fsm.routeRetry('finance', 1)).toBe('FINANCE_VALIDATE');
+    expect(fsm.routeRetry('finance', 1)).toBe('ITINERARY_REPAIR');
     expect(fsm.routeRetry('merge', 0)).toBe('MERGE_AND_SCORE');
     expect(fsm.routeRetry('validation', 0)).toBe('MERGE_AND_SCORE');
     expect(fsm.routeRetry('tourist', 0)).toBe('PARALLEL_TURISTIC_PLANNING');

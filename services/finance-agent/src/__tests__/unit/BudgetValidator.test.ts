@@ -71,4 +71,41 @@ describe('BudgetValidator', () => {
     expect(result.budgetTotal).toBe(2000);
     expect(result.currency).toBe('USD');
   });
+
+  describe('tolerance band', () => {
+    it('status is within_budget at exactly 100% regardless of tolerance', () => {
+      const result = validator.validate(makeBreakdown(1000), 1000, 'EUR', 10);
+      expect(result.status).toBe('within_budget');
+    });
+
+    it('status is within_tolerance between 100% and the tolerance ceiling', () => {
+      const result = validator.validate(makeBreakdown(1050), 1000, 'EUR', 10);
+      expect(result.status).toBe('within_tolerance');
+      expect(result.overAmount).toBe(50);
+      expect(result.tolerancePct).toBe(10);
+    });
+
+    it('status is within_tolerance at exactly the tolerance ceiling (110%)', () => {
+      const result = validator.validate(makeBreakdown(1100), 1000, 'EUR', 10);
+      expect(result.status).toBe('within_tolerance');
+    });
+
+    it('status is over_budget just above the tolerance ceiling', () => {
+      const result = validator.validate(makeBreakdown(1101), 1000, 'EUR', 10);
+      expect(result.status).toBe('over_budget');
+      expect(result.overAmount).toBe(101);
+    });
+
+    it('defaults to strict validation when no tolerance is given', () => {
+      const result = validator.validate(makeBreakdown(1001), 1000, 'EUR');
+      expect(result.status).toBe('over_budget');
+    });
+
+    it('overAmount is still populated within tolerance', () => {
+      const result = validator.validate(makeBreakdown(1018), 1000, 'EUR', 10);
+      expect(result.status).toBe('within_tolerance');
+      expect(result.overAmount).toBe(18);
+      expect(result.remaining).toBe(-18);
+    });
+  });
 });

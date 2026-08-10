@@ -7,7 +7,7 @@ import { Proposal } from '@/entities/Proposal';
 import { AgentLog } from '@/entities/AgentLog';
 import { TripMetric } from '@/entities/TripMetric';
 
-type ProposalAction = 'propose' | 'refine' | 'accept' | 'reject';
+type ProposalAction = 'propose' | 'refine' | 'accept' | 'reject' | 'repair';
 
 interface SaveProposalParams {
   tripId: string;
@@ -56,9 +56,12 @@ export class StateManager extends BaseService {
     super('state-manager');
   }
 
-  async transitionStatus(tripId: string, status: TripStatus, fromStatus?: TripStatus): Promise<void> {
+  async transitionStatus(tripId: string, status: TripStatus, fromStatus?: TripStatus, reason?: string): Promise<void> {
     const where = fromStatus ? { id: tripId, status: fromStatus } : { id: tripId };
-    const result = await AppDataSource.getRepository(Trip).update(where, { status });
+    // A terminal transition without a persisted reason is undiagnosable from
+    // the UI/API — see the silent-cancel bug this fixes (trip c822a78c).
+    const patch = reason !== undefined ? { status, rejectionReason: reason } : { status };
+    const result = await AppDataSource.getRepository(Trip).update(where, patch);
     if (result.affected === 0) {
       if (fromStatus) {
         // Another process already transitioned away from fromStatus — not an error

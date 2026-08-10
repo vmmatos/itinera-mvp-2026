@@ -23,6 +23,7 @@ const EnvSchema = z.object({
   JWT_SECRET: z.string().min(1),
   JWT_ISSUER: z.string().optional(),
   CACHE_TTL_SECONDS: z.coerce.number().default(3600),
+  BUDGET_TOLERANCE_PCT: z.coerce.number().min(0).max(50).default(10),
 });
 
 const parsed = EnvSchema.safeParse(process.env);

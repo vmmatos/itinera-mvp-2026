@@ -342,6 +342,9 @@ const startNegotiationPolling = (tripId: string): void => {
           || translate('trip.form.errors.rejectionFallback')
         stopPolling()
       } else if (negotiationStatus.value === 'cancelled') {
+        // The orchestrator now persists a concrete reason on every cancel —
+        // surface it instead of the generic "try again" copy.
+        rejectionReason.value = tripResp.data.data.rejectionReason || ''
         stopPolling()
       }
     } catch { /* ignore transient errors */ }
