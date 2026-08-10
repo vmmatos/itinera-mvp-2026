@@ -11,7 +11,7 @@ function transit(overrides: Partial<TransitVM> = {}): TransitVM {
     durationLabel: '4h 55m',
     priceEurPerPerson: 107,
     qualifier: 'Recommended option',
-    warning: 'Long journey',
+    warnings: ['Long journey'],
     alternatives: [
       { icon: '✈️', routeLabel: 'Fly →Seia', durationLabel: '3h 40m', priceEurPerPerson: 189, priceDeltaLabel: '+€82' },
       { icon: '🚆', routeLabel: 'Train →Seia', durationLabel: '6h 20m', priceEurPerPerson: 96, departureTime: '12:00' },
@@ -51,8 +51,58 @@ describe('TransitBlock', () => {
   })
 
   it('renders a real warning verbatim', () => {
-    const wrapper = mount(TransitBlock, { props: { transit: transit({ warning: 'Overnight layover required' }), priceMode: 'pp', travellers: 2 } })
+    const wrapper = mount(TransitBlock, { props: { transit: transit({ warnings: ['Overnight layover required'] }), priceMode: 'pp', travellers: 2 } })
     expect(wrapper.text()).toContain('Overnight layover required')
+  })
+
+  it('renders every warning, not just the first', () => {
+    const wrapper = mount(TransitBlock, {
+      props: {
+        transit: transit({ warnings: ['car preference not used: ...', 'car preference overridden — car takes ~19h here vs ~3h for this option'] }),
+        priceMode: 'pp',
+        travellers: 2,
+      },
+    })
+    const text = wrapper.text()
+    expect(text).toContain('car preference not used')
+    expect(text).toContain('car preference overridden')
+  })
+
+  it('renders per-leg segment detail (provider, flight number, board/alight stops) for a multi-leg route', () => {
+    const wrapper = mount(TransitBlock, {
+      props: {
+        transit: transit({
+          warnings: [],
+          segments: [
+            { icon: '🚗', routeLabel: 'Lucerne → Zurich' },
+            {
+              icon: '✈️', routeLabel: 'Zurich → Dublin', provider: 'SWISS', flightNumber: 'LX402',
+              fromStop: 'ZRH - Zurich Airport', toStop: 'DUB - Dublin Airport', departureTime: '06:35',
+            },
+          ],
+        }),
+        priceMode: 'pp',
+        travellers: 2,
+      },
+    })
+    const segs = wrapper.findAll('[data-testid="transit-segment"]')
+    expect(segs).toHaveLength(2)
+    expect(segs[1]!.text()).toContain('SWISS')
+    expect(segs[1]!.text()).toContain('LX402')
+    expect(segs[1]!.text()).toContain('Board at: ZRH - Zurich Airport')
+    expect(segs[1]!.text()).toContain('Alight at: DUB - Dublin Airport')
+  })
+
+  it('renders origin/destination airport for a direct flight with no segments', () => {
+    const wrapper = mount(TransitBlock, {
+      props: {
+        transit: transit({ warnings: [], originAirport: 'ZRH – Zurich Airport', destinationAirport: 'DUB – Dublin Airport' }),
+        priceMode: 'pp',
+        travellers: 2,
+      },
+    })
+    expect(wrapper.text()).toContain('ZRH – Zurich Airport')
+    expect(wrapper.text()).toContain('DUB – Dublin Airport')
   })
 
   it('does not render an alternatives toggle when there are none', () => {

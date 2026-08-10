@@ -7,8 +7,9 @@ import type {
   BudgetBreakdown,
   BudgetCategory,
   TransportOption,
+  TransportSegment,
 } from '~/types/index'
-import { routeIcon, formatDuration, optHeadLabel, priceDelta, transitQualifier } from '~/utils/itinerary'
+import { routeIcon, modeIcon, formatDuration, optHeadLabel, priceDelta, transitQualifier } from '~/utils/itinerary'
 
 // ── Time slot bucketing ──────────────────────────────────────────
 // Pure copy of the logic in TripInputForm.vue (v1 stays untouched — that
@@ -230,6 +231,17 @@ export interface TransitAltVM {
   priceDeltaLabel?: string
 }
 
+export interface TransitSegmentVM {
+  icon: string
+  routeLabel: string
+  provider?: string
+  trainLine?: string
+  flightNumber?: string
+  fromStop?: string
+  toStop?: string
+  departureTime?: string
+}
+
 export interface TransitVM {
   icon: string
   routeLabel: string
@@ -239,7 +251,12 @@ export interface TransitVM {
   departureTime?: string
   subLabel?: string
   qualifier: string
-  warning?: string
+  warnings: string[]
+  originAirport?: string
+  destinationAirport?: string
+  fromStop?: string
+  toStop?: string
+  segments?: TransitSegmentVM[]
   alternatives: TransitAltVM[]
 }
 
@@ -255,6 +272,19 @@ function altVM(opt: TransportOption, to: string, selected: TransportOption): Tra
   }
 }
 
+function segmentVM(seg: TransportSegment): TransitSegmentVM {
+  return {
+    icon: modeIcon(seg.mode),
+    routeLabel: `${seg.from} → ${seg.to}`,
+    provider: seg.provider,
+    trainLine: seg.trainLine,
+    flightNumber: seg.flightNumber,
+    fromStop: seg.fromStop,
+    toStop: seg.toStop,
+    departureTime: seg.departureTime,
+  }
+}
+
 export function buildTransitVM(activity: ItineraryActivity): TransitVM | null {
   const td = activity.transportData
   if (!td) return null
@@ -262,11 +292,12 @@ export function buildTransitVM(activity: ItineraryActivity): TransitVM | null {
   // Strip bogus 0-duration entries (hub→dest API misses) before comparing/listing.
   const validAlts = td.alternatives.filter((a) => a.durationMinutes > 0)
 
-  // Real warning from the resolved leg takes priority — the mock's flavor
+  // Real warnings from the resolved leg take priority — the mock's flavor
   // sentence ("orchestrator trimmed travel-day activities") is decorative
   // copy in the HTML prototype, not data this app actually derives.
-  const warning = opt.warnings[0]
-    ?? (opt.durationMinutes > 240 ? 'Long journey — consider a lighter travel-day schedule' : undefined)
+  const warnings = opt.warnings.length > 0
+    ? opt.warnings
+    : (opt.durationMinutes > 240 ? ['Long journey — consider a lighter travel-day schedule'] : [])
 
   return {
     icon: routeIcon(opt),
@@ -277,7 +308,12 @@ export function buildTransitVM(activity: ItineraryActivity): TransitVM | null {
     departureTime: opt.departureTime,
     subLabel: opt.displaySummary,
     qualifier: transitQualifier(opt, validAlts),
-    warning,
+    warnings,
+    originAirport: opt.originAirport,
+    destinationAirport: opt.destinationAirport,
+    fromStop: opt.fromStop,
+    toStop: opt.toStop,
+    segments: opt.segments?.map(segmentVM),
     alternatives: validAlts.slice(0, 3).map((o) => altVM(o, td.to, opt)),
   }
 }
