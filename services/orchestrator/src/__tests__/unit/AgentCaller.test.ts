@@ -21,6 +21,7 @@ vi.mock('@/config', () => ({
     FINANCE_AGENT_URL: 'http://finance-agent:3004',
     LOGISTICS_AGENT_URL: 'http://logistics-agent:3005',
     VALIDATOR_URL: 'http://validator:3006',
+    AGENT_CALL_TIMEOUT_MS: 360000,
   },
 }));
 
@@ -271,5 +272,82 @@ describe('AgentCaller', () => {
     await expect(
       caller.callLogisticsWeatherAssessment('trip-1', 1, [], 'Paris', null),
     ).rejects.toThrow('logistics returned 500');
+  });
+});
+
+describe('AgentCaller — timeout and network-failure retry', () => {
+  let caller: AgentCaller;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    caller = new AgentCaller();
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  /** A fetch() that never settles on its own — only reacts to AbortSignal, like a real hung request. */
+  function hangingFetch(): (url: string, init: RequestInit) => Promise<never> {
+    return (_url, init) => new Promise((_resolve, reject) => {
+      init.signal?.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')));
+    });
+  }
+
+  it('aborts and throws once the call exceeds AGENT_CALL_TIMEOUT_MS', async () => {
+    fetchMock.mockImplementation(hangingFetch());
+
+    const promise = caller.callFinanceAgent('trip-1', 2, { itinerary: [] });
+    const assertion = expect(promise).rejects.toThrow('finance unreachable');
+    await vi.advanceTimersByTimeAsync(360000);
+    await assertion;
+  });
+
+  it('does NOT retry a call with no retries configured — a network failure propagates on the first attempt', async () => {
+    fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+
+    await expect(caller.callFinanceAgent('trip-1', 2, { itinerary: [] })).rejects.toThrow('finance unreachable after 1 attempt');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries callPreferenceAgentSlots up to 2 extra times on a network failure, then succeeds', async () => {
+    fetchMock
+      .mockRejectedValueOnce(new TypeError('fetch failed'))
+      .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ proposals: [] }) });
+
+    const promise = caller.callPreferenceAgentSlots('trip-1', 1, []);
+    await vi.advanceTimersByTimeAsync(2000); // backoff between attempt 1 and 2
+    const result = await promise;
+
+    expect(result).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('gives up after exhausting retries on callOrchestratorMerge — 1 initial + 2 retries, all network failures', async () => {
+    fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+
+    const promise = caller.callOrchestratorMerge(
+      'trip-1', 1,
+      { orderedLegs: [], cityStays: [], totalTransportCostEurPerPerson: 0, totalDurationDays: 1 },
+      {}, { perBlock: [], totalEurPerPerson: 0, grandTotal: 0, feasible: true, bufferPct: 0, currency: 'EUR' },
+      '', 'Paris', { pace: 'medium', mustHaves: [], avoids: [] },
+    );
+    const assertion = expect(promise).rejects.toThrow('orchestrator-agent unreachable after 3 attempt(s)');
+    await vi.advanceTimersByTimeAsync(2000);
+    await vi.advanceTimersByTimeAsync(2000);
+    await assertion;
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it('does NOT retry on an HTTP error response even for a retry-eligible call — the downstream service already ran', async () => {
+    fetchMock.mockResolvedValue({ ok: false, status: 422, text: () => Promise.resolve('bad schema') });
+
+    await expect(caller.callPreferenceAgentSlots('trip-1', 1, [])).rejects.toThrow('preference-agent returned 422');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

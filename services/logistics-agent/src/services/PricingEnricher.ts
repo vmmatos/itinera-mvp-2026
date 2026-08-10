@@ -31,6 +31,8 @@ export class PricingEnricher {
     itinerary: ItineraryDayLike[],
     checkInDate: string | undefined,
     checkOutDate: string | undefined,
+    /** Per-city accommodation budget ceiling (EUR/person/night), from the /plan envelope. */
+    accommodationCeilingByCity?: Record<string, number>,
   ): Promise<PricingEnrichment> {
     const cities = [...new Set(itinerary.map((d) => d.city).filter((c): c is string => Boolean(c)))];
     const activityNames = [
@@ -46,12 +48,17 @@ export class PricingEnricher {
       Promise.all(
         cities.map(async (city): Promise<[string, PriceDetail]> => {
           const price = await this.hotels
-            .getNightlyPricePerPerson(city, checkInDate, checkOutDate)
+            .getNightlyPricePerPerson(city, checkInDate, checkOutDate, accommodationCeilingByCity?.[city])
             .catch(() => null);
           return [
             city,
             price
-              ? { amount: price.pricePerNightPerPerson, isEstimate: price.isEstimate, source: price.source }
+              ? {
+                  amount: price.pricePerNightPerPerson,
+                  isEstimate: price.isEstimate,
+                  source: price.source,
+                  ...(price.aboveCeiling ? { aboveCeiling: true } : {}),
+                }
               : { amount: 0, isEstimate: true, source: 'heuristic_estimate' },
           ];
         }),

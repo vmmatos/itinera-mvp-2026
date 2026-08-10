@@ -126,7 +126,8 @@
           "moderate": "moderate",
           "open": "open"
         },
-        "budgetPerPerson": "Budget / pp",
+        "budgetTotalLabel": "Total budget",
+        "budgetPerPersonHint": "≈ {amount} per person",
         "ceiling": "ceiling",
         "pace": "Pace",
         "transport": "Transport",

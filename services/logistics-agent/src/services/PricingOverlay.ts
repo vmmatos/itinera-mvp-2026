@@ -27,6 +27,8 @@ export interface PricedAccommodation {
   pricePerNightPerPerson?: number;
   isEstimate?: boolean;
   source?: string;
+  /** True when the real price exceeds the /plan envelope's per-night ceiling for this city. */
+  aboveCeiling?: boolean;
   [key: string]: unknown;
 }
 
@@ -96,6 +98,7 @@ export function applyPricingOverlay(
       pricePerNightPerPerson: match.amount,
       isEstimate: match.isEstimate,
       source: match.source,
+      ...(match.aboveCeiling ? { aboveCeiling: true } : {}),
     };
   });
 

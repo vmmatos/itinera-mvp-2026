@@ -971,6 +971,10 @@ export function createLogisticsRouter(
     accommodation: z.array(z.record(z.unknown())).default([]),
     region:        z.string().default('unknown'),
     dateInput:     DateInputSchema,
+    // Per-city EUR/person/night ceiling from the /plan envelope — steers the
+    // hotel search toward affordable properties instead of averaging in
+    // whatever luxury listings SerpApi happens to return for that city.
+    accommodationCeilingByCity: z.record(z.number()).optional(),
   });
 
   router.post('/pricing-overlay', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
@@ -980,7 +984,7 @@ export function createLogisticsRouter(
       return;
     }
 
-    const { itinerary, accommodation, region, dateInput } = parsed.data;
+    const { itinerary, accommodation, region, dateInput, accommodationCeilingByCity } = parsed.data;
 
     try {
       const fixedDateInput = dateInput?.mode === 'fixed' ? dateInput : undefined;
@@ -994,6 +998,7 @@ export function createLogisticsRouter(
         })),
         fixedDateInput?.startDate,
         fixedDateInput?.endDate,
+        accommodationCeilingByCity,
       );
 
       const result = applyPricingOverlay(

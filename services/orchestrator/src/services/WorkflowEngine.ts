@@ -731,12 +731,19 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
       // itinerary from being saved.
       const pricingOverlayStart = Date.now();
       try {
+        // Built from the SAME per-city accommodation envelope the /plan step
+        // already computed — the hotel search should not be allowed to drift
+        // toward whatever SerpApi returns unfiltered for the city.
+        const accommodationCeilingByCity = Object.fromEntries(
+          routeGraph.cityStays.map((stay) => [stay.city, stay.budgetPerPersonPerNight]),
+        );
         const overlaid = await this.agentCaller.callLogisticsPricingOverlay(
           context.tripId,
           (withTransport['itinerary'] as Array<Record<string, unknown>>) ?? [],
           (withTransport['accommodation'] as Array<Record<string, unknown>>) ?? [],
           trip.region ?? null,
           context.dates,
+          accommodationCeilingByCity,
         );
         withTransport['itinerary'] = overlaid.itinerary;
         withTransport['accommodation'] = overlaid.accommodation;

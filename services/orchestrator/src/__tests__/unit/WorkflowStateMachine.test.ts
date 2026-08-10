@@ -95,11 +95,26 @@ describe('WorkflowStateMachine.transition', () => {
     expect(action.type).toBe('CALL_ORCHESTRATOR_MERGE');
   });
 
-  it('PARALLEL_TURISTIC_PLANNING partial outputs → stay in state', () => {
+  it('PARALLEL_TURISTIC_PLANNING partial/missing outputs → LOCAL_RETRY via a bounded tourist retry, not an unbounded loop', () => {
+    // callPreferenceAgentSlots returns all 4 personas in one call — reaching
+    // this branch always means the previous attempt failed (network error,
+    // schema failure), so it must be bounded like every other stage.
     const ctx = { ...BASE_CONTEXT, currentState: 'PARALLEL_TURISTIC_PLANNING' as const, touristAgentOutputs: { alice: {} } };
     const { nextState, action } = fsm.transition(ctx);
     expect(nextState).toBe('PARALLEL_TURISTIC_PLANNING');
-    expect(action.type).toBe('CALL_TOURIST_AGENTS');
+    expect(action.type).toBe('LOCAL_RETRY');
+    expect(action.retryTarget).toBe('tourist');
+  });
+
+  it('PARALLEL_TURISTIC_PLANNING max tourist retries → ASK_REFINEMENT (guards against an infinite loop on repeated network failures)', () => {
+    const ctx = {
+      ...BASE_CONTEXT,
+      currentState: 'PARALLEL_TURISTIC_PLANNING' as const,
+      retryCount: { tourist: MAX_RETRIES_PER_MODULE },
+    };
+    const { nextState, action } = fsm.transition(ctx);
+    expect(nextState).toBe('ASK_REFINEMENT');
+    expect(action.type).toBe('ASK_REFINEMENT');
   });
 
   it('MERGE_AND_SCORE with mergedItinerary → FINANCE_VALIDATE', () => {
@@ -189,12 +204,14 @@ describe('WorkflowStateMachine.routeRetry', () => {
     expect(fsm.routeRetry('finance', 1)).toBe('ITINERARY_REPAIR');
     expect(fsm.routeRetry('merge', 0)).toBe('MERGE_AND_SCORE');
     expect(fsm.routeRetry('validation', 0)).toBe('MERGE_AND_SCORE');
+    expect(fsm.routeRetry('tourist', 0)).toBe('PARALLEL_TURISTIC_PLANNING');
   });
 
   it('returns ASK_REFINEMENT when max retries reached', () => {
     expect(fsm.routeRetry('logistics', MAX_RETRIES_PER_MODULE)).toBe('ASK_REFINEMENT');
     expect(fsm.routeRetry('merge', MAX_RETRIES_PER_MODULE)).toBe('ASK_REFINEMENT');
     expect(fsm.routeRetry('validation', MAX_RETRIES_PER_MODULE)).toBe('ASK_REFINEMENT');
+    expect(fsm.routeRetry('tourist', MAX_RETRIES_PER_MODULE)).toBe('ASK_REFINEMENT');
   });
 });
 

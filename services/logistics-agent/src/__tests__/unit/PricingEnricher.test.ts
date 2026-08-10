@@ -67,6 +67,38 @@ describe('PricingEnricher', () => {
     expect(result.activityPriceByName['mystery museum']).toEqual({ amount: 10, isEstimate: true, source: 'heuristic_estimate' });
   });
 
+  it('passes the per-city accommodation ceiling through to the hotel lookup', async () => {
+    vi.mocked(hotels.getNightlyPricePerPerson).mockResolvedValue({
+      pricePerNightPerPerson: 20, isEstimate: false, source: 'serpapi_google_hotels',
+    });
+    vi.mocked(places.searchRestaurants).mockResolvedValue([]);
+    vi.mocked(attractionPrices.findEntryPrice).mockResolvedValue(null);
+
+    await enricher.enrich(
+      'Switzerland',
+      [{ city: 'Lucerne' }],
+      '2026-07-10',
+      '2026-07-17',
+      { Lucerne: 21 },
+    );
+
+    expect(hotels.getNightlyPricePerPerson).toHaveBeenCalledWith('Lucerne', '2026-07-10', '2026-07-17', 21);
+  });
+
+  it('propagates aboveCeiling from the hotel lookup onto the price detail', async () => {
+    vi.mocked(hotels.getNightlyPricePerPerson).mockResolvedValue({
+      pricePerNightPerPerson: 333, isEstimate: false, source: 'serpapi_google_hotels', aboveCeiling: true,
+    });
+    vi.mocked(places.searchRestaurants).mockResolvedValue([]);
+    vi.mocked(attractionPrices.findEntryPrice).mockResolvedValue(null);
+
+    const result = await enricher.enrich('Switzerland', [{ city: 'Lucerne' }], '2026-07-10', '2026-07-17', { Lucerne: 21 });
+
+    expect(result.accommodationByCity['Lucerne']).toEqual({
+      amount: 333, isEstimate: false, source: 'serpapi_google_hotels', aboveCeiling: true,
+    });
+  });
+
   it('deduplicates repeated cities and activity names', async () => {
     vi.mocked(hotels.getNightlyPricePerPerson).mockResolvedValue({
       pricePerNightPerPerson: 60, isEstimate: false, source: 'serpapi_google_hotels',
