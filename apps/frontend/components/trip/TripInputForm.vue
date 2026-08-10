@@ -1206,7 +1206,7 @@ const PERSONAS = computed(() => [
         </div>
 
         <div class="field-row">
-          <div class="field-label">{{ translate('trip.form.step2.budgetPerPerson') }}</div>
+          <div class="field-label">{{ translate('trip.form.step2.budgetTotalLabel') }}</div>
           <div class="field-input" style="width:100%;flex-direction:column;align-items:stretch;gap:var(--s-2)">
             <div style="display:flex;gap:6px;margin-bottom:4px">
               <button
@@ -1235,6 +1235,9 @@ const PERSONAS = computed(() => [
               style="width:100%;accent-color:var(--green)"
               data-testid="budget-slider"
             />
+            <div class="helper" data-testid="budget-per-person-hint" style="text-transform:none;letter-spacing:0">
+              {{ translate('trip.form.step2.budgetPerPersonHint', { amount: `${currencySymbol}${budgetPerPerson.toLocaleString()}` }) }}
+            </div>
           </div>
         </div>
 
