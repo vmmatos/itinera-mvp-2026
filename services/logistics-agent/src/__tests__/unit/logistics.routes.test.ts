@@ -1171,3 +1171,46 @@ describe('POST /weather-assessment', () => {
     expect(day.tempHigh).toBeUndefined();
   });
 });
+
+describe('POST /pricing-overlay', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('forwards accommodationCeilingByCity to the pricing enricher', async () => {
+    const app = buildApp();
+    const res = await request(app).post('/pricing-overlay').send({
+      tripId: VALID_UUID,
+      itinerary: [{ day: 1, city: 'Lucerne', activities: [] }],
+      accommodation: [{ city: 'Lucerne', name: 'Hotel Ibis Luzern Kriens' }],
+      region: 'Switzerland',
+      dateInput: { mode: 'fixed', startDate: '2026-09-01', endDate: '2026-09-08' },
+      accommodationCeilingByCity: { Lucerne: 21 },
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockPricingEnricher.enrich).toHaveBeenCalledWith(
+      'Switzerland',
+      expect.any(Array),
+      '2026-09-01',
+      '2026-09-08',
+      { Lucerne: 21 },
+    );
+  });
+
+  it('works without accommodationCeilingByCity (backwards compatible)', async () => {
+    const app = buildApp();
+    const res = await request(app).post('/pricing-overlay').send({
+      tripId: VALID_UUID,
+      itinerary: [{ day: 1, city: 'Lisbon', activities: [] }],
+      accommodation: [],
+      region: 'Portugal',
+      dateInput: { mode: 'fixed', startDate: '2026-09-01', endDate: '2026-09-04' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockPricingEnricher.enrich).toHaveBeenCalledWith(
+      'Portugal', expect.any(Array), '2026-09-01', '2026-09-04', undefined,
+    );
+  });
+});

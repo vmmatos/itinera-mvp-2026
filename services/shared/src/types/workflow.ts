@@ -201,7 +201,7 @@ export type WorkflowActionType =
   | 'REJECT'
   | 'ASK_REFINEMENT';
 
-export type WorkflowRetryTarget = 'logistics' | 'finance' | 'merge' | 'validation';
+export type WorkflowRetryTarget = 'logistics' | 'finance' | 'merge' | 'validation' | 'tourist';
 
 export interface WorkflowAction {
   type: WorkflowActionType;

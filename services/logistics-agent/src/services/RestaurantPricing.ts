@@ -4,6 +4,8 @@ export interface PriceDetail {
   amount: number;
   isEstimate: boolean;
   source: string;
+  /** True when this price is known to exceed the caller's budget ceiling. */
+  aboveCeiling?: boolean;
 }
 
 // Google Places price_level (0-4) mapped to an estimated EUR cost per meal per
