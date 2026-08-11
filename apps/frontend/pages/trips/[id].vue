@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import type { Trip, TransportOption, TransportActivityData, BudgetBreakdown } from '~/types/index'
+import type { Trip, TransportOption, TransportActivityData, BudgetBreakdown, LocalTransportPriorityResult } from '~/types/index'
 import type { TimelineDay, TimelineActivity } from '~/components/trip/Timeline.vue'
 import type { RestrictionWarning } from '~/utils/itinerary'
 import { formatTransportLabel } from '~/utils/itinerary'
@@ -67,6 +67,10 @@ function extractItinerary(proposals: RawProposal[]): TimelineDay[] {
       ownerAgent:   a['ownerAgent'] != null ? String(a['ownerAgent']) : (a['agent'] != null ? String(a['agent']) : undefined),
       notes:        a['description'] != null ? String(a['description']) : (a['notes'] != null ? String(a['notes']) : undefined),
       weatherAlert: a['weatherAlert'] != null ? String(a['weatherAlert']) : undefined,
+      localTransport:   (a['localTransport'] && typeof a['localTransport'] === 'object')
+        ? a['localTransport'] as LocalTransportPriorityResult : undefined,
+      dayTripTransport: (a['dayTripTransport'] && typeof a['dayTripTransport'] === 'object')
+        ? a['dayTripTransport'] as TransportOption : undefined,
     }))
 
     const rawTransition = d['cityTransition'] as Record<string, unknown> | undefined

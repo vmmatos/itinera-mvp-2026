@@ -4,7 +4,7 @@ import DaySlot from '~/components/trip/itinerary/DaySlot.vue'
 import type { SlotItemVM } from '~/utils/itineraryViewModel'
 
 function slot(overrides: Partial<SlotItemVM> = {}): SlotItemVM {
-  return { title: 'Guided visit to Mértola Castle', description: 'A medieval castle.', costPerPerson: 18, agentName: 'alice', transit: null, ...overrides }
+  return { title: 'Guided visit to Mértola Castle', description: 'A medieval castle.', costPerPerson: 18, agentName: 'alice', transit: null, gettingThere: null, ...overrides }
 }
 
 describe('DaySlot', () => {
@@ -85,5 +85,21 @@ describe('DaySlot', () => {
       props: { slot: slot({ location: undefined, country: undefined }), phase: 'morning', priceMode: 'pp', travellers: 2, currencySymbol: '€' },
     })
     expect(wrapper.find('.slot-city').exists()).toBe(false)
+  })
+
+  it('renders a getting-there line when the slot carries gettingThere data', () => {
+    const wrapper = mount(DaySlot, {
+      props: {
+        slot: slot({ gettingThere: { icon: '🚗', modeKey: 'drive', durationLabel: '0h 12m', priceEurPerPerson: undefined } }),
+        phase: 'evening', priceMode: 'pp', travellers: 2, currencySymbol: '€',
+      },
+    })
+    expect(wrapper.find('.getting-there').exists()).toBe(true)
+    expect(wrapper.find('.getting-there').text()).toContain('0h 12m')
+  })
+
+  it('does not render a getting-there line when absent', () => {
+    const wrapper = mount(DaySlot, { props: { slot: slot(), phase: 'morning', priceMode: 'pp', travellers: 2, currencySymbol: '€' } })
+    expect(wrapper.find('.getting-there').exists()).toBe(false)
   })
 })

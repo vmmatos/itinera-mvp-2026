@@ -197,7 +197,12 @@
           "afternoon": "afternoon",
           "evening": "evening"
         },
-        "proposedBy": "proposed by"
+        "proposedBy": "proposed by",
+        "transportMode": {
+          "drive": "Drive",
+          "transit": "Public transport",
+          "walk": "Walk"
+        }
       },
       "itineraryStep": {
         "tripFallback": "Trip",

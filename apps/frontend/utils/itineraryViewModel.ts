@@ -9,7 +9,7 @@ import type {
   TransportOption,
   TransportSegment,
 } from '~/types/index'
-import { routeIcon, modeIcon, formatDuration, optHeadLabel, priceDelta, transitQualifier } from '~/utils/itinerary'
+import { routeIcon, modeIcon, formatDuration, optHeadLabel, priceDelta, transitQualifier, buildGettingThereVM, type GettingThereVM } from '~/utils/itinerary'
 
 // ── Time slot bucketing ──────────────────────────────────────────
 // Pure copy of the logic in TripInputForm.vue (v1 stays untouched — that
@@ -328,6 +328,7 @@ export interface SlotItemVM {
   location?: string
   country?: string
   transit: TransitVM | null
+  gettingThere: GettingThereVM | null
 }
 
 export interface DayVM {
@@ -389,6 +390,7 @@ export function buildDayViewModels(
         location: activity.location,
         country: activity.country,
         transit,
+        gettingThere: buildGettingThereVM(activity),
       })
     }
 

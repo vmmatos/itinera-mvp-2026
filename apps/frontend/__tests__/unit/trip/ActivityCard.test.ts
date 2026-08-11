@@ -95,4 +95,48 @@ describe('ActivityCard — standard activity card', () => {
     expect(wrapper.find('.badge-duration').exists()).toBe(false)
     expect(wrapper.find('.badge-agent').exists()).toBe(false)
   })
+
+  it('renders a getting-there line from localTransport', () => {
+    const wrapper = mount(ActivityCard, {
+      props: {
+        activity: activity({
+          localTransport: {
+            selectedMode: 'drive', wasPreferenceHonored: true,
+            selectedOption: { mode: 'drive', durationMinutes: 12, warnings: [] },
+          },
+        }),
+      },
+    })
+    expect(wrapper.find('.act-getting-there').exists()).toBe(true)
+    expect(wrapper.find('.act-getting-there').text()).toContain('0h 12m')
+  })
+
+  it('renders a getting-there line from dayTripTransport', () => {
+    const wrapper = mount(ActivityCard, {
+      props: {
+        activity: activity({ dayTripTransport: { mode: 'car', durationMinutes: 90, priceEur: 40, warnings: [] } }),
+      },
+    })
+    expect(wrapper.find('.act-getting-there').text()).toContain('1h 30m')
+  })
+
+  it('error: does not render a getting-there line when neither field is present', () => {
+    const wrapper = mount(ActivityCard, { props: { activity: activity() } })
+    expect(wrapper.find('.act-getting-there').exists()).toBe(false)
+  })
+
+  it('error: does not render a getting-there line on a transport-leg card (transportData set)', () => {
+    const wrapper = mount(ActivityCard, {
+      props: {
+        activity: activity({
+          transportData: { to: 'Porto', selectedOption: { mode: 'car', durationMinutes: 60, warnings: [] }, alternatives: [] },
+          localTransport: {
+            selectedMode: 'drive', wasPreferenceHonored: true,
+            selectedOption: { mode: 'drive', durationMinutes: 12, warnings: [] },
+          },
+        }),
+      },
+    })
+    expect(wrapper.find('.act-getting-there').exists()).toBe(false)
+  })
 })

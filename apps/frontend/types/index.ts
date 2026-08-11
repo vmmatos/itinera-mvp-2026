@@ -129,6 +129,24 @@ export interface TransportActivityData {
   alternatives:   TransportOption[]
 }
 
+// ── Local transport (activity-to-venue hop) ────────────────────
+export interface LocalTransportOption {
+  mode:                 'drive' | 'transit' | 'walk'
+  durationMinutes:      number
+  priceEur?:            number
+  distanceKm?:          number
+  transitLine?:         string
+  transitVehicleType?:  string
+  warnings:             string[]
+}
+
+export interface LocalTransportPriorityResult {
+  selectedMode:      'drive' | 'transit' | 'walk'
+  selectedOption:    LocalTransportOption
+  wasPreferenceHonored: boolean
+  downgradeReason?:  string
+}
+
 // ── Itinerary day (Step 4) ───────────────────────────────────────
 // Shared shape produced by TripInputForm.vue's timelineDays computed
 // (see buildDays()) and consumed by the itinerary review components.
@@ -146,6 +164,8 @@ export interface ItineraryActivity {
   weatherAlert?:  string
   satisfies?:     string[]
   transportData?: TransportActivityData
+  localTransport?:   LocalTransportPriorityResult
+  dayTripTransport?: TransportOption
 }
 
 export interface ItineraryCityTransition {
