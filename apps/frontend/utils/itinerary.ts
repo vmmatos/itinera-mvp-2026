@@ -140,6 +140,13 @@ export interface GettingThereVM {
   priceEurPerPerson?: number
 }
 
+// All getting-there mode keys (local hops + day-trip transport) resolve to
+// `trip.itinerary.daySlot.transportMode.*` i18n keys — pass the component's
+// `t` in so ActivityCard.vue and DaySlot.vue render the same translated label.
+export function gettingThereLabel(t: (key: string) => string, modeKey: GettingThereModeKey): string {
+  return t(`trip.itinerary.daySlot.transportMode.${modeKey}`)
+}
+
 interface GettingThereSource {
   transportData?: unknown
   localTransport?: LocalTransportPriorityResult

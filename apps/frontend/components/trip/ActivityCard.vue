@@ -2,7 +2,8 @@
 import { computed } from 'vue'
 import { AGENT_COLOURS } from '~/types/index'
 import type { TransportActivityData, TransportOption, LocalTransportPriorityResult } from '~/types/index'
-import { routeIcon, formatDuration, optHeadLabel, priceDelta, transitQualifier, buildGettingThereVM, modeName } from '~/utils/itinerary'
+import { routeIcon, formatDuration, optHeadLabel, priceDelta, transitQualifier, buildGettingThereVM, gettingThereLabel } from '~/utils/itinerary'
+import type { GettingThereModeKey } from '~/utils/itinerary'
 
 export interface ActivityCardProps {
   venue?:         string
@@ -64,12 +65,8 @@ const venueLine = computed(() => {
 // ── Getting-there line (bottom of standard activity card) ──────
 const gettingThere = computed(() => buildGettingThereVM(props.activity))
 
-const LOCAL_MODE_KEYS = new Set(['drive', 'transit', 'walk'])
-
-function gettingThereLabel(modeKey: string): string {
-  return LOCAL_MODE_KEYS.has(modeKey)
-    ? t(`trip.itinerary.daySlot.transportMode.${modeKey}`)
-    : modeName(modeKey)
+function gtLabel(modeKey: GettingThereModeKey): string {
+  return gettingThereLabel(t, modeKey)
 }
 
 const COLOUR_CODE: Record<string, string> = {
@@ -206,7 +203,7 @@ function agentLineVar(agent: string): string {
           class="badge-weather"
         >⚠ {{ activity.weatherAlert }}</span>
         <span
-          v-if="activity.cost"
+          v-if="typeof activity.cost === 'number'"
           class="badge-cost"
         >{{ currencySymbol }}{{ activity.cost }}</span>
         <span
@@ -229,7 +226,7 @@ function agentLineVar(agent: string): string {
     <p v-if="activity.notes" class="act-notes">{{ activity.notes }}</p>
     <div v-if="gettingThere" class="act-getting-there">
       <span class="gt-icon">{{ gettingThere.icon }}</span>
-      <span>{{ gettingThereLabel(gettingThere.modeKey) }} · {{ gettingThere.durationLabel }}</span>
+      <span>{{ gtLabel(gettingThere.modeKey) }} · {{ gettingThere.durationLabel }}<template v-if="gettingThere.priceEurPerPerson"> · {{ currencySymbol }}{{ gettingThere.priceEurPerPerson }}/person</template></span>
     </div>
   </div>
 </template>

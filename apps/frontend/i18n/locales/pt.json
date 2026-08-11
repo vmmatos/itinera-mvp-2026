@@ -201,7 +201,11 @@
         "transportMode": {
           "drive": "Carro",
           "transit": "Transportes públicos",
-          "walk": "A pé"
+          "walk": "A pé",
+          "car": "Carro",
+          "flight": "Voo",
+          "train": "Comboio",
+          "bus": "Autocarro"
         }
       },
       "itineraryStep": {

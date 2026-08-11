@@ -201,7 +201,11 @@
         "transportMode": {
           "drive": "Drive",
           "transit": "Public transport",
-          "walk": "Walk"
+          "walk": "Walk",
+          "car": "Drive",
+          "flight": "Flight",
+          "train": "Train",
+          "bus": "Bus"
         }
       },
       "itineraryStep": {
