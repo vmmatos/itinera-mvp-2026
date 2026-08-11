@@ -48,6 +48,24 @@ describe('DaySlot', () => {
     expect(wrapper.find('.tags').exists()).toBe(false)
   })
 
+  it('renders a duration tag next to cost and the proposing agent when durationMinutes is present', () => {
+    const wrapper = mount(DaySlot, { props: { slot: slot({ durationMinutes: 90 }), phase: 'morning', priceMode: 'pp', travellers: 2, currencySymbol: '€' } })
+    expect(wrapper.text()).toContain('1h 30m')
+  })
+
+  it('renders the tag row for duration alone, with no cost and no agent', () => {
+    const wrapper = mount(DaySlot, {
+      props: { slot: slot({ costPerPerson: undefined, agentName: undefined, durationMinutes: 45 }), phase: 'evening', priceMode: 'pp', travellers: 2, currencySymbol: '€' },
+    })
+    expect(wrapper.find('.tags').exists()).toBe(true)
+    expect(wrapper.text()).toContain('0h 45m')
+  })
+
+  it('does not render a duration tag when durationMinutes is absent', () => {
+    const wrapper = mount(DaySlot, { props: { slot: slot({ durationMinutes: undefined }), phase: 'morning', priceMode: 'pp', travellers: 2, currencySymbol: '€' } })
+    expect(wrapper.find('.tag.duration').exists()).toBe(false)
+  })
+
   it('renders the green address line when location and country are present', () => {
     const wrapper = mount(DaySlot, {
       props: { slot: slot({ location: 'Cais da Ribeira & Ponte Dom Luís I', country: 'Portugal' }), phase: 'afternoon', priceMode: 'pp', travellers: 2, currencySymbol: '€' },

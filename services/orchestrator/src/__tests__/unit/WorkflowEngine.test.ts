@@ -1788,6 +1788,7 @@ describe('WorkflowEngine — activity category backfill and validator hand-off',
         activity: 'Museu Picasso',
         estimatedCostPerPerson: 12,
         category: 'museum',
+        durationMinutes: 90,
       },
       {
         id: 'p2',
@@ -1796,7 +1797,7 @@ describe('WorkflowEngine — activity category backfill and validator hand-off',
         slot: 'afternoon',
         activity: 'Barceloneta',
         estimatedCostPerPerson: 0,
-        // No category on the source proposal.
+        // No category or duration on the source proposal.
       },
     ],
   };
@@ -1811,7 +1812,7 @@ describe('WorkflowEngine — activity category backfill and validator hand-off',
           { activity: 'Barceloneta', venue: 'Praia', proposalIds: ['p2'] },
           { activity: 'Unknown source', venue: 'Somewhere', proposalIds: ['p-missing'] },
           { activity: 'No link at all', venue: 'Elsewhere' },
-          { activity: 'Already categorised', venue: 'Bar', proposalIds: ['p1'], category: 'nightlife' },
+          { activity: 'Already categorised', venue: 'Bar', proposalIds: ['p1'], category: 'nightlife', durationMinutes: 20 },
         ],
       },
     ],
@@ -1883,6 +1884,35 @@ describe('WorkflowEngine — activity category backfill and validator hand-off',
 
     const already = mergedActivities().find((a) => a['activity'] === 'Already categorised');
     expect(already!['category']).toBe('nightlife');
+  });
+
+  it('happy path: stamps the source slot proposal durationMinutes onto the merged activity', async () => {
+    await runWithSlotProposals();
+
+    const museum = mergedActivities().find((a) => a['activity'] === 'Museu Picasso');
+    expect(museum!['durationMinutes']).toBe(90);
+  });
+
+  it('leaves an activity whose source proposal has no duration untouched', async () => {
+    await runWithSlotProposals();
+
+    const beach = mergedActivities().find((a) => a['activity'] === 'Barceloneta');
+    expect(beach!['durationMinutes']).toBeUndefined();
+  });
+
+  it('error: an unknown or absent proposalId does not crash the duration backfill', async () => {
+    await runWithSlotProposals();
+
+    const activities = mergedActivities();
+    expect(activities.find((a) => a['activity'] === 'Unknown source')!['durationMinutes']).toBeUndefined();
+    expect(activities.find((a) => a['activity'] === 'No link at all')!['durationMinutes']).toBeUndefined();
+  });
+
+  it('never overwrites a duration the merge already produced', async () => {
+    await runWithSlotProposals();
+
+    const already = mergedActivities().find((a) => a['activity'] === 'Already categorised');
+    expect(already!['durationMinutes']).toBe(20);
   });
 
   it('happy path: forwards the trip-level must-haves and avoids to the validator', async () => {

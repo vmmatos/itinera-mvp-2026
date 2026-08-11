@@ -215,6 +215,19 @@ describe('buildDayViewModels', () => {
     expect(vm?.slots.morning[0]?.location).toBeUndefined()
     expect(vm?.slots.morning[0]?.country).toBeUndefined()
   })
+
+  it('carries durationMinutes onto the produced slot when present', () => {
+    const [vm] = buildDayViewModels(
+      [day({ activities: [{ name: 'Paddleboarding', time: 'afternoon', durationMinutes: 90 }] })],
+      null, [], null,
+    )
+    expect(vm?.slots.afternoon[0]?.durationMinutes).toBe(90)
+  })
+
+  it('leaves durationMinutes undefined when absent on the source activity, no fabricated "0m"', () => {
+    const [vm] = buildDayViewModels([day({ activities: [{ name: 'Free walk', time: 'morning' }] })], null, [], null)
+    expect(vm?.slots.morning[0]?.durationMinutes).toBeUndefined()
+  })
 })
 
 describe('dayCostMax', () => {

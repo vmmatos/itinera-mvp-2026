@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import type { SlotItemVM, Phase } from '~/utils/itineraryViewModel'
 import { formatMoney } from '~/utils/itineraryViewModel'
+import { formatDuration } from '~/utils/itinerary'
 import { agentColorToken } from '~/utils/agentColorTokens'
 import { AGENT_COLOURS, type AgentName } from '~/types/index'
 import TripItineraryTransitBlock from './TransitBlock.vue'
@@ -48,9 +49,12 @@ const venueLine = computed(() => {
         <span>{{ venueLine }}</span>
       </div>
       <p v-if="props.slot.description">{{ props.slot.description }}</p>
-      <div v-if="props.slot.costPerPerson || props.slot.agentName" class="tags">
+      <div v-if="props.slot.costPerPerson || props.slot.durationMinutes || props.slot.agentName" class="tags">
         <span v-if="props.slot.costPerPerson" class="tag cost">
           {{ formatMoney(props.slot.costPerPerson, props.priceMode, props.travellers, props.currencySymbol) }}
+        </span>
+        <span v-if="props.slot.durationMinutes" class="tag duration">
+          {{ formatDuration(props.slot.durationMinutes) }}
         </span>
         <span v-if="props.slot.agentName" class="tag by">
           {{ t('trip.itinerary.daySlot.proposedBy') }} <i :style="`color:${agentColor(props.slot.agentName)}`">{{ props.slot.agentName }}</i>

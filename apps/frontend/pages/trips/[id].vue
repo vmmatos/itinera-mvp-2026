@@ -63,6 +63,7 @@ function extractItinerary(proposals: RawProposal[]): TimelineDay[] {
       cost:         typeof a['estimatedCostPerPerson'] === 'number'
         ? a['estimatedCostPerPerson']
         : (typeof a['cost'] === 'number' ? a['cost'] : undefined),
+      durationMinutes: typeof a['durationMinutes'] === 'number' ? a['durationMinutes'] : undefined,
       ownerAgent:   a['ownerAgent'] != null ? String(a['ownerAgent']) : (a['agent'] != null ? String(a['agent']) : undefined),
       notes:        a['description'] != null ? String(a['description']) : (a['notes'] != null ? String(a['notes']) : undefined),
       weatherAlert: a['weatherAlert'] != null ? String(a['weatherAlert']) : undefined,
