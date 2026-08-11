@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import type { SlotItemVM, Phase } from '~/utils/itineraryViewModel'
 import { formatMoney } from '~/utils/itineraryViewModel'
-import { formatDuration, modeName } from '~/utils/itinerary'
+import { formatDuration, gettingThereLabel } from '~/utils/itinerary'
 import type { GettingThereModeKey } from '~/utils/itinerary'
 import { agentColorToken } from '~/utils/agentColorTokens'
 import { AGENT_COLOURS, type AgentName } from '~/types/index'
@@ -26,12 +26,8 @@ function agentColor(name?: string): string {
   return agentColorToken(colour ?? 'neutral')
 }
 
-const LOCAL_MODE_KEYS = new Set(['drive', 'transit', 'walk'])
-
-function gettingThereLabel(modeKey: GettingThereModeKey): string {
-  return LOCAL_MODE_KEYS.has(modeKey)
-    ? t(`trip.itinerary.daySlot.transportMode.${modeKey}`)
-    : modeName(modeKey)
+function gtLabel(modeKey: GettingThereModeKey): string {
+  return gettingThereLabel(t, modeKey)
 }
 
 const venueLine = computed(() => {
@@ -71,7 +67,7 @@ const venueLine = computed(() => {
       </div>
       <div v-if="props.slot.gettingThere" class="getting-there">
         <span class="gt-icon">{{ props.slot.gettingThere.icon }}</span>
-        <span>{{ gettingThereLabel(props.slot.gettingThere.modeKey) }} · {{ props.slot.gettingThere.durationLabel }}</span>
+        <span>{{ gtLabel(props.slot.gettingThere.modeKey) }} · {{ props.slot.gettingThere.durationLabel }}<template v-if="props.slot.gettingThere.priceEurPerPerson"> · {{ props.currencySymbol }}{{ props.slot.gettingThere.priceEurPerPerson }}/person</template></span>
       </div>
       <TripItineraryTransitBlock
         v-if="props.slot.transit"
