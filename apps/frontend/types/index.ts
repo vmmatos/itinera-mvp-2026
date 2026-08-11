@@ -142,6 +142,7 @@ export interface ItineraryActivity {
   ownerAgent?:    string
   notes?:         string
   cost?:          number
+  durationMinutes?: number
   weatherAlert?:  string
   satisfies?:     string[]
   transportData?: TransportActivityData

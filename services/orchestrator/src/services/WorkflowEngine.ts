@@ -462,6 +462,10 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
       // validator scores traveller interests against exactly that field. Proposal
       // ids are globally unique, so one map serves every per-city call below.
       const categoryByProposalId = new Map<string, string>();
+      // Same story for `durationMinutes` — each persona proposes it, but the
+      // merge LLM's ActivitySchema never asks for it, so it's restored here
+      // rather than trusted from the model.
+      const durationByProposalId = new Map<string, number>();
       for (const [agentName, output] of Object.entries(touristAgentOutputs)) {
         for (const p of output.slotProposals ?? []) {
           inputProposals.push({
@@ -471,6 +475,9 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
           const category = (p as { category?: unknown }).category;
           if (typeof category === 'string' && category.trim().length > 0) {
             categoryByProposalId.set(p.id, category);
+          }
+          if (typeof p.durationMinutes === 'number' && p.durationMinutes > 0) {
+            durationByProposalId.set(p.id, p.durationMinutes);
           }
         }
       }
@@ -554,10 +561,11 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
           // day hallucinated by the wrong city's call reaches the combined
           // itinerary as a second, duplicate "Day N" card in the UI/PDF.
           const ownedDays = this.filterOwnedDays(rawItinerary, dayOwnership, stay.city);
-          // Restore the source slot proposal's category. Done after the day
-          // filter so discarded days cost nothing, and before the decision
-          // walk so both read the same objects.
-          const withTransportItinerary = this.backfillActivityCategories(ownedDays, categoryByProposalId);
+          // Restore the source slot proposal's category and duration. Done
+          // after the day filter so discarded days cost nothing, and before
+          // the decision walk so both read the same objects.
+          const withCategories = this.backfillActivityCategories(ownedDays, categoryByProposalId);
+          const withTransportItinerary = this.backfillActivityDurations(withCategories, durationByProposalId);
           for (const day of withTransportItinerary) {
             for (const act of day.activities ?? []) {
               for (const pid of act.proposalIds ?? []) usedIds.add(pid);
@@ -1209,6 +1217,35 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
             .map((id) => categoryByProposalId.get(id))
             .find((category): category is string => category !== undefined);
           return source === undefined ? activity : { ...activity, category: source };
+        }),
+      };
+    });
+  }
+
+  /**
+   * Restore each merged activity's `durationMinutes` from the slot proposal it
+   * was built from — same rationale and shape as `backfillActivityCategories`:
+   * the merge LLM is never asked for the field, so it's derived from
+   * `proposalIds` rather than trusted from the model.
+   *
+   * An existing duration is never overwritten, and objects are copied rather
+   * than mutated because the decision derivation reads the same day objects.
+   */
+  private backfillActivityDurations<
+    T extends { activities?: Array<{ proposalIds?: string[]; durationMinutes?: number }> },
+  >(itinerary: T[], durationByProposalId: ReadonlyMap<string, number>): T[] {
+    if (durationByProposalId.size === 0) return itinerary;
+
+    return itinerary.map((day) => {
+      if (!Array.isArray(day.activities)) return day;
+      return {
+        ...day,
+        activities: day.activities.map((activity) => {
+          if (typeof activity.durationMinutes === 'number' && activity.durationMinutes > 0) return activity;
+          const source = (activity.proposalIds ?? [])
+            .map((id) => durationByProposalId.get(id))
+            .find((duration): duration is number => duration !== undefined);
+          return source === undefined ? activity : { ...activity, durationMinutes: source };
         }),
       };
     });

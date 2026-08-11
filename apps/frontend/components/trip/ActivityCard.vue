@@ -11,11 +11,14 @@ export interface ActivityCardProps {
   location?:      string
   name:           string
   cost?:          number
+  durationMinutes?: number
   weatherAlert?:  string
   ownerAgent?:    string
   notes?:         string
   transportData?: TransportActivityData
 }
+
+const { t } = useI18n()
 
 const props = withDefaults(defineProps<{
   activity:        ActivityCardProps
@@ -194,10 +197,14 @@ function agentLineVar(agent: string): string {
           class="badge-cost"
         >{{ currencySymbol }}{{ activity.cost }}</span>
         <span
-          v-if="isDebug && activity.ownerAgent"
+          v-if="activity.durationMinutes"
+          class="badge-duration"
+        >{{ formatDuration(activity.durationMinutes) }}</span>
+        <span
+          v-if="activity.ownerAgent"
           class="badge-agent"
           :style="`color:${agentCssVar(activity.ownerAgent)};background:${agentBgVar(activity.ownerAgent)};border-color:${agentLineVar(activity.ownerAgent)}`"
-        >{{ activity.ownerAgent }}</span>
+        >{{ t('trip.itinerary.daySlot.proposedBy') }} {{ activity.ownerAgent }}</span>
       </div>
     </div>
     <div v-if="venueLine" class="act-city">
@@ -255,6 +262,12 @@ function agentLineVar(agent: string): string {
   font-family: var(--mono);
   font-size: var(--t-12);
   color: var(--red);
+}
+
+.badge-duration {
+  font-family: var(--mono);
+  font-size: var(--t-12);
+  color: var(--fg-2);
 }
 
 .badge-agent {
