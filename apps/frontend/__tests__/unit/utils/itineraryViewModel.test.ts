@@ -359,15 +359,65 @@ describe('buildTransitVM', () => {
     expect(vm?.qualifier).toBe('Recommended option')
   })
 
-  it('surfaces a real warning verbatim when present', () => {
-    const opt: TransportOption = { ...TRANSPORT_OPTION, warnings: ['Overnight layover required'] }
+  it('surfaces all real warnings verbatim when present, not just the first', () => {
+    const opt: TransportOption = { ...TRANSPORT_OPTION, warnings: ['Overnight layover required', 'car preference overridden — car takes ~19h here vs ~3h for this option'] }
     const vm = buildTransitVM({ name: 'x', transportData: { to: 'Seia', selectedOption: opt, alternatives: [] } })
-    expect(vm?.warning).toBe('Overnight layover required')
+    expect(vm?.warnings).toEqual(['Overnight layover required', 'car preference overridden — car takes ~19h here vs ~3h for this option'])
   })
 
-  it('falls back to a generic long-journey warning only past 4h with no real warning', () => {
+  it('falls back to a single generic long-journey warning only past 4h with no real warning', () => {
     const vm = buildTransitVM({ name: 'x', transportData: { to: 'Seia', selectedOption: TRANSPORT_OPTION, alternatives: [] } })
-    expect(vm?.warning).toMatch(/long journey/i)
+    expect(vm?.warnings).toHaveLength(1)
+    expect(vm?.warnings[0]).toMatch(/long journey/i)
+  })
+
+  it('returns an empty warnings array (not a fabricated warning) for a short trip with no real warnings', () => {
+    const opt: TransportOption = { mode: 'car', durationMinutes: 44, priceEur: 13, warnings: [] }
+    const vm = buildTransitVM({ name: 'x', transportData: { to: 'Porto', selectedOption: opt, alternatives: [] } })
+    expect(vm?.warnings).toEqual([])
+  })
+
+  it('surfaces origin/destination airport for a direct flight with no segments', () => {
+    const opt: TransportOption = { ...TRANSPORT_OPTION, mode: 'flight', originAirport: 'ZRH – Zurich Airport', destinationAirport: 'DUB – Dublin Airport' }
+    const vm = buildTransitVM({ name: 'x', transportData: { to: 'Dublin', selectedOption: opt, alternatives: [] } })
+    expect(vm?.originAirport).toBe('ZRH – Zurich Airport')
+    expect(vm?.destinationAirport).toBe('DUB – Dublin Airport')
+    expect(vm?.segments).toBeUndefined()
+  })
+
+  it('surfaces fromStop/toStop for a direct train/bus route with no segments', () => {
+    const opt: TransportOption = { ...TRANSPORT_OPTION, mode: 'train', fromStop: 'Grândola train station', toStop: 'Faro Airport' }
+    const vm = buildTransitVM({ name: 'x', transportData: { to: 'Faro', selectedOption: opt, alternatives: [] } })
+    expect(vm?.fromStop).toBe('Grândola train station')
+    expect(vm?.toStop).toBe('Faro Airport')
+  })
+
+  it('maps every leg of a multi-leg route into segments, preserving provider/flight number/stops per leg', () => {
+    const opt: TransportOption = {
+      mode: 'flight',
+      durationMinutes: 190,
+      priceEur: 203,
+      warnings: [],
+      displaySummary: 'Car + Flight — 3h10m total, ~€203/person',
+      segments: [
+        { from: 'Lucerne', to: 'Zurich', mode: 'car', durationMinutes: 60 },
+        {
+          from: 'Zurich', to: 'Dublin', mode: 'flight', provider: 'SWISS', flightNumber: 'LX402',
+          durationMinutes: 130, departureTime: '06:35', fromStop: 'ZRH - Zurich Airport', toStop: 'DUB - Dublin Airport',
+        },
+      ],
+    }
+    const vm = buildTransitVM({ name: 'x', transportData: { to: 'Dublin', selectedOption: opt, alternatives: [] } })
+    expect(vm?.segments).toHaveLength(2)
+    expect(vm?.segments?.[0]).toMatchObject({ routeLabel: 'Lucerne → Zurich' })
+    expect(vm?.segments?.[1]).toMatchObject({
+      routeLabel: 'Zurich → Dublin',
+      provider: 'SWISS',
+      flightNumber: 'LX402',
+      fromStop: 'ZRH - Zurich Airport',
+      toStop: 'DUB - Dublin Airport',
+      departureTime: '06:35',
+    })
   })
 
   it('returns null for an activity with no transportData', () => {
