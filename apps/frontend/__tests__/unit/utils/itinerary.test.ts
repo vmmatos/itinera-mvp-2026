@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { modeName, optHeadLabel, priceDelta, transitQualifier } from '~/utils/itinerary'
-import type { TransportOption } from '~/types/index'
+import { modeName, optHeadLabel, priceDelta, transitQualifier, localModeIcon, buildGettingThereVM } from '~/utils/itinerary'
+import type { TransportOption, LocalTransportPriorityResult } from '~/types/index'
 
 function opt(overrides: Partial<TransportOption> = {}): TransportOption {
   return { mode: 'car', durationMinutes: 60, warnings: [], ...overrides }
@@ -70,5 +70,68 @@ describe('transitQualifier', () => {
 
   it('error: falls back to a generic recommendation with no comparable alternatives', () => {
     expect(transitQualifier(opt({ priceEur: 13, durationMinutes: 44 }), [])).toBe('Recommended option')
+  })
+})
+
+describe('localModeIcon', () => {
+  it('maps the three local modes and falls back to an arrow', () => {
+    expect(localModeIcon('drive')).toBe('🚗')
+    expect(localModeIcon('transit')).toBe('🚌')
+    expect(localModeIcon('walk')).toBe('🚶')
+    expect(localModeIcon('unknown')).toBe('→')
+  })
+})
+
+describe('buildGettingThereVM', () => {
+  function localResult(overrides: Partial<LocalTransportPriorityResult['selectedOption']> = {}): LocalTransportPriorityResult {
+    return {
+      selectedMode: 'drive',
+      wasPreferenceHonored: true,
+      selectedOption: { mode: 'drive', durationMinutes: 12, warnings: [], ...overrides },
+    }
+  }
+
+  it('builds a drive VM from localTransport', () => {
+    expect(buildGettingThereVM({ localTransport: localResult() })).toEqual({
+      icon: '🚗', modeKey: 'drive', durationLabel: '0h 12m', priceEurPerPerson: undefined,
+    })
+  })
+
+  it('builds a transit VM with price from localTransport', () => {
+    const vm = buildGettingThereVM({
+      localTransport: localResult({ mode: 'transit', durationMinutes: 25, priceEur: 2 }),
+    })
+    expect(vm).toEqual({ icon: '🚌', modeKey: 'transit', durationLabel: '0h 25m', priceEurPerPerson: 2 })
+  })
+
+  it('builds a walk VM from localTransport', () => {
+    const vm = buildGettingThereVM({ localTransport: localResult({ mode: 'walk', durationMinutes: 8 }) })
+    expect(vm).toEqual({ icon: '🚶', modeKey: 'walk', durationLabel: '0h 8m', priceEurPerPerson: undefined })
+  })
+
+  it('builds a day-trip VM from dayTripTransport, preferred over localTransport', () => {
+    const dayTripTransport = opt({ mode: 'car', durationMinutes: 90, priceEur: 40 })
+    const vm = buildGettingThereVM({ dayTripTransport, localTransport: localResult() })
+    expect(vm).toEqual({ icon: '🚗', modeKey: 'car', durationLabel: '1h 30m', priceEurPerPerson: 40 })
+  })
+
+  it('error: returns null when the activity is itself a transit leg', () => {
+    expect(buildGettingThereVM({
+      transportData: { to: 'Porto', selectedOption: opt(), alternatives: [] },
+      localTransport: localResult(),
+    })).toBeNull()
+  })
+
+  it('error: returns null when neither field is present', () => {
+    expect(buildGettingThereVM({})).toBeNull()
+  })
+
+  it('error: returns null on malformed local transport (missing durationMinutes)', () => {
+    const malformed = {
+      selectedMode: 'drive',
+      wasPreferenceHonored: true,
+      selectedOption: { mode: 'drive', warnings: [] },
+    } as unknown as LocalTransportPriorityResult
+    expect(buildGettingThereVM({ localTransport: malformed })).toBeNull()
   })
 })

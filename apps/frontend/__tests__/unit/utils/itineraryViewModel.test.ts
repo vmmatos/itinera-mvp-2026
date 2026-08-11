@@ -228,6 +228,25 @@ describe('buildDayViewModels', () => {
     const [vm] = buildDayViewModels([day({ activities: [{ name: 'Free walk', time: 'morning' }] })], null, [], null)
     expect(vm?.slots.morning[0]?.durationMinutes).toBeUndefined()
   })
+
+  it('carries a gettingThere VM onto the slot when the activity has localTransport', () => {
+    const [vm] = buildDayViewModels(
+      [day({ activities: [{
+        name: 'Rice fields cycling', time: 'evening',
+        localTransport: {
+          selectedMode: 'drive', wasPreferenceHonored: true,
+          selectedOption: { mode: 'drive', durationMinutes: 12, warnings: [] },
+        },
+      }] })],
+      null, [], null,
+    )
+    expect(vm?.slots.evening[0]?.gettingThere).toEqual({ icon: '🚗', modeKey: 'drive', durationLabel: '0h 12m', priceEurPerPerson: undefined })
+  })
+
+  it('leaves gettingThere null when the activity has no local/day-trip transport', () => {
+    const [vm] = buildDayViewModels([day({ activities: [{ name: 'Free walk', time: 'morning' }] })], null, [], null)
+    expect(vm?.slots.morning[0]?.gettingThere).toBeNull()
+  })
 })
 
 describe('dayCostMax', () => {

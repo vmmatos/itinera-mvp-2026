@@ -1,4 +1,4 @@
-import type { TransportOption } from '~/types'
+import type { TransportOption, LocalTransportPriorityResult } from '~/types'
 
 export interface LocationFields {
   venue?:    string
@@ -124,6 +124,56 @@ export function formatTransition(t: CityTransitionFields): string {
 
 export function warningsForDay(warnings: RestrictionWarning[] | undefined, dayNum: number): RestrictionWarning[] {
   return (warnings ?? []).filter((w) => w.day === dayNum)
+}
+
+export function localModeIcon(mode: string): string {
+  const icons: Record<string, string> = { drive: '🚗', transit: '🚌', walk: '🚶' }
+  return icons[mode] ?? '→'
+}
+
+export type GettingThereModeKey = 'drive' | 'transit' | 'walk' | TransportOption['mode']
+
+export interface GettingThereVM {
+  icon: string
+  modeKey: GettingThereModeKey
+  durationLabel: string
+  priceEurPerPerson?: number
+}
+
+interface GettingThereSource {
+  transportData?: unknown
+  localTransport?: LocalTransportPriorityResult
+  dayTripTransport?: TransportOption
+}
+
+// Bottom-of-card "how to get here" line: day-trip round-trip transport for
+// far venues, or a local drive/transit/walk hop for everything else. Skips
+// activities that ARE a transit leg themselves (transportData set) — those
+// already render their own route card, a second line would be redundant.
+export function buildGettingThereVM(activity: GettingThereSource): GettingThereVM | null {
+  if (activity.transportData) return null
+
+  const dtt = activity.dayTripTransport
+  if (dtt && typeof dtt.durationMinutes === 'number') {
+    return {
+      icon: routeIcon(dtt),
+      modeKey: dtt.mode,
+      durationLabel: formatDuration(dtt.durationMinutes),
+      priceEurPerPerson: dtt.priceEur,
+    }
+  }
+
+  const opt = activity.localTransport?.selectedOption
+  if (opt && typeof opt.durationMinutes === 'number') {
+    return {
+      icon: localModeIcon(opt.mode),
+      modeKey: opt.mode,
+      durationLabel: formatDuration(opt.durationMinutes),
+      priceEurPerPerson: opt.priceEur,
+    }
+  }
+
+  return null
 }
 
 export function formatTransportLabel(opt: TransportOption, to: string): string {

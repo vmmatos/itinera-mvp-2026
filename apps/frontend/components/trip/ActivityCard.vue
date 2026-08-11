@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { AGENT_COLOURS } from '~/types/index'
-import type { TransportActivityData, TransportOption } from '~/types/index'
-import { routeIcon, formatDuration, optHeadLabel, priceDelta, transitQualifier } from '~/utils/itinerary'
+import type { TransportActivityData, TransportOption, LocalTransportPriorityResult } from '~/types/index'
+import { routeIcon, formatDuration, optHeadLabel, priceDelta, transitQualifier, buildGettingThereVM, modeName } from '~/utils/itinerary'
 
 export interface ActivityCardProps {
   venue?:         string
@@ -16,6 +16,8 @@ export interface ActivityCardProps {
   ownerAgent?:    string
   notes?:         string
   transportData?: TransportActivityData
+  localTransport?:   LocalTransportPriorityResult
+  dayTripTransport?: TransportOption
 }
 
 const { t } = useI18n()
@@ -54,10 +56,21 @@ const venueLine = computed(() => {
   const location = props.activity.location?.trim() ?? ''
   const country = props.activity.country?.trim() ?? ''
 
-  return (country && location) 
-    ? `${location}, ${country}` 
+  return (country && location)
+    ? `${location}, ${country}`
     : location
 })
+
+// ── Getting-there line (bottom of standard activity card) ──────
+const gettingThere = computed(() => buildGettingThereVM(props.activity))
+
+const LOCAL_MODE_KEYS = new Set(['drive', 'transit', 'walk'])
+
+function gettingThereLabel(modeKey: string): string {
+  return LOCAL_MODE_KEYS.has(modeKey)
+    ? t(`trip.itinerary.daySlot.transportMode.${modeKey}`)
+    : modeName(modeKey)
+}
 
 const COLOUR_CODE: Record<string, string> = {
   green: 'g', amber: 'a', blue: 'b', magenta: 'm',
@@ -214,6 +227,10 @@ function agentLineVar(agent: string): string {
       <span>{{ venueLine }}</span>
     </div>
     <p v-if="activity.notes" class="act-notes">{{ activity.notes }}</p>
+    <div v-if="gettingThere" class="act-getting-there">
+      <span class="gt-icon">{{ gettingThere.icon }}</span>
+      <span>{{ gettingThereLabel(gettingThere.modeKey) }} · {{ gettingThere.durationLabel }}</span>
+    </div>
   </div>
 </template>
 
@@ -313,6 +330,21 @@ function agentLineVar(agent: string): string {
   font-size: var(--t-12);
   color: var(--fg-3);
   font-style: italic;
+}
+
+.act-getting-there {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: var(--s-2);
+  font-family: var(--mono);
+  font-size: var(--t-12);
+  color: var(--fg-3);
+}
+
+.gt-icon {
+  font-size: 12px;
+  line-height: 1;
 }
 
 /* ── Transport leg card ──────────────────────────────────────── */

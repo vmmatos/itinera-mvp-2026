@@ -14,7 +14,7 @@ function dayVM(overrides: Partial<DayVM> = {}): DayVM {
     isTransitDay: false,
     weather: null,
     slots: {
-      morning: [{ title: 'Castle visit', costPerPerson: 18, agentName: 'alice', transit: null }],
+      morning: [{ title: 'Castle visit', costPerPerson: 18, agentName: 'alice', transit: null, gettingThere: null }],
       afternoon: [],
       evening: [],
     },

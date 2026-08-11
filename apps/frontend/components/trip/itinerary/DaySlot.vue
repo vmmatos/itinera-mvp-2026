@@ -2,7 +2,8 @@
 import { computed } from 'vue'
 import type { SlotItemVM, Phase } from '~/utils/itineraryViewModel'
 import { formatMoney } from '~/utils/itineraryViewModel'
-import { formatDuration } from '~/utils/itinerary'
+import { formatDuration, modeName } from '~/utils/itinerary'
+import type { GettingThereModeKey } from '~/utils/itinerary'
 import { agentColorToken } from '~/utils/agentColorTokens'
 import { AGENT_COLOURS, type AgentName } from '~/types/index'
 import TripItineraryTransitBlock from './TransitBlock.vue'
@@ -23,6 +24,14 @@ function agentColor(name?: string): string {
   if (!name) return agentColorToken('neutral')
   const colour = AGENT_COLOURS[name as AgentName]
   return agentColorToken(colour ?? 'neutral')
+}
+
+const LOCAL_MODE_KEYS = new Set(['drive', 'transit', 'walk'])
+
+function gettingThereLabel(modeKey: GettingThereModeKey): string {
+  return LOCAL_MODE_KEYS.has(modeKey)
+    ? t(`trip.itinerary.daySlot.transportMode.${modeKey}`)
+    : modeName(modeKey)
 }
 
 const venueLine = computed(() => {
@@ -60,6 +69,10 @@ const venueLine = computed(() => {
           {{ t('trip.itinerary.daySlot.proposedBy') }} <i :style="`color:${agentColor(props.slot.agentName)}`">{{ props.slot.agentName }}</i>
         </span>
       </div>
+      <div v-if="props.slot.gettingThere" class="getting-there">
+        <span class="gt-icon">{{ props.slot.gettingThere.icon }}</span>
+        <span>{{ gettingThereLabel(props.slot.gettingThere.modeKey) }} · {{ props.slot.gettingThere.durationLabel }}</span>
+      </div>
       <TripItineraryTransitBlock
         v-if="props.slot.transit"
         :transit="props.slot.transit"
@@ -82,6 +95,8 @@ const venueLine = computed(() => {
 .tag { font-family: var(--mono); font-size: var(--t-12); text-transform: uppercase; letter-spacing: .06em; padding: 2px var(--s-2); border: var(--hair); color: var(--fg-2); border-radius: var(--r-1); }
 .tag.cost { color: var(--fg-1); }
 .tag.by i { font-style: normal; }
+.getting-there { display: flex; align-items: center; gap: 5px; margin-top: var(--s-2); font-family: var(--mono); font-size: var(--t-12); color: var(--fg-3); }
+.gt-icon { font-size: 12px; line-height: 1; }
 @media (max-width: 640px) {
   .slot { grid-template-columns: 1fr; gap: var(--s-2); }
 }
