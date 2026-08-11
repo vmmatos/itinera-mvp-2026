@@ -603,6 +603,54 @@ describe('TripInputForm — Step 4 (TripItineraryStep)', () => {
     const activities = wrapper.findComponent({ name: 'TripItineraryStep' }).props('timelineDays')[0].activities
     expect(activities[0].location).toBeUndefined()
   })
+
+  // buildDays() must mirror pages/trips/[id].vue's extractItinerary() field
+  // for field: the merge LLM output only ever carries estimatedCostPerPerson
+  // (never a plain `cost`), and durationMinutes/localTransport/dayTripTransport
+  // are backend-attached post-merge — dropping any of them here silently
+  // blanks the cost/duration badges and the getting-there line in Step 4.
+  it('maps estimatedCostPerPerson, durationMinutes, localTransport and dayTripTransport onto the activity', async () => {
+    const wrapper = await mountWithProposals([
+      orchestratorProposal([{
+        name: 'Rice fields cycling', venue: 'Comporta Rice Fields',
+        estimatedCostPerPerson: 18, durationMinutes: 120,
+        localTransport: {
+          selectedMode: 'drive', wasPreferenceHonored: true,
+          selectedOption: { mode: 'drive', durationMinutes: 12, priceEur: 4, warnings: [] },
+        },
+      }]),
+    ])
+
+    const activity = wrapper.findComponent({ name: 'TripItineraryStep' }).props('timelineDays')[0].activities[0]
+    expect(activity.cost).toBe(18)
+    expect(activity.durationMinutes).toBe(120)
+    expect(activity.localTransport?.selectedOption.durationMinutes).toBe(12)
+  })
+
+  it('maps dayTripTransport onto the activity for a far-venue round trip', async () => {
+    const wrapper = await mountWithProposals([
+      orchestratorProposal([{
+        name: 'Alcobaça monastery visit', venue: 'Mosteiro de Alcobaça',
+        dayTripTransport: { mode: 'car', durationMinutes: 60, priceEur: 15, warnings: [] },
+      }]),
+    ])
+
+    const activity = wrapper.findComponent({ name: 'TripItineraryStep' }).props('timelineDays')[0].activities[0]
+    expect(activity.dayTripTransport?.durationMinutes).toBe(60)
+    expect(activity.dayTripTransport?.priceEur).toBe(15)
+  })
+
+  it('error: leaves cost, durationMinutes, localTransport and dayTripTransport undefined when absent', async () => {
+    const wrapper = await mountWithProposals([
+      orchestratorProposal([{ name: 'Free time' }]),
+    ])
+
+    const activity = wrapper.findComponent({ name: 'TripItineraryStep' }).props('timelineDays')[0].activities[0]
+    expect(activity.cost).toBeUndefined()
+    expect(activity.durationMinutes).toBeUndefined()
+    expect(activity.localTransport).toBeUndefined()
+    expect(activity.dayTripTransport).toBeUndefined()
+  })
 })
 
 // ── wizardRootStyle: step 3 v2 needs a bounded flex column so its 3

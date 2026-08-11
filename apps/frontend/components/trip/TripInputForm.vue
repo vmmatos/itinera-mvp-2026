@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onUnmounted, onMounted } from 'vue'
 import { PERSONA_LABELS, PERSONA_AGENT, AGENT_COLOURS } from '~/types/index'
-import type { Persona, Flexibility, Currency, DateWindow, DateInput, CreateTripInput, TravellerInput, TravellerScore, TransportMode, TransportOption, TransportActivityData, BudgetBreakdown, ItineraryDay, ItineraryActivity, ItineraryCityTransition } from '~/types/index'
+import type { Persona, Flexibility, Currency, DateWindow, DateInput, CreateTripInput, TravellerInput, TravellerScore, TransportMode, TransportOption, TransportActivityData, BudgetBreakdown, ItineraryDay, ItineraryActivity, ItineraryCityTransition, LocalTransportPriorityResult } from '~/types/index'
 import { formatTransportLabel } from '~/utils/itinerary'
 import type { RestrictionWarning } from '~/utils/itinerary'
 
@@ -450,9 +450,16 @@ function buildDays(obj: unknown): ItineraryDay[] {
             country:      typeof a['country'] === 'string' && a['country'].trim() ? a['country'].trim() : undefined,
             ownerAgent:   typeof a['ownerAgent'] === 'string' && a['ownerAgent'].trim() ? a['ownerAgent'].trim() : undefined,
             notes:        typeof a['notes'] === 'string' ? a['notes'] : typeof a['description'] === 'string' ? a['description'] : undefined,
-            cost:         typeof a['cost'] === 'number' ? a['cost'] : undefined,
+            cost:         typeof a['estimatedCostPerPerson'] === 'number'
+                            ? a['estimatedCostPerPerson']
+                            : (typeof a['cost'] === 'number' ? a['cost'] : undefined),
+            durationMinutes: typeof a['durationMinutes'] === 'number' ? a['durationMinutes'] : undefined,
             weatherAlert: typeof a['weatherAlert'] === 'string' ? a['weatherAlert'] : undefined,
             satisfies:    Array.isArray(a['satisfies']) ? (a['satisfies'] as string[]) : undefined,
+            localTransport:   (a['localTransport'] && typeof a['localTransport'] === 'object')
+                                ? a['localTransport'] as LocalTransportPriorityResult : undefined,
+            dayTripTransport: (a['dayTripTransport'] && typeof a['dayTripTransport'] === 'object')
+                                ? a['dayTripTransport'] as TransportOption : undefined,
           }))
         : [],
       meals: Array.isArray(d['meals'])
