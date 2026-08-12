@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { ValidationError, createLogger } from '@itinera/shared';
 import type { TransportMode, TransportOption, RouteGraph, CityStay, TimeWindow, TransportLeg, RestrictionWarning, AgentEvent } from '@itinera/shared';
 import type { WeatherService, WeatherForecast } from '@/services/WeatherService';
+import { isDateWithinForecastHorizon, deriveWeatherRisk } from '@/services/WeatherService';
 import type { AttractionDB } from '@/services/AttractionDB';
 import type { RedisService } from '@/services/RedisService';
 import type { TimingValidator, ScheduledActivity, ScheduledTransport } from '@/validators/TimingValidator';
@@ -129,38 +130,43 @@ function buildTripDates(rawItinerary: Array<Record<string, unknown>>, dateInput:
   return tripDates;
 }
 
+/** UTC today as YYYY-MM-DD — the day the OpenWeatherMap 5-day window is anchored to. */
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 /**
- * Fetches (and Redis-caches) multi-day forecasts for a region. Shared by
- * /validate (legacy) and /weather-assessment — the cache key/TTL logic is
- * identical regardless of which proposal shape triggered the call.
+ * Fetches (and Redis-caches) the free 5-day forecast for ONE city.
+ *
+ * The cache key is `weather:{city}:{todayISO}:{days}` because the free
+ * 5-day/3h endpoint always returns now→now+5d: the payload is a pure function
+ * of (city, today, requested day count). The previous `weather:{region}:multi`
+ * key was blind to both — a short trip's payload was served to a longer one
+ * asking for more days, and a forecast cached late on day X stayed "valid"
+ * into day X+1, where every date in it is stale.
  */
-async function fetchWeatherForecasts(
-  region: string,
-  dateInput: z.infer<typeof DateInputSchema>,
-  itineraryLength: number,
+async function fetchCityForecast(
+  city: string,
+  daysToFetch: number,
   redis: RedisService,
   weather: WeatherService,
-): Promise<Awaited<ReturnType<WeatherService['getMultiDayForecast']>>> {
-  const isFlexible = dateInput?.mode === 'flexible';
-  const flexibleNoMonth = isFlexible && !(dateInput as { preferredMonth?: string }).preferredMonth;
-  if (flexibleNoMonth) return [];
+): Promise<WeatherForecast[]> {
+  const cacheKey = `weather:${city}:${todayIso()}:${daysToFetch}`;
 
-  const flexDays = isFlexible ? (dateInput as { days: number }).days : 0;
-  const daysToFetch = isFlexible ? flexDays + 7 : Math.max(itineraryLength, 1) + 1;
-  const weatherCacheKey = isFlexible
-    ? `weather:${region}:flex:${(dateInput as { preferredMonth?: string }).preferredMonth}`
-    : `weather:${region}:multi`;
-
-  const cached = await redis.get(weatherCacheKey);
-  if (cached) return cached as Awaited<ReturnType<WeatherService['getMultiDayForecast']>>;
+  const cached = await redis.get(cacheKey);
+  if (cached) return cached as WeatherForecast[];
 
   try {
-    const forecasts = await weather.getMultiDayForecast(region, daysToFetch);
+    const forecasts = await weather.getMultiDayForecast(city, daysToFetch);
     if (Array.isArray(forecasts) && forecasts.length > 0) {
-      await redis.set(weatherCacheKey, forecasts, config.WEATHER_CACHE_TTL_SECONDS);
+      await redis.set(cacheKey, forecasts, config.WEATHER_CACHE_TTL_SECONDS);
     }
     return forecasts;
-  } catch {
+  } catch (err) {
+    logger.warn('Weather fetch failed — continuing without a forecast for this city', {
+      city,
+      error: err instanceof Error ? err.message : String(err),
+    });
     return [];
   }
 }
@@ -173,41 +179,59 @@ async function fetchWeatherForecasts(
  * one city's forecast across every day of a multi-city trip is simply wrong
  * for the other cities' days. Each unique city is fetched (and cached) once;
  * each day's date is then matched to the forecast from the city that day
- * actually belongs to. Falls back to `fallbackRegion` for days with no city
- * (legacy /validate proposal shape) or when dates can't be computed (flexible,
- * no preferred month).
+ * actually belongs to. Days with no city of their own fall back to
+ * `fallbackRegion` (legacy /validate proposal shape).
+ *
+ * Two gates decide whether OpenWeatherMap is contacted at all — both return an
+ * empty list rather than approximate data:
+ *   1. Only FIXED dates have a calendar to forecast against. "Some week in
+ *      September" is not a question the API can answer, and the previous
+ *      behaviour (returning the region's near-term forecast unfiltered) put
+ *      this week's weather on a trip months away.
+ *   2. Only dates inside the free 5-day horizon are fetchable. A trip three
+ *      weeks out used to geocode and fetch every city, then discard all of it.
  */
 async function fetchWeatherForecastsForItinerary(
   rawItinerary: Array<Record<string, unknown>>,
   fallbackRegion: string,
   dateInput: z.infer<typeof DateInputSchema>,
+  tripDates: string[],
   redis: RedisService,
   weather: WeatherService,
 ): Promise<WeatherForecast[]> {
-  const tripDates = buildTripDates(rawItinerary, dateInput);
+  if (dateInput?.mode !== 'fixed' || tripDates.length === 0) {
+    logger.info('Weather skipped — forecasts are only fetched for fixed trip dates', {
+      mode: dateInput?.mode ?? 'none',
+    });
+    return [];
+  }
+
+  const inHorizon = new Set(tripDates.filter((d) => isDateWithinForecastHorizon(d)));
+  if (inHorizon.size === 0) {
+    logger.info('Weather skipped — no trip date falls inside the forecast horizon', {
+      firstTripDate: tripDates[0],
+      horizonDays: config.OWM_FORECAST_HORIZON_DAYS,
+    });
+    return [];
+  }
 
   const cityByDate = new Map<string, string>();
   rawItinerary.forEach((day, i) => {
     const date = tripDates[i];
-    if (!date) return;
+    if (!date || !inHorizon.has(date)) return;
     const city = typeof day['city'] === 'string' && day['city'].trim() ? day['city'] : fallbackRegion;
     cityByDate.set(date, city);
   });
+  if (cityByDate.size === 0) return [];
 
-  const uniqueCities = [...new Set(cityByDate.size > 0 ? cityByDate.values() : [fallbackRegion])];
+  const uniqueCities = [...new Set(cityByDate.values())];
   const forecastEntries = await Promise.all(
     uniqueCities.map(async (city): Promise<[string, WeatherForecast[]]> => [
       city,
-      await fetchWeatherForecasts(city, dateInput, rawItinerary.length, redis, weather),
+      await fetchCityForecast(city, config.OWM_FORECAST_HORIZON_DAYS, redis, weather),
     ]),
   );
   const forecastsByCity = new Map(forecastEntries);
-
-  // Flexible dates with no preferred month have no calendar to match against —
-  // return whatever the fallback region's own forecast came back as.
-  if (cityByDate.size === 0) {
-    return forecastsByCity.get(fallbackRegion) ?? forecastEntries[0]?.[1] ?? [];
-  }
 
   const result: WeatherForecast[] = [];
   for (const [date, city] of cityByDate) {
@@ -342,35 +366,82 @@ async function computeWeatherAssessment(
   });
 
   const timingResult = timing.validate(activities, transportLegs);
-  const forecasts = await fetchWeatherForecastsForItinerary(rawItinerary, region, dateInput, redis, weather);
+  // Computed once and threaded into all three consumers (fetch gate, analyzer
+  // prompt, forecast merge) so they provably agree on the same calendar.
+  const tripDates = buildTripDates(rawItinerary, dateInput);
+  const forecasts = await fetchWeatherForecastsForItinerary(rawItinerary, region, dateInput, tripDates, redis, weather);
 
-  const event = await analyzer.analyze(tripId, round, rawItinerary, forecasts, timingResult, dateInput ?? null, restrictionWarnings);
-  return mergeRealForecastIntoAssessment(event, forecasts);
+  const event = await analyzer.analyze(tripId, round, rawItinerary, forecasts, timingResult, dateInput ?? null, restrictionWarnings, undefined, tripDates);
+  return mergeRealForecastIntoAssessment(event, forecasts, tripDates);
 }
 
 /**
- * Stamps real per-day forecast numbers (hi/lo temp, condition, rain%) onto the
- * LLM-derived risk assessment, matched by date. The LLM never sees these back
- * out cleanly on its own, so this is done in code after the fact rather than
- * asked of the model. Never throws — the risk assessment itself (the load-bearing
- * part of this response) must survive any shape mismatch (LLM omitted
- * dayAssessments, a date has no forecast match, flexible-dates trip with no
- * forecast at all) with the event returned unmodified.
+ * Reconciles the LLM's qualitative risk assessment with the real forecast
+ * numbers (hi/lo temp, condition, rain%).
+ *
+ * Matching is by DAY INDEX, not by the LLM's own `date`. The model is asked
+ * for a date but routinely returns null or a wrong one — the itinerary JSON it
+ * sees carries `day: <number>` and often no date at all — and because the old
+ * match was an exact date-string comparison, real temperatures never reached
+ * the UI even for a trip starting tomorrow. The authoritative date is
+ * `tripDates[day - 1]`; it is stamped onto the entry so downstream consumers
+ * never see the model's guess. The model's own date survives only as a
+ * fallback when the day number is unusable.
+ *
+ * When the model returned no usable dayAssessments at all (missing key, empty
+ * array, or the `{ raw: '…' }` non-JSON fallback) but real forecasts exist,
+ * entries are synthesised in code — degrading silently to no weather is the
+ * exact failure this card exists to fix.
+ *
+ * Never throws: the risk assessment is the load-bearing part of this response
+ * and must survive any shape mismatch with the event returned intact.
  */
-function mergeRealForecastIntoAssessment(event: AgentEvent, forecasts: WeatherForecast[]): AgentEvent {
+function mergeRealForecastIntoAssessment(
+  event: AgentEvent,
+  forecasts: WeatherForecast[],
+  tripDates: string[],
+): AgentEvent {
   try {
-    const content = event.content as Record<string, unknown> | null;
-    const dayAssessments = content?.['dayAssessments'];
-    if (!content || !Array.isArray(dayAssessments)) return event;
-
+    const content = (event.content ?? {}) as Record<string, unknown>;
     const byDate = new Map(forecasts.map((f) => [f.date, f]));
-    const merged = dayAssessments.map((entry) => {
+    const raw = content['dayAssessments'];
+    const existing = Array.isArray(raw) ? raw : [];
+
+    if (existing.length === 0) {
+      if (forecasts.length === 0) return event;
+
+      const synthesised = synthesiseDayAssessments(tripDates, byDate);
+      if (synthesised.length === 0) return event;
+
+      logger.warn('LLM returned no dayAssessments — synthesising from the real forecast', {
+        days: synthesised.length,
+      });
+
+      const overallRisk =
+        typeof content['overallRisk'] === 'string'
+          ? content['overallRisk']
+          : worstRisk(synthesised.map((d) => d.weatherRisk));
+
+      return { ...event, content: { ...content, overallRisk, dayAssessments: synthesised } };
+    }
+
+    const merged = existing.map((entry) => {
       if (!entry || typeof entry !== 'object') return entry;
       const e = entry as Record<string, unknown>;
-      const match = typeof e['date'] === 'string' ? byDate.get(e['date']) : undefined;
-      if (!match) return entry;
+
+      const dayNum = typeof e['day'] === 'number' ? e['day'] : undefined;
+      const authoritative =
+        dayNum !== undefined && dayNum >= 1 && dayNum <= tripDates.length ? tripDates[dayNum - 1] : undefined;
+      const date = authoritative ?? (typeof e['date'] === 'string' ? e['date'] : undefined);
+      const match = date ? byDate.get(date) : undefined;
+
+      // A day outside the forecast horizon still deserves a correct date
+      // label — it simply gets no numbers, and the UI renders nothing for it.
+      if (!match) return authoritative ? { ...e, date: authoritative } : entry;
+
       return {
         ...e,
+        date,
         tempHigh: match.temperature.max,
         tempLow: match.temperature.min,
         condition: match.conditions,
@@ -382,6 +453,46 @@ function mergeRealForecastIntoAssessment(event: AgentEvent, forecasts: WeatherFo
   } catch {
     return event;
   }
+}
+
+interface SynthesisedDayAssessment {
+  day: number;
+  date: string;
+  weatherRisk: 'low' | 'medium' | 'high';
+  affectedActivities: never[];
+  tempHigh: number;
+  tempLow: number;
+  condition: string;
+  precipitationProbability: number;
+}
+
+/** One entry per trip date that has a real forecast. Days without one are omitted. */
+function synthesiseDayAssessments(
+  tripDates: string[],
+  byDate: Map<string, WeatherForecast>,
+): SynthesisedDayAssessment[] {
+  return tripDates.flatMap((date, i) => {
+    const f = byDate.get(date);
+    if (!f) return [];
+    return [
+      {
+        day: i + 1,
+        date,
+        weatherRisk: deriveWeatherRisk(f),
+        affectedActivities: [],
+        tempHigh: f.temperature.max,
+        tempLow: f.temperature.min,
+        condition: f.conditions,
+        precipitationProbability: f.precipitationProbability,
+      },
+    ];
+  });
+}
+
+function worstRisk(risks: Array<'low' | 'medium' | 'high'>): 'low' | 'medium' | 'high' {
+  if (risks.includes('high')) return 'high';
+  if (risks.includes('medium')) return 'medium';
+  return 'low';
 }
 
 export function createLogisticsRouter(
@@ -516,7 +627,9 @@ export function createLogisticsRouter(
       .catch(() => undefined);
     // --- end pricing ---
 
-    const forecasts = await fetchWeatherForecastsForItinerary(rawItinerary, region, dateInput, redis, weather);
+    // `tripDates` is already computed above for transport resolution — the
+    // same calendar feeds the fetch gate, the analyzer prompt and the merge.
+    const forecasts = await fetchWeatherForecastsForItinerary(rawItinerary, region, dateInput, tripDates, redis, weather);
 
     const hasTransport = Object.keys(transportOptions).length > 0;
     const validation = await analyzer.analyze(
@@ -528,6 +641,7 @@ export function createLogisticsRouter(
       dateInput ?? null,
       restrictionWarnings,
       hasTransport ? transportOptions : undefined,
+      tripDates,
     );
 
     const transportCostEur = Object.values(transportOptions)
@@ -956,7 +1070,9 @@ export function createLogisticsRouter(
     }
 
     const forecast = await weather.getForecast(region, date);
-    await redis.set(cacheKey, forecast, config.WEATHER_CACHE_TTL_SECONDS);
+    // Never cache a null: a date outside the forecast horizon becomes
+    // answerable as it approaches, and a cached miss would hide that.
+    if (forecast) await redis.set(cacheKey, forecast, config.WEATHER_CACHE_TTL_SECONDS);
     res.json({ weather: forecast, cachedAt: new Date().toISOString() });
   });
 

@@ -193,6 +193,11 @@ export interface WeatherAssessment {
   dayAssessments: WeatherDayAssessment[];
   timingIssues: WeatherTimingIssue[];
   summary: string;
+  /**
+   * @deprecated No longer produced — weather is fixed-dates-only, so the model
+   * is never asked to pick a best window for a flexible trip. Kept because
+   * trips persisted before that change still carry it.
+   */
   suggestedDates?: { startDate?: string; endDate?: string; rationale: string };
 }
 

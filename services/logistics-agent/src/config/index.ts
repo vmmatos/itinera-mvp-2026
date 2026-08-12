@@ -39,6 +39,11 @@ const EnvSchema = z.object({
   GOOGLE_ROUTES_BASE_URL: z.string().default('https://routes.googleapis.com'),
   GOOGLE_PLACES_BASE_URL: z.string().default('https://places.googleapis.com/v1'),
   OPENWEATHERMAP_BASE_URL: z.string().default('https://api.openweathermap.org'),
+  // The free OpenWeatherMap plan only exposes /data/2.5/forecast — a 5-day/3h
+  // window that always returns now→now+5d regardless of the requested `cnt`,
+  // with no date parameter. Anything beyond this is unknowable: we neither
+  // call the API for it nor fabricate numbers to fill the gap.
+  OWM_FORECAST_HORIZON_DAYS: z.coerce.number().default(5),
   // SerpApi Google Flights — flight search. engine=google_flights is passed as a
   // query param in code, not baked into the URL. Empty key = flight search disabled
   // (the feasibility guard then estimates flights for long legs).

@@ -25,9 +25,13 @@ export class WeatherAnalyzer extends BaseLogisticsAgent {
     itinerary: unknown,
     weatherForecasts: WeatherForecast[],
     timingResult: TimingValidationResult,
+    // Kept in the signature (callers pass it positionally) but no longer used
+    // in the prompt: flexible trips never get a forecast, so the model is not
+    // asked to pick a "best window" it has no data to pick from.
     dateInput?: DateInput | null,
     restrictionWarnings?: RestrictionWarning[],
     transportOptions?: Record<number, TransportOption[]>,
+    tripDates?: string[],
   ): Promise<AgentEvent> {
     return this.handleAsync(async () => {
       const cacheKey = `logistics:${tripId}:weather-analyzer:${round}:propose`;
@@ -37,16 +41,19 @@ export class WeatherAnalyzer extends BaseLogisticsAgent {
         return cached;
       }
 
-      const flexSection: string[] = dateInput?.mode === 'flexible' && dateInput.preferredMonth
-        ? [
-            '',
-            `DATE SELECTION MODE: flexible — ${dateInput.days} days in ${dateInput.preferredMonth} (window: ${dateInput.window})`,
-            'Based on the weather forecasts above, select the optimal consecutive window within this month.',
-            'Add a "suggestedDates" key to your JSON response:',
-            '  "suggestedDates": { "startDate": "YYYY-MM-DD", "endDate": "YYYY-MM-DD", "rationale": "..." }',
-            'If forecast data covers fewer days than needed, note this in rationale and omit startDate/endDate.',
-          ]
-        : [];
+      // The itinerary JSON the model sees carries `day: <number>` and often no
+      // date at all, so asking for dayAssessments[].date without handing it the
+      // calendar produced null/wrong dates — and the real forecast, matched by
+      // date downstream, never reached the UI. Give it the mapping explicitly.
+      const tripDatesSection: string[] =
+        tripDates && tripDates.length > 0
+          ? [
+              '',
+              'Trip calendar (authoritative — day number ⇄ calendar date):',
+              tripDates.map((d, i) => `  day ${i + 1} → ${d}`).join('\n'),
+              'Use EXACTLY these dates in dayAssessments[].date, and keep dayAssessments[].day equal to the itinerary day number.',
+            ]
+          : [];
 
       const restrictionsSection: string[] =
         restrictionWarnings && restrictionWarnings.length > 0
@@ -90,7 +97,7 @@ export class WeatherAnalyzer extends BaseLogisticsAgent {
             JSON.stringify(timingResult, null, 2),
             ...restrictionsSection,
             ...transportSection,
-            ...flexSection,
+            ...tripDatesSection,
             '',
             'Analyse the weather impact on outdoor activities, flag risky days, and suggest alternative times or indoor fallbacks where needed. Respond with valid JSON only.',
           ].join('\n'),
