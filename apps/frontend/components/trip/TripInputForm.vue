@@ -321,16 +321,21 @@ interface ProposalEntry {
 const liveProposals    = ref<ProposalEntry[]>([])
 const negotiationStatus = ref<string>('negotiating')
 const rejectionReason  = ref<string>('')
+// The trip's PERSISTED dateInput. Step 4 is reachable straight from the
+// dashboard (viewTripId), where none of the wizard's own date refs are ever
+// filled in — so they cannot be trusted to say whether this trip has fixed dates.
+const persistedDateInput = ref<DateInput | null>(null)
 let pollInterval: ReturnType<typeof setInterval> | null = null
 
 const startNegotiationPolling = (tripId: string): void => {
   const poll = async (): Promise<void> => {
     try {
       const [tripResp, propResp] = await Promise.all([
-        api.get<{ success: boolean; data: { status: string; rejectionReason?: string | null } }>(`/api/v1/trips/${tripId}`),
+        api.get<{ success: boolean; data: { status: string; rejectionReason?: string | null; dateInput?: DateInput | null } }>(`/api/v1/trips/${tripId}`),
         api.get<{ success: boolean; data: ProposalEntry[] }>(`/api/v1/trips/${tripId}/proposals`),
       ])
       negotiationStatus.value = tripResp.data.data.status
+      persistedDateInput.value = tripResp.data.data.dateInput ?? null
       liveProposals.value = propResp.data.data
 
       if (negotiationStatus.value === 'confirmed') {
@@ -678,11 +683,6 @@ const weatherAssessment = computed<Record<string, unknown> | null>(() => {
   return wa && typeof wa === 'object' ? (wa as Record<string, unknown>) : null
 })
 
-const weatherAlerts = computed<string[]>(() => {
-  const c = weatherAssessment.value
-  return Array.isArray(c?.['weatherAlerts']) ? (c['weatherAlerts'] as string[]) : []
-})
-
 const restrictionWarnings = computed((): RestrictionWarning[] => {
   const c = latestOrchestratorContent.value
   return Array.isArray(c?.['restrictionWarnings'])
@@ -690,7 +690,14 @@ const restrictionWarnings = computed((): RestrictionWarning[] => {
     : []
 })
 
-const showWeather = computed(() => !(dateMode.value === 'flexible' && !preferredMonth.value))
+// The persisted dateInput wins; the wizard refs are only a fallback for a trip
+// created in this session before the first poll has landed.
+const effectiveDateInput = computed<DateInput>(() => {
+  if (persistedDateInput.value?.mode) return persistedDateInput.value
+  return dateMode.value === 'fixed'
+    ? { mode: 'fixed', startDate: startDate.value, endDate: endDate.value }
+    : { mode: 'flexible', days: flexDays.value, preferredMonth: preferredMonth.value || undefined, window: flexWindow.value }
+})
 
 // ── Step 4: Share link ────────────────────────────────────────
 
@@ -777,9 +784,8 @@ const buildExportPayload = (): Record<string, unknown> => ({
     budgetTotal:    budgetTotal.value,
     budgetCurrency: budgetCurrency.value,
     travellers:     travellers.value.map((t) => ({ name: t.name })),
-    weather: weatherAlerts.value.length > 0
-      ? { alerts: weatherAlerts.value }
-      : undefined,
+    // No `weather` block: it read weatherAssessment.weatherAlerts, a field no
+    // backend type or service has ever produced, so it was always undefined.
     days: parsedItinerary.value.map((d) => ({
       day:        d.day,
       date:       d.date,
@@ -1427,7 +1433,7 @@ const PERSONAS = computed(() => [
       :budget-breakdown="budgetBreakdown"
       :accommodation="accommodationBlocks"
       :weather-assessment="weatherAssessment"
-      :show-weather="showWeather"
+      :date-input="effectiveDateInput"
       :restriction-warnings="restrictionWarnings"
       :validator-summary="validatorSummary"
       :traveller-scores="travellerScores"

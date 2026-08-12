@@ -1,6 +1,9 @@
 import { describe, it, expect } from 'vitest'
+import { mount } from '@vue/test-utils'
+import Timeline, { type TimelineDay } from '~/components/trip/Timeline.vue'
 import { formatDayHeader, formatTransition, warningsForDay } from '~/utils/itinerary'
 import type { RestrictionWarning } from '~/utils/itinerary'
+import type { WeatherAssessment } from '~/types/index'
 
 describe('formatDayHeader', () => {
   // ── Happy path ──────────────────────────────────────────────
@@ -119,5 +122,57 @@ describe('warningsForDay', () => {
 
   it('returns an empty array when warnings is an empty array', () => {
     expect(warningsForDay([], 1)).toEqual([])
+  })
+})
+
+
+// The /trips/:id page renders this component. Until M130 it had no weather
+// prop at all, so a saved trip showed no forecast in any scenario.
+describe('Timeline.vue — day weather', () => {
+  function days(): TimelineDay[] {
+    return [
+      { day: 1, date: '2026-06-01', city: 'Lisboa', activities: [] },
+      { day: 2, date: '2026-06-02', city: 'Lisboa', activities: [] },
+      { day: 3, date: '2026-06-03', city: 'Porto', activities: [] },
+    ]
+  }
+
+  function assessment(entries: Array<Record<string, unknown>>): WeatherAssessment {
+    return { overallRisk: 'low', dayAssessments: entries, timingIssues: [], summary: '' } as unknown as WeatherAssessment
+  }
+
+  const FULL = assessment([
+    { day: 1, date: '2026-06-01', weatherRisk: 'low', tempHigh: 24, tempLow: 15, condition: 'Clear', precipitationProbability: 20 },
+    { day: 2, date: '2026-06-02', weatherRisk: 'low', tempHigh: 26, tempLow: 16, condition: 'Clouds', precipitationProbability: 5 },
+    { day: 3, date: '2026-06-03', weatherRisk: 'low', tempHigh: 22, tempLow: 14, condition: 'Rain', precipitationProbability: 80 },
+  ])
+
+  it('renders a per-day weather chip for days with a real forecast', () => {
+    const wrapper = mount(Timeline, { props: { days: days(), weather: FULL } })
+
+    const chips = wrapper.findAll('[data-testid="timeline-day-weather"]')
+    expect(chips).toHaveLength(3)
+    expect(chips[0]!.text()).toContain('24°')
+    expect(chips[0]!.text()).toContain('20% rain')
+  })
+
+  it('renders no chip at all when weather is null (flexible trip, or gate off)', () => {
+    const wrapper = mount(Timeline, { props: { days: days(), weather: null } })
+    expect(wrapper.findAll('[data-testid="timeline-day-weather"]')).toHaveLength(0)
+  })
+
+  it('renders chips only for the days that have temperatures (partial horizon coverage)', () => {
+    const partial = assessment([
+      { day: 1, date: '2026-06-01', weatherRisk: 'low', tempHigh: 24, tempLow: 15, condition: 'Clear' },
+      { day: 2, date: '2026-06-02', weatherRisk: 'low', tempHigh: 26, tempLow: 16, condition: 'Clouds' },
+      { day: 3, date: '2026-06-03', weatherRisk: 'low' },
+    ])
+    const wrapper = mount(Timeline, { props: { days: days(), weather: partial } })
+    expect(wrapper.findAll('[data-testid="timeline-day-weather"]')).toHaveLength(2)
+  })
+
+  it('renders no chip when the weather prop is omitted entirely (other call sites)', () => {
+    const wrapper = mount(Timeline, { props: { days: days() } })
+    expect(wrapper.findAll('[data-testid="timeline-day-weather"]')).toHaveLength(0)
   })
 })

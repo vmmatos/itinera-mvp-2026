@@ -1,4 +1,5 @@
 import type {
+  DateInput,
   ItineraryDay,
   ItineraryActivity,
   WeatherAssessment,
@@ -204,13 +205,53 @@ export function parseWeatherAssessment(raw: Record<string, unknown> | null): Wea
   }
 }
 
+export interface WeatherGate {
+  /** Trip is on fixed dates — the only mode that can ever get a live forecast. */
+  eligible: boolean
+  /** At least one day carries a real temperature from OpenWeatherMap. */
+  hasData: boolean
+  /** eligible && hasData — the single flag every weather UI gates on. */
+  show: boolean
+}
+
+/**
+ * The one source of truth for "should this trip render any weather at all".
+ * Both render paths (wizard step 4 and /trips/[id]) call this rather than
+ * inventing their own expression.
+ *
+ * Gates on the PERSISTED trip.dateInput, not on local wizard state: step 4 is
+ * reachable straight from the dashboard with the wizard's date refs still
+ * empty, where the mode defaults to 'fixed' and weather would wrongly show on
+ * a flexible trip.
+ *
+ * `hasData` probes tempHigh because the backend only stamps it on a real
+ * OpenWeatherMap match — a trip beyond the free 5-day horizon comes back with
+ * dayAssessments but no numbers, and must render nothing at all rather than a
+ * "no live forecast" placeholder.
+ *
+ * Takes the already-parsed assessment so callers keep access to timingIssues,
+ * which come from the TimingValidator and must survive this gate.
+ */
+export function resolveWeatherGate(
+  dateInput: DateInput | null | undefined,
+  assessment: WeatherAssessment | null,
+): WeatherGate {
+  const eligible = dateInput?.mode === 'fixed'
+  const hasData = !!assessment?.dayAssessments.some((d) => typeof d.tempHigh === 'number')
+  return { eligible, hasData, show: eligible && hasData }
+}
+
 function findDayAssessment(assessment: WeatherAssessment | null, dayNumber: number): WeatherDayAssessment | undefined {
   return assessment?.dayAssessments.find((d) => d.day === dayNumber)
 }
 
-function buildDayWeather(assessment: WeatherAssessment | null, dayNumber: number): DayWeatherVM | null {
+// A day with an assessment entry but no tempHigh had no OpenWeatherMap match
+// (beyond the free 5-day horizon, or the API failed). Return null so nothing
+// renders for that day — never a placeholder implying we looked and found "no
+// forecast", and never a fabricated risk.
+export function buildDayWeather(assessment: WeatherAssessment | null, dayNumber: number): DayWeatherVM | null {
   const match = findDayAssessment(assessment, dayNumber)
-  if (!match) return null
+  if (!match || match.tempHigh === undefined) return null
   return {
     icon: weatherConditionEmoji(match.condition),
     condition: match.condition,

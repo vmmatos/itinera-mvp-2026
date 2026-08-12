@@ -1,7 +1,10 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { ActivityCardProps } from '~/components/trip/ActivityCard.vue'
+import type { WeatherAssessment } from '~/types/index'
 import type { RestrictionWarning } from '~/utils/itinerary'
 import { formatDayHeader, warningsForDay } from '~/utils/itinerary'
+import { buildDayWeather, type DayWeatherVM } from '~/utils/itineraryViewModel'
 
 export interface TimelineActivity extends ActivityCardProps {
   time?:      string
@@ -22,7 +25,23 @@ const props = defineProps<{
   isDebug?:             boolean
   currencySymbol?:      string
   restrictionWarnings?: RestrictionWarning[]
+  // Already gated by the caller (resolveWeatherGate): null means render no
+  // weather at all — flexible dates, or no live forecast for this trip.
+  weather?:             WeatherAssessment | null
 }>()
+
+const { t } = useI18n()
+
+// Precomputed so the template does not rebuild a VM per day on every render.
+// Days with no real forecast (beyond the 5-day horizon) are simply absent.
+const weatherByDay = computed<Record<number, DayWeatherVM>>(() => {
+  const out: Record<number, DayWeatherVM> = {}
+  for (const day of props.days) {
+    const vm = buildDayWeather(props.weather ?? null, day.day)
+    if (vm) out[day.day] = vm
+  }
+  return out
+})
 
 type TimeSlot = 'morning' | 'afternoon' | 'evening' | 'unscheduled'
 
@@ -68,6 +87,13 @@ function activitiesForSlot(activities: TimelineActivity[], slot: TimeSlot): Time
       <div class="tl-day-head">
         <span class="tl-day-badge">{{ formatDayHeader(day) }}</span>
         <span v-if="day.date" class="tl-day-date">{{ day.date }}</span>
+        <span v-if="weatherByDay[day.day]" class="tl-day-wx" data-testid="timeline-day-weather">
+          {{ weatherByDay[day.day]?.icon }}
+          {{ weatherByDay[day.day]?.tempHigh }}° <small>/ {{ weatherByDay[day.day]?.tempLow }}°</small>
+          <template v-if="weatherByDay[day.day]?.precipitationProbability !== undefined">
+            · {{ weatherByDay[day.day]?.precipitationProbability }}{{ t('trip.itinerary.dayPanel.rainSuffix') }}
+          </template>
+        </span>
       </div>
 
       <!-- Restriction warnings (public holidays, closure rules, opening hours) -->
@@ -156,6 +182,16 @@ function activitiesForSlot(activities: TimelineActivity[], slot: TimeSlot): Time
   color: var(--fg-3);
   text-transform: uppercase;
   letter-spacing: 0.06em;
+}
+
+.tl-day-wx {
+  font-family: var(--mono);
+  font-size: var(--t-12);
+  color: var(--fg-3);
+}
+
+.tl-day-wx small {
+  color: var(--fg-4);
 }
 
 .tl-body {

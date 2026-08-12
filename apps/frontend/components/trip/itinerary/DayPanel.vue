@@ -51,12 +51,11 @@ const riskLabel = computed(() => {
         <span class="big">{{ props.day.weather.icon }}</span>
         <div class="col">
           <span class="cond">{{ props.day.weather.condition ?? t('trip.itinerary.dayPanel.forecast') }}</span>
+          <!-- A day VM only carries `weather` when a real forecast matched, so
+               there is no placeholder branch left to render. -->
           <span class="tmp">
-            <template v-if="props.day.weather.tempHigh !== undefined">
-              {{ props.day.weather.tempHigh }}° <small>/ {{ props.day.weather.tempLow }}°</small>
-              <template v-if="props.day.weather.precipitationProbability !== undefined"> · {{ props.day.weather.precipitationProbability }}{{ t('trip.itinerary.dayPanel.rainSuffix') }}</template>
-            </template>
-            <template v-else>{{ t('trip.itinerary.dayPanel.noLiveForecast') }}</template>
+            {{ props.day.weather.tempHigh }}° <small>/ {{ props.day.weather.tempLow }}°</small>
+            <template v-if="props.day.weather.precipitationProbability !== undefined"> · {{ props.day.weather.precipitationProbability }}{{ t('trip.itinerary.dayPanel.rainSuffix') }}</template>
           </span>
         </div>
         <span v-if="riskLabel" class="risk" :class="props.day.weather.risk" data-testid="risk-chip">{{ riskLabel }}</span>

@@ -21,7 +21,9 @@ defineEmits<{ select: [index: number] }>()
   <div class="rail-wrap">
     <div class="rail-top">
       <span class="lbl">{{ t('trip.itinerary.timelineRail.label', { days: props.days.length, stops: props.segments.length, stopWord: t(props.segments.length === 1 ? 'trip.itinerary.timelineRail.stop' : 'trip.itinerary.timelineRail.stopsPlural') }) }}</span>
-      <span class="dates">{{ t('trip.itinerary.timelineRail.weather') }} · {{ props.showWeather ? t('trip.itinerary.timelineRail.liveForecast') : t('trip.itinerary.timelineRail.noLiveForecast') }}</span>
+      <!-- Hidden outright, not relabelled: a trip with no live forecast (flexible
+           dates, or beyond the 5-day horizon) should show no weather UI at all. -->
+      <span v-if="props.showWeather" class="dates" data-testid="rail-weather-chip">{{ t('trip.itinerary.timelineRail.weather') }} · {{ t('trip.itinerary.timelineRail.liveForecast') }}</span>
     </div>
     <div class="rail-scroll">
       <div class="rail">

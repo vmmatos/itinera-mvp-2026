@@ -185,7 +185,6 @@
         "day": "day",
         "forecast": "Forecast",
         "rainSuffix": "% rain",
-        "noLiveForecast": "no live forecast",
         "heatAdvisory": "heat advisory",
         "lowRisk": "low risk",
         "heatAdvisoryBody": "{temp}°C peak — plan indoor/shaded activities and keep midday light",
@@ -259,8 +258,7 @@
         "stop": "stop",
         "stopsPlural": "stops",
         "weather": "weather",
-        "liveForecast": "live forecast · fixed dates",
-        "noLiveForecast": "no live forecast — flexible dates"
+        "liveForecast": "live forecast · fixed dates"
       },
       "transitBlock": {
         "otherOption": "other option",
