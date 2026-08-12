@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import type { BudgetBreakdown, ItineraryDay, TravellerScore } from '~/types/index'
+import type { BudgetBreakdown, DateInput, ItineraryDay, TravellerScore } from '~/types/index'
 import type { RestrictionWarning } from '~/utils/itinerary'
 import {
   groupIntoSegments,
   buildDayViewModels,
   parseWeatherAssessment,
+  resolveWeatherGate,
   currencySymbolFor,
   formatDateRange,
   type AccommodationBlock,
@@ -36,7 +37,7 @@ const props = defineProps<{
   budgetBreakdown: BudgetBreakdown | null
   accommodation: AccommodationBlock[]
   weatherAssessment: Record<string, unknown> | null
-  showWeather: boolean
+  dateInput: DateInput | null
   restrictionWarnings?: RestrictionWarning[]
   validatorSummary: ValidatorSummary | null
   travellerScores: TravellerScore[]
@@ -62,10 +63,14 @@ const summaryOpen = ref(false)
 
 const currencySymbol = computed(() => currencySymbolFor(props.budgetBreakdown?.currency))
 
-const parsedWeather = computed(() => (props.showWeather ? parseWeatherAssessment(props.weatherAssessment) : null))
+// Parsed unconditionally: timingIssues come from the TimingValidator, not from
+// the weather API, and must survive the weather gate (see timingConflicts).
+const parsedWeather = computed(() => parseWeatherAssessment(props.weatherAssessment))
+const weatherGate = computed(() => resolveWeatherGate(props.dateInput, parsedWeather.value))
+const dayWeather = computed(() => (weatherGate.value.show ? parsedWeather.value : null))
 
 const dayVMs = computed(() =>
-  buildDayViewModels(props.timelineDays, parsedWeather.value, props.accommodation, props.budgetBreakdown),
+  buildDayViewModels(props.timelineDays, dayWeather.value, props.accommodation, props.budgetBreakdown),
 )
 
 const segments = computed(() => groupIntoSegments(props.timelineDays))
@@ -136,7 +141,7 @@ watch(() => dayVMs.value.length, (len) => {
       :price-mode="priceMode"
       :travellers="props.travellers"
       :currency-symbol="currencySymbol"
-      :show-weather="props.showWeather"
+      :show-weather="weatherGate.show"
       @select="select"
     />
 

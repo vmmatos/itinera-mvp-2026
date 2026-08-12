@@ -13,6 +13,7 @@ import {
   formatDateRange,
   dayCostMax,
   parseWeatherAssessment,
+  resolveWeatherGate,
 } from '~/utils/itineraryViewModel'
 import type { ItineraryDay, BudgetBreakdown, TransportOption } from '~/types/index'
 
@@ -183,6 +184,39 @@ describe('buildDayViewModels', () => {
     const assessment = parseWeatherAssessment({ overallRisk: 'low', dayAssessments: [], timingIssues: [], summary: '' })
     const [vm] = buildDayViewModels(days, assessment, [], null)
     expect(vm?.weather).toBeNull()
+  })
+
+  // Beyond the free 5-day horizon the backend still returns a dated, risk-rated
+  // entry — it just carries no numbers. That must render as nothing, not as a
+  // "no live forecast" placeholder.
+  it('leaves weather null for a day whose assessment entry carries no real temperature', () => {
+    const days = [day({ day: 1 })]
+    const assessment = parseWeatherAssessment({
+      overallRisk: 'low',
+      dayAssessments: [{ day: 1, date: '2026-12-01', weatherRisk: 'low', affectedActivities: [] }],
+      timingIssues: [],
+      summary: '',
+    })
+    const [vm] = buildDayViewModels(days, assessment, [], null)
+    expect(vm?.weather).toBeNull()
+  })
+
+  it('attaches weather only to the days that got a forecast (partial horizon coverage)', () => {
+    const days = [day({ day: 1 }), day({ day: 2 }), day({ day: 3 })]
+    const assessment = parseWeatherAssessment({
+      overallRisk: 'low',
+      dayAssessments: [
+        { day: 1, date: '2026-06-01', weatherRisk: 'low', tempHigh: 24, tempLow: 15, condition: 'Clear', affectedActivities: [] },
+        { day: 2, date: '2026-06-02', weatherRisk: 'low', tempHigh: 26, tempLow: 16, condition: 'Clouds', affectedActivities: [] },
+        { day: 3, date: '2026-06-03', weatherRisk: 'low', affectedActivities: [] },
+      ],
+      timingIssues: [],
+      summary: '',
+    })
+    const vms = buildDayViewModels(days, assessment, [], null)
+    expect(vms[0]?.weather?.tempHigh).toBe(24)
+    expect(vms[1]?.weather?.tempHigh).toBe(26)
+    expect(vms[2]?.weather).toBeNull()
   })
 
   it('flags a day as a transit day via cityTransition or a transportData activity', () => {
@@ -477,5 +511,63 @@ describe('parseWeatherAssessment', () => {
     expect(result?.dayAssessments).toHaveLength(1)
     expect(result?.timingIssues).toHaveLength(1)
     expect(result?.summary).toBe('Hot week.')
+  })
+})
+
+describe('resolveWeatherGate', () => {
+  const withTemps = parseWeatherAssessment({
+    overallRisk: 'low',
+    dayAssessments: [{ day: 1, date: '2026-06-01', weatherRisk: 'low', tempHigh: 24, tempLow: 15, affectedActivities: [] }],
+    timingIssues: [],
+    summary: '',
+  })
+  const withoutTemps = parseWeatherAssessment({
+    overallRisk: 'low',
+    dayAssessments: [{ day: 1, date: '2026-12-01', weatherRisk: 'low', affectedActivities: [] }],
+    timingIssues: [],
+    summary: '',
+  })
+  const FIXED = { mode: 'fixed' as const, startDate: '2026-06-01', endDate: '2026-06-03' }
+
+  it('shows weather for a fixed-date trip that has real temperatures', () => {
+    expect(resolveWeatherGate(FIXED, withTemps)).toEqual({ eligible: true, hasData: true, show: true })
+  })
+
+  // Beyond the OpenWeatherMap horizon: eligible, but nothing real to show.
+  it('hides weather for a fixed-date trip whose days carry no temperatures', () => {
+    expect(resolveWeatherGate(FIXED, withoutTemps)).toEqual({ eligible: true, hasData: false, show: false })
+  })
+
+  it('hides weather for a fixed-date trip with a null or empty assessment', () => {
+    expect(resolveWeatherGate(FIXED, null).show).toBe(false)
+    const empty = parseWeatherAssessment({ overallRisk: 'low', dayAssessments: [], timingIssues: [], summary: '' })
+    expect(resolveWeatherGate(FIXED, empty).show).toBe(false)
+  })
+
+  // Belt and braces against trips persisted before weather became fixed-only:
+  // even if the stored assessment carries temperatures, a flexible trip shows none.
+  it.each([
+    ['with a preferred month', { mode: 'flexible' as const, days: 7, preferredMonth: '2026-09', window: 'moderate' as const }],
+    ['without a preferred month', { mode: 'flexible' as const, days: 7, window: 'open' as const }],
+  ])('hides weather for a flexible-date trip %s, even when temperatures are present', (_label, dateInput) => {
+    expect(resolveWeatherGate(dateInput, withTemps)).toEqual({ eligible: false, hasData: true, show: false })
+  })
+
+  it('hides weather when the trip has no dateInput at all (legacy trips)', () => {
+    expect(resolveWeatherGate(null, withTemps).show).toBe(false)
+    expect(resolveWeatherGate(undefined, withTemps).show).toBe(false)
+  })
+
+  it('shows weather on partial horizon coverage — some data is enough', () => {
+    const partial = parseWeatherAssessment({
+      overallRisk: 'low',
+      dayAssessments: [
+        { day: 1, date: '2026-06-01', weatherRisk: 'low', tempHigh: 24, affectedActivities: [] },
+        { day: 2, date: '2026-06-02', weatherRisk: 'low', affectedActivities: [] },
+      ],
+      timingIssues: [],
+      summary: '',
+    })
+    expect(resolveWeatherGate(FIXED, partial).show).toBe(true)
   })
 })

@@ -32,6 +32,56 @@ interface OWMForecastResponse {
   list: OWMForecastItem[];
 }
 
+/**
+ * True when `dateISO` (YYYY-MM-DD) falls inside the window the free
+ * OpenWeatherMap plan can actually answer for: today (UTC) through
+ * today + horizonDays - 1, inclusive.
+ *
+ * The 5-day/3h endpoint always returns now→now+5d and takes no date
+ * parameter, so a trip starting later is not "missing data" — it is
+ * unknowable. Callers use this to skip the API call entirely rather than
+ * geocoding, fetching and then discarding every result.
+ *
+ * The exclusive upper bound is deliberate: OWM's last returned day is only
+ * partially sampled (1–2 of the 8 three-hour slices), so its aggregated
+ * min/max is not a forecast we are willing to claim.
+ *
+ * Past dates are outside the horizon, and unparseable input is outside it —
+ * never assume coverage that cannot be proven. `now` is injectable so the
+ * helper is deterministic under test.
+ */
+export function isDateWithinForecastHorizon(
+  dateISO: string,
+  horizonDays: number = config.OWM_FORECAST_HORIZON_DAYS,
+  now: Date = new Date(),
+): boolean {
+  const target = Date.parse(`${dateISO}T00:00:00Z`);
+  if (Number.isNaN(target)) return false;
+
+  const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const diffDays = Math.round((target - todayUtc) / 86_400_000);
+
+  return diffDays >= 0 && diffDays < horizonDays;
+}
+
+/**
+ * Code-side mirror of the risk thresholds stated in the logistics-validator
+ * prompt. Used when the LLM returns no usable dayAssessments so the UI still
+ * gets an honest risk level derived from the real numbers, instead of the
+ * silent degrade-to-empty this codebase has been bitten by before.
+ */
+export function deriveWeatherRisk(forecast: WeatherForecast): 'low' | 'medium' | 'high' {
+  const temp = forecast.temperature.max;
+
+  if (forecast.precipitationProbability > 70 || forecast.windSpeed > 50 || temp < 5 || temp > 38) {
+    return 'high';
+  }
+  if (forecast.precipitationProbability >= 30 || forecast.windSpeed >= 30 || temp <= 10 || temp >= 32) {
+    return 'medium';
+  }
+  return 'low';
+}
+
 export class WeatherService extends BaseService {
   private readonly apiKey: string;
   private readonly baseUrl = config.OPENWEATHERMAP_BASE_URL;
@@ -41,16 +91,17 @@ export class WeatherService extends BaseService {
     this.apiKey = config.OPENWEATHERMAP_API_KEY;
   }
 
-  async getForecast(region: string, date?: string): Promise<WeatherForecast> {
-    const forecasts = await this.getMultiDayForecast(region, 5);
+  /**
+   * Returns null — rather than another day's weather stamped with the
+   * requested date — when the date is outside the forecast horizon or the
+   * region cannot be geocoded. Handing back today's forecast labelled as a
+   * future date is worse than handing back nothing.
+   */
+  async getForecast(region: string, date?: string): Promise<WeatherForecast | null> {
+    const forecasts = await this.getMultiDayForecast(region, config.OWM_FORECAST_HORIZON_DAYS);
     const targetDate = date ?? new Date().toISOString().slice(0, 10);
 
-    const match = forecasts.find((f) => f.date === targetDate);
-    if (match) return match;
-
-    const first = forecasts[0];
-    if (!first) return null as unknown as WeatherForecast;
-    return first;
+    return forecasts.find((f) => f.date === targetDate) ?? null;
   }
 
   async getMultiDayForecast(region: string, days: number): Promise<WeatherForecast[]> {
@@ -82,7 +133,14 @@ export class WeatherService extends BaseService {
       return [];
     }
 
-    const url = `${this.baseUrl}/data/2.5/forecast?lat=${coords.lat}&lon=${coords.lon}&appid=${this.apiKey}&units=metric&cnt=${days * 8}`;
+    // Asking for more than the horizon is a lie the API quietly humours: it
+    // caps `cnt` at 40 server-side and returns the same 5 days either way.
+    // Clamping keeps the request honest and makes the response a pure
+    // function of (city, today) — which is what makes the caller's
+    // `weather:{city}:{today}:{days}` cache key sound.
+    const cappedDays = Math.min(Math.max(1, days), config.OWM_FORECAST_HORIZON_DAYS);
+
+    const url = `${this.baseUrl}/data/2.5/forecast?lat=${coords.lat}&lon=${coords.lon}&appid=${this.apiKey}&units=metric&cnt=${cappedDays * 8}`;
 
     const res = await fetch(url);
     if (!res.ok) {
@@ -95,7 +153,7 @@ export class WeatherService extends BaseService {
 
     const data = (await res.json()) as OWMForecastResponse;
 
-    return this.aggregateDailyForecasts(region, data.list, days);
+    return this.aggregateDailyForecasts(region, data.list, cappedDays);
   }
 
   private async geocode(region: string): Promise<{ lat: number; lon: number }> {

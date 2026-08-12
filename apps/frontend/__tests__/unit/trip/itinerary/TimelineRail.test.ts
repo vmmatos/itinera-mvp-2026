@@ -59,10 +59,20 @@ describe('TimelineRail', () => {
     expect(cells[1]?.find('[data-testid="heat-flag"]').exists()).toBe(false)
   })
 
-  it('labels the rail as having no live forecast when showWeather is false', () => {
+  // Was: "labels the rail as having no live forecast". A trip with no live
+  // forecast now shows no weather UI at all rather than a placeholder label.
+  it('renders no weather chip at all when showWeather is false', () => {
     const wrapper = mount(TimelineRail, {
       props: { segments: oneSegment, days: [dayVM(0)], selectedDay: 0, priceMode: 'pp', travellers: 2, currencySymbol: '€', showWeather: false },
     })
-    expect(wrapper.text()).toContain('no live forecast')
+    expect(wrapper.find('[data-testid="rail-weather-chip"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('weather')
+  })
+
+  it('renders the live-forecast chip when showWeather is true', () => {
+    const wrapper = mount(TimelineRail, {
+      props: { segments: oneSegment, days: [dayVM(0)], selectedDay: 0, priceMode: 'pp', travellers: 2, currencySymbol: '€', showWeather: true },
+    })
+    expect(wrapper.find('[data-testid="rail-weather-chip"]').text()).toContain('live forecast')
   })
 })

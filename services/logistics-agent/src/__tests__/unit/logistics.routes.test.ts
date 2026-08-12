@@ -24,6 +24,7 @@ vi.mock('@/config', () => ({
     WEATHER_CACHE_TTL_SECONDS: 1800,
     CACHE_TTL_SECONDS: 3600,
     MEALS_PER_DAY: 2,
+    OWM_FORECAST_HORIZON_DAYS: 5,
     NODE_ENV: 'test',
   },
   getRabbitMQUrl: () => 'amqp://localhost',
@@ -86,6 +87,18 @@ const MOCK_PLACES: Place[] = [
 
 const MOCK_TIMING_RESULT = { valid: true, conflicts: [], warnings: [] };
 
+// Weather is now only fetched for FIXED dates inside the free OpenWeatherMap
+// 5-day horizon, so the suite's 2026-06-01 fixtures only stay "near-term" with
+// a pinned clock. `toFake: ['Date']` leaves setTimeout/setInterval real so
+// supertest's socket I/O is untouched.
+const PINNED_NOW = new Date('2026-06-01T09:00:00Z');
+const FIXED_DATE_INPUT_1D = { mode: 'fixed', startDate: '2026-06-01', endDate: '2026-06-01' };
+
+function pinClock(): void {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(PINNED_NOW);
+}
+
 const MOCK_AGENT_EVENT = {
   tripId: VALID_UUID,
   type: 'agent.propose',
@@ -141,8 +154,13 @@ function buildApp(): express.Express {
 }
 
 describe('POST /validate', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
+    pinClock();
     vi.mocked(mockRedis.get).mockResolvedValue(null);
     vi.mocked(mockRedis.set).mockResolvedValue(undefined);
     vi.mocked(mockWeather.getMultiDayForecast).mockResolvedValue([MOCK_FORECAST]);
@@ -270,6 +288,7 @@ describe('POST /validate', () => {
       round: 1,
       proposal: { itinerary: [VALID_ITINERARY_DAY] },
       region: 'Paris',
+      dateInput: FIXED_DATE_INPUT_1D,
     });
 
     expect(mockWeather.getMultiDayForecast).not.toHaveBeenCalled();
@@ -282,14 +301,27 @@ describe('POST /validate', () => {
       round: 1,
       proposal: { itinerary: [VALID_ITINERARY_DAY] },
       region: 'Paris',
+      dateInput: FIXED_DATE_INPUT_1D,
     });
 
     expect(mockWeather.getMultiDayForecast).toHaveBeenCalledOnce();
     expect(mockRedis.set).toHaveBeenCalledWith(
-      expect.stringContaining('Paris'),
+      'weather:Paris:2026-06-01:5',
       expect.any(Array),
       1800,
     );
+  });
+
+  it('no dateInput at all: no calendar to forecast against, so no fetch', async () => {
+    const app = buildApp();
+    await request(app).post('/validate').send({
+      tripId: VALID_UUID,
+      round: 1,
+      proposal: { itinerary: [VALID_ITINERARY_DAY] },
+      region: 'Paris',
+    });
+
+    expect(mockWeather.getMultiDayForecast).not.toHaveBeenCalled();
   });
 
   // ── Flexible dateInput ────────────────────────────────────────
@@ -307,43 +339,18 @@ describe('POST /validate', () => {
     });
 
     expect(mockAnalyzer.analyze).toHaveBeenCalledWith(
-      VALID_UUID, 1, expect.any(Array), expect.any(Array), expect.any(Object), dateInput, expect.any(Array), undefined,
+      VALID_UUID, 1, expect.any(Array), expect.any(Array), expect.any(Object), dateInput, expect.any(Array), undefined, [],
     );
   });
 
-  it('flexible mode: fetches days + 7 days of weather', async () => {
+  // Replaces the old "fetches days + 7" / "flex month-scoped cache key" pair:
+  // a flexible trip has no calendar the 5-day endpoint can answer for, so it
+  // now never reaches OpenWeatherMap at all — with or without a month.
+  it.each([
+    ['with a preferred month', { mode: 'flexible', days: 7, preferredMonth: '2026-07', window: 'moderate' }],
+    ['without a preferred month', { mode: 'flexible', days: 5, window: 'open' }],
+  ])('flexible mode %s: skips the weather fetch entirely', async (_label, dateInput) => {
     const app = buildApp();
-    const dateInput = { mode: 'flexible', days: 7, preferredMonth: '2026-07', window: 'moderate' };
-
-    await request(app).post('/validate').send({
-      tripId: VALID_UUID,
-      round: 1,
-      proposal: { itinerary: [VALID_ITINERARY_DAY] },
-      region: 'Paris',
-      dateInput,
-    });
-
-    expect(mockWeather.getMultiDayForecast).toHaveBeenCalledWith('Paris', 14); // 7 + 7
-  });
-
-  it('flexible mode: uses flex month-scoped cache key', async () => {
-    const app = buildApp();
-    const dateInput = { mode: 'flexible', days: 7, preferredMonth: '2026-07', window: 'moderate' };
-
-    await request(app).post('/validate').send({
-      tripId: VALID_UUID,
-      round: 1,
-      proposal: { itinerary: [VALID_ITINERARY_DAY] },
-      region: 'Paris',
-      dateInput,
-    });
-
-    expect(mockRedis.get).toHaveBeenCalledWith('weather:Paris:flex:2026-07');
-  });
-
-  it('flexible mode without preferredMonth: skips weather fetch entirely', async () => {
-    const app = buildApp();
-    const dateInput = { mode: 'flexible', days: 5, window: 'open' };
 
     await request(app).post('/validate').send({
       tripId: VALID_UUID,
@@ -354,7 +361,7 @@ describe('POST /validate', () => {
     });
 
     expect(mockWeather.getMultiDayForecast).not.toHaveBeenCalled();
-    expect(mockRedis.get).not.toHaveBeenCalledWith(expect.stringContaining('flex'));
+    expect(mockRedis.get).not.toHaveBeenCalledWith(expect.stringContaining('weather:'));
   });
 
   it('flexible mode without preferredMonth: passes empty forecasts to analyzer', async () => {
@@ -370,7 +377,7 @@ describe('POST /validate', () => {
     });
 
     expect(mockAnalyzer.analyze).toHaveBeenCalledWith(
-      VALID_UUID, 1, expect.any(Array), [], expect.any(Object), dateInput, expect.any(Array), undefined,
+      VALID_UUID, 1, expect.any(Array), [], expect.any(Object), dateInput, expect.any(Array), undefined, [],
     );
   });
 
@@ -397,20 +404,34 @@ describe('POST /validate', () => {
     });
   });
 
-  it('fixed mode: uses standard multi cache key and standard day count', async () => {
+  it('fixed mode: uses a city+today+horizon cache key and requests the full horizon', async () => {
     const app = buildApp();
-    const dateInput = { mode: 'fixed', startDate: '2026-07-01', endDate: '2026-07-08' };
 
     await request(app).post('/validate').send({
       tripId: VALID_UUID,
       round: 1,
       proposal: { itinerary: [VALID_ITINERARY_DAY] },
       region: 'Paris',
-      dateInput,
+      dateInput: FIXED_DATE_INPUT_1D,
     });
 
-    expect(mockRedis.get).toHaveBeenCalledWith('weather:Paris:multi');
-    expect(mockWeather.getMultiDayForecast).toHaveBeenCalledWith('Paris', 2); // max(1,1)+1
+    expect(mockRedis.get).toHaveBeenCalledWith('weather:Paris:2026-06-01:5');
+    expect(mockWeather.getMultiDayForecast).toHaveBeenCalledWith('Paris', 5);
+  });
+
+  it('fixed mode beyond the forecast horizon: no fetch, no cache read', async () => {
+    const app = buildApp();
+
+    await request(app).post('/validate').send({
+      tripId: VALID_UUID,
+      round: 1,
+      proposal: { itinerary: [VALID_ITINERARY_DAY] },
+      region: 'Paris',
+      dateInput: { mode: 'fixed', startDate: '2026-09-01', endDate: '2026-09-08' },
+    });
+
+    expect(mockWeather.getMultiDayForecast).not.toHaveBeenCalled();
+    expect(mockRedis.get).not.toHaveBeenCalledWith(expect.stringContaining('weather:'));
   });
 });
 
@@ -920,8 +941,13 @@ const V2_ITINERARY_DAY = {
 };
 
 describe('POST /weather-assessment', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
+    pinClock();
     vi.mocked(mockRedis.get).mockResolvedValue(null);
     vi.mocked(mockRedis.set).mockResolvedValue(undefined);
     vi.mocked(mockWeather.getMultiDayForecast).mockResolvedValue([MOCK_FORECAST]);
@@ -1010,7 +1036,24 @@ describe('POST /weather-assessment', () => {
     });
 
     expect(mockAnalyzer.analyze).toHaveBeenCalledWith(
-      VALID_UUID, 1, expect.any(Array), expect.any(Array), MOCK_TIMING_RESULT, null, warnings,
+      VALID_UUID, 1, expect.any(Array), expect.any(Array), MOCK_TIMING_RESULT, null, warnings, undefined, [],
+    );
+  });
+
+  it('passes the trip calendar to the analyzer so it can date its own assessments', async () => {
+    const app = buildApp();
+
+    await request(app).post('/weather-assessment').send({
+      tripId: VALID_UUID,
+      round: 1,
+      itinerary: [V2_ITINERARY_DAY, { ...V2_ITINERARY_DAY, day: 2 }],
+      region: 'Paris',
+      dateInput: { mode: 'fixed', startDate: '2026-06-01', endDate: '2026-06-02' },
+    });
+
+    expect(mockAnalyzer.analyze).toHaveBeenCalledWith(
+      VALID_UUID, 1, expect.any(Array), expect.any(Array), MOCK_TIMING_RESULT,
+      expect.any(Object), undefined, undefined, ['2026-06-01', '2026-06-02'],
     );
   });
 
@@ -1072,9 +1115,10 @@ describe('POST /weather-assessment', () => {
       round: 1,
       itinerary: [V2_ITINERARY_DAY],
       region: 'Paris',
+      dateInput: FIXED_DATE_INPUT_1D,
     });
 
-    expect(mockRedis.get).toHaveBeenCalledWith('weather:Paris:multi');
+    expect(mockRedis.get).toHaveBeenCalledWith('weather:Paris:2026-06-01:5');
     expect(mockWeather.getMultiDayForecast).not.toHaveBeenCalled();
   });
 
@@ -1093,7 +1137,7 @@ describe('POST /weather-assessment', () => {
     expect(res.body.error.message).toContain('Claude API unreachable');
   });
 
-  it('merges real forecast (hi/lo temp, condition, rain%) into a matching dayAssessments entry by date', async () => {
+  it('merges real forecast (hi/lo temp, condition, rain%) into a matching dayAssessments entry', async () => {
     vi.mocked(mockAnalyzer.analyze).mockResolvedValue({
       ...MOCK_AGENT_EVENT,
       content: {
@@ -1110,6 +1154,7 @@ describe('POST /weather-assessment', () => {
       round: 1,
       itinerary: [V2_ITINERARY_DAY],
       region: 'Paris',
+      dateInput: FIXED_DATE_INPUT_1D,
     });
 
     expect(res.status).toBe(200);
@@ -1122,51 +1167,10 @@ describe('POST /weather-assessment', () => {
     expect(day.weatherRisk).toBe('low');
   });
 
-  it('leaves a dayAssessments entry unmodified when its date has no matching forecast', async () => {
-    vi.mocked(mockAnalyzer.analyze).mockResolvedValue({
-      ...MOCK_AGENT_EVENT,
-      content: {
-        overallRisk: 'low',
-        dayAssessments: [{ day: 2, date: '2026-06-02', weatherRisk: 'low', affectedActivities: [] }],
-        timingIssues: [],
-        summary: 'Good weather.',
-      },
-    });
-
-    const app = buildApp();
-    const res = await request(app).post('/weather-assessment').send({
-      tripId: VALID_UUID,
-      round: 1,
-      itinerary: [V2_ITINERARY_DAY],
-      region: 'Paris',
-    });
-
-    expect(res.status).toBe(200);
-    const [day] = res.body.assessment.content.dayAssessments;
-    expect(day.tempHigh).toBeUndefined();
-    expect(day.weatherRisk).toBe('low');
-  });
-
-  it('returns the event unmodified (still 200) when the LLM response has no dayAssessments key', async () => {
-    vi.mocked(mockAnalyzer.analyze).mockResolvedValue({
-      ...MOCK_AGENT_EVENT,
-      content: { overallRisk: 'low', summary: 'Good weather.' },
-    });
-
-    const app = buildApp();
-    const res = await request(app).post('/weather-assessment').send({
-      tripId: VALID_UUID,
-      round: 1,
-      itinerary: [V2_ITINERARY_DAY],
-      region: 'Paris',
-    });
-
-    expect(res.status).toBe(200);
-    expect(res.body.assessment.content.dayAssessments).toBeUndefined();
-    expect(res.body.assessment.content.overallRisk).toBe('low');
-  });
-
-  it('flexible dates with no preferred month: no forecast fetched, no temps merged anywhere', async () => {
+  // The regression guard for the bug this card exists to fix: the model is not
+  // reliably able to date its own assessments, and matching on its `date` meant
+  // a trip starting today still rendered no weather at all.
+  it('lands the real forecast even when the LLM returned a null date, by matching on the day number', async () => {
     vi.mocked(mockAnalyzer.analyze).mockResolvedValue({
       ...MOCK_AGENT_EVENT,
       content: {
@@ -1183,13 +1187,223 @@ describe('POST /weather-assessment', () => {
       round: 1,
       itinerary: [V2_ITINERARY_DAY],
       region: 'Paris',
+      dateInput: FIXED_DATE_INPUT_1D,
+    });
+
+    expect(res.status).toBe(200);
+    const [day] = res.body.assessment.content.dayAssessments;
+    expect(day.date).toBe('2026-06-01'); // authoritative date stamped in code
+    expect(day.tempHigh).toBe(25);
+    expect(day.tempLow).toBe(15);
+  });
+
+  it('overrides a wrong LLM date with the trip calendar\'s own date', async () => {
+    vi.mocked(mockAnalyzer.analyze).mockResolvedValue({
+      ...MOCK_AGENT_EVENT,
+      content: {
+        overallRisk: 'low',
+        dayAssessments: [{ day: 1, date: '2029-01-01', weatherRisk: 'low', affectedActivities: [] }],
+        timingIssues: [],
+        summary: 'Good weather.',
+      },
+    });
+
+    const app = buildApp();
+    const res = await request(app).post('/weather-assessment').send({
+      tripId: VALID_UUID,
+      round: 1,
+      itinerary: [V2_ITINERARY_DAY],
+      region: 'Paris',
+      dateInput: FIXED_DATE_INPUT_1D,
+    });
+
+    const [day] = res.body.assessment.content.dayAssessments;
+    expect(day.date).toBe('2026-06-01');
+    expect(day.tempHigh).toBe(25);
+  });
+
+  it('stamps the authoritative date but no temperatures when a day has no forecast match', async () => {
+    vi.mocked(mockWeather.getMultiDayForecast).mockResolvedValue([MOCK_FORECAST]); // 2026-06-01 only
+    vi.mocked(mockAnalyzer.analyze).mockResolvedValue({
+      ...MOCK_AGENT_EVENT,
+      content: {
+        overallRisk: 'low',
+        dayAssessments: [
+          { day: 1, date: null, weatherRisk: 'low', affectedActivities: [] },
+          { day: 2, date: null, weatherRisk: 'low', affectedActivities: [] },
+        ],
+        timingIssues: [],
+        summary: 'Good weather.',
+      },
+    });
+
+    const app = buildApp();
+    const res = await request(app).post('/weather-assessment').send({
+      tripId: VALID_UUID,
+      round: 1,
+      itinerary: [V2_ITINERARY_DAY, { ...V2_ITINERARY_DAY, day: 2 }],
+      region: 'Paris',
+      dateInput: { mode: 'fixed', startDate: '2026-06-01', endDate: '2026-06-02' },
+    });
+
+    expect(res.status).toBe(200);
+    const [day1, day2] = res.body.assessment.content.dayAssessments;
+    expect(day1.tempHigh).toBe(25);
+    expect(day2.date).toBe('2026-06-02');
+    expect(day2.tempHigh).toBeUndefined();
+    expect(day2.weatherRisk).toBe('low');
+  });
+
+  it('synthesises dayAssessments from the real forecast when the LLM returned none', async () => {
+    vi.mocked(mockAnalyzer.analyze).mockResolvedValue({
+      ...MOCK_AGENT_EVENT,
+      content: { overallRisk: 'low', summary: 'Good weather.' },
+    });
+
+    const app = buildApp();
+    const res = await request(app).post('/weather-assessment').send({
+      tripId: VALID_UUID,
+      round: 1,
+      itinerary: [V2_ITINERARY_DAY],
+      region: 'Paris',
+      dateInput: FIXED_DATE_INPUT_1D,
+    });
+
+    expect(res.status).toBe(200);
+    const [day] = res.body.assessment.content.dayAssessments;
+    expect(day).toMatchObject({
+      day: 1,
+      date: '2026-06-01',
+      weatherRisk: 'low',
+      tempHigh: 25,
+      tempLow: 15,
+      condition: 'Clear',
+      precipitationProbability: 20,
+    });
+  });
+
+  it('synthesises dayAssessments from the non-JSON { raw } LLM fallback, keeping raw intact', async () => {
+    vi.mocked(mockAnalyzer.analyze).mockResolvedValue({
+      ...MOCK_AGENT_EVENT,
+      content: { raw: 'Sorry, here is some prose instead of JSON.' },
+    });
+
+    const app = buildApp();
+    const res = await request(app).post('/weather-assessment').send({
+      tripId: VALID_UUID,
+      round: 1,
+      itinerary: [V2_ITINERARY_DAY],
+      region: 'Paris',
+      dateInput: FIXED_DATE_INPUT_1D,
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.assessment.content.raw).toContain('prose instead of JSON');
+    expect(res.body.assessment.content.dayAssessments).toHaveLength(1);
+    expect(res.body.assessment.content.overallRisk).toBe('low');
+  });
+
+  it('returns the event unmodified when there are no dayAssessments AND no forecast to synthesise from', async () => {
+    vi.mocked(mockAnalyzer.analyze).mockResolvedValue({
+      ...MOCK_AGENT_EVENT,
+      content: { overallRisk: 'low', summary: 'Good weather.' },
+    });
+
+    const app = buildApp();
+    const res = await request(app).post('/weather-assessment').send({
+      tripId: VALID_UUID,
+      round: 1,
+      itinerary: [V2_ITINERARY_DAY],
+      region: 'Paris',
       dateInput: { mode: 'flexible', days: 5, window: 'open' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.assessment.content.dayAssessments).toBeUndefined();
+    expect(res.body.assessment.content.overallRisk).toBe('low');
+  });
+
+  it('fixed dates beyond the forecast horizon: no OWM call and no temperatures anywhere', async () => {
+    vi.mocked(mockAnalyzer.analyze).mockResolvedValue({
+      ...MOCK_AGENT_EVENT,
+      content: {
+        overallRisk: 'low',
+        dayAssessments: [{ day: 1, date: null, weatherRisk: 'low', affectedActivities: [] }],
+        timingIssues: [],
+        summary: 'Good weather.',
+      },
+    });
+
+    const app = buildApp();
+    const res = await request(app).post('/weather-assessment').send({
+      tripId: VALID_UUID,
+      round: 1,
+      itinerary: [V2_ITINERARY_DAY],
+      region: 'Paris',
+      dateInput: { mode: 'fixed', startDate: '2026-12-01', endDate: '2026-12-01' },
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockWeather.getMultiDayForecast).not.toHaveBeenCalled();
+    const [day] = res.body.assessment.content.dayAssessments;
+    expect(day.date).toBe('2026-12-01');
+    expect(day.tempHigh).toBeUndefined();
+  });
+
+  it.each([
+    ['with a preferred month', { mode: 'flexible', days: 7, preferredMonth: '2026-07', window: 'moderate' }],
+    ['without a preferred month', { mode: 'flexible', days: 5, window: 'open' }],
+  ])('flexible dates %s: no forecast fetched, no temps merged anywhere', async (_label, dateInput) => {
+    vi.mocked(mockAnalyzer.analyze).mockResolvedValue({
+      ...MOCK_AGENT_EVENT,
+      content: {
+        overallRisk: 'low',
+        dayAssessments: [{ day: 1, date: null, weatherRisk: 'low', affectedActivities: [] }],
+        timingIssues: [],
+        summary: 'Good weather.',
+      },
+    });
+
+    const app = buildApp();
+    const res = await request(app).post('/weather-assessment').send({
+      tripId: VALID_UUID,
+      round: 1,
+      itinerary: [V2_ITINERARY_DAY],
+      region: 'Paris',
+      dateInput,
     });
 
     expect(res.status).toBe(200);
     expect(mockWeather.getMultiDayForecast).not.toHaveBeenCalled();
     const [day] = res.body.assessment.content.dayAssessments;
     expect(day.tempHigh).toBeUndefined();
+  });
+
+  it('still returns the assessment when the forecast fetch throws', async () => {
+    vi.mocked(mockWeather.getMultiDayForecast).mockRejectedValue(new Error('OWM unreachable'));
+    vi.mocked(mockAnalyzer.analyze).mockResolvedValue({
+      ...MOCK_AGENT_EVENT,
+      content: {
+        overallRisk: 'low',
+        dayAssessments: [{ day: 1, date: null, weatherRisk: 'low', affectedActivities: [] }],
+        timingIssues: [],
+        summary: 'Good weather.',
+      },
+    });
+
+    const app = buildApp();
+    const res = await request(app).post('/weather-assessment').send({
+      tripId: VALID_UUID,
+      round: 1,
+      itinerary: [V2_ITINERARY_DAY],
+      region: 'Paris',
+      dateInput: FIXED_DATE_INPUT_1D,
+    });
+
+    expect(res.status).toBe(200);
+    const [day] = res.body.assessment.content.dayAssessments;
+    expect(day.tempHigh).toBeUndefined();
+    expect(day.weatherRisk).toBe('low');
   });
 });
 

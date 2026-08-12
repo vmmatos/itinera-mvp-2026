@@ -185,7 +185,6 @@
         "day": "dia",
         "forecast": "Previsão",
         "rainSuffix": "% chuva",
-        "noLiveForecast": "sem previsão em tempo real",
         "heatAdvisory": "aviso de calor",
         "lowRisk": "risco baixo",
         "heatAdvisoryBody": "pico de {temp}°C — planeie atividades interiores/à sombra e evite o sol do meio-dia",
@@ -259,8 +258,7 @@
         "stop": "paragem",
         "stopsPlural": "paragens",
         "weather": "clima",
-        "liveForecast": "previsão em tempo real · datas fixas",
-        "noLiveForecast": "sem previsão em tempo real — datas flexíveis"
+        "liveForecast": "previsão em tempo real · datas fixas"
       },
       "transitBlock": {
         "otherOption": "outra opção",

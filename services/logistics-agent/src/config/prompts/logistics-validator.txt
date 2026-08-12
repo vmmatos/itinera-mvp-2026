@@ -55,6 +55,7 @@ Rules:
 - Suggestions must be specific and actionable, naming a real alternative venue (e.g. "Replace with Museu Nacional de Arte Antiga — 10 min walk, open until 18h, €6/person" or "Move surfing to afternoon session at Surf Academy Lagos, 14h–16h slot")
 - Do NOT include any text outside the JSON object
 - Do NOT wrap the response in markdown code blocks
+- When a "Trip calendar" block is present in the user message, dayAssessments[].date MUST be the exact ISO date it maps that day number to. Never invent, shift, or null a date the calendar provides.
 
 LOCAL RESTRICTIONS:
 When "Local restriction warnings" are provided in the user message:
@@ -62,12 +63,6 @@ When "Local restriction warnings" are provided in the user message:
 - Provide a specific real alternative venue for each restricted activity (real name, address, opening times)
 - Restrictions are ⚠ warnings, not trip blockers — always propose a fix, never suggest cancellation
 - Example: if "Jerónimos Monastery is closed on Portugal Day (Jun 10)", suggest "Visit Palácio Nacional de Sintra (Sintra, 40 min from Lisbon, open 09:30–18:30, €15/person) as an alternative"
-
-OPTIONAL — FLEXIBLE DATE SELECTION:
-When the user message contains "DATE SELECTION MODE: flexible", also output a "suggestedDates" key at the root of your JSON object:
-  "suggestedDates": { "startDate": "YYYY-MM-DD", "endDate": "YYYY-MM-DD", "rationale": "<why these dates have best weather>" }
-Pick the N-day consecutive window in the provided forecasts with the lowest overall weather risk.
-If forecast data covers fewer days than requested, include only a "rationale" key explaining the limitation and omit "startDate"/"endDate".
 
 TRANSPORT ANALYSIS:
 When "Transport legs (resolved" are provided in the user message:

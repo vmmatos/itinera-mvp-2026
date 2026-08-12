@@ -4,6 +4,7 @@ import type { Trip, TransportOption, TransportActivityData, BudgetBreakdown, Loc
 import type { TimelineDay, TimelineActivity } from '~/components/trip/Timeline.vue'
 import type { RestrictionWarning } from '~/utils/itinerary'
 import { formatTransportLabel } from '~/utils/itinerary'
+import { parseWeatherAssessment, resolveWeatherGate } from '~/utils/itineraryViewModel'
 
 definePageMeta({
   layout: 'default',
@@ -126,8 +127,8 @@ function extractItinerary(proposals: RawProposal[]): TimelineDay[] {
 const timelineDays = computed((): TimelineDay[] => extractItinerary(rawProposals.value))
 
 // The merged itinerary (agent 'orchestrator') is where WorkflowEngine.executeMerge
-// attaches post-merge, non-LLM-proposal data — restrictionWarnings, weatherAssessment
-// (and its suggestedDates for flexible trips). Real activities+dates only exist once
+// attaches post-merge, non-LLM-proposal data — restrictionWarnings and
+// weatherAssessment. Real activities+dates only exist once
 // this proposal is saved, so none of that data lives on the earlier 'logistics'
 // proposal (that one is just the /plan route-graph).
 const latestMergedContent = computed((): Record<string, unknown> | null => {
@@ -140,17 +141,16 @@ const latestMergedContent = computed((): Record<string, unknown> | null => {
   return (withItinerary[0]?.content as Record<string, unknown> | null) ?? null
 })
 
-const suggestedDates = computed(() => {
-  if (trip.value?.dateInput?.mode !== 'flexible') return null
-  const weatherAssessment = latestMergedContent.value?.['weatherAssessment'] as Record<string, unknown> | undefined
-  const sd = weatherAssessment?.['suggestedDates'] as Record<string, unknown> | undefined
-  if (!sd?.['startDate'] || !sd?.['endDate']) return null
-  return {
-    startDate: String(sd['startDate']),
-    endDate:   String(sd['endDate']),
-    rationale: sd['rationale'] ? String(sd['rationale']) : null,
-  }
-})
+// Same gate as the wizard's step 4 (resolveWeatherGate): weather renders only
+// for fixed dates that actually came back with a live forecast. This page used
+// to render no day weather at all.
+const parsedWeather = computed(() =>
+  parseWeatherAssessment(
+    (latestMergedContent.value?.['weatherAssessment'] as Record<string, unknown> | null) ?? null,
+  ),
+)
+const weatherGate     = computed(() => resolveWeatherGate(trip.value?.dateInput ?? null, parsedWeather.value))
+const timelineWeather = computed(() => (weatherGate.value.show ? parsedWeather.value : null))
 
 const currencySymbol = computed(() =>
   trip.value?.budgetCurrency === 'USD' ? '$' : '€',
@@ -272,14 +272,6 @@ onMounted(async () => {
           <span>{{ trip.budgetCurrency }} {{ trip.budgetTotal.toLocaleString() }} budget</span>
         </div>
 
-        <!-- Flexible dates: suggested window + rationale -->
-        <div
-          v-if="suggestedDates"
-          style="margin-top:var(--s-3);padding:var(--s-3) var(--s-4);background:var(--bg-2);border:var(--hair);border-radius:var(--r-2);font-size:var(--t-13);color:var(--fg-2);line-height:1.5"
-        >
-          <span style="font-family:var(--mono);font-size:var(--t-11);text-transform:uppercase;letter-spacing:.06em;color:var(--green);margin-right:var(--s-2)">suggested window</span>
-          {{ suggestedDates.startDate }} – {{ suggestedDates.endDate }}<span v-if="suggestedDates.rationale" style="color:var(--fg-3)"> · {{ suggestedDates.rationale }}</span>
-        </div>
       </div>
 
       <!-- Itinerary -->
@@ -288,6 +280,7 @@ onMounted(async () => {
           <div class="sec-eyebrow mb-4">Itinerary</div>
           <TripTimeline
             :days="timelineDays"
+            :weather="timelineWeather"
             :restriction-warnings="restrictionWarnings"
             :currency-symbol="currencySymbol"
           />

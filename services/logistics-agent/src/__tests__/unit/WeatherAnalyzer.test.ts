@@ -171,43 +171,57 @@ describe('WeatherAnalyzer', () => {
     expect(event.content).toEqual({ raw: 'Weather looks fine overall.' });
   });
 
-  // ── Flexible date selection ───────────────────────────────────
+  // ── Date handling ─────────────────────────────────────────────
+  // Flexible trips never get a forecast, so the model is no longer asked to
+  // pick a "best window" it has no data to pick from — with or without a month.
 
-  it('flexible dateInput: appends DATE SELECTION MODE instruction to Claude call', async () => {
-    const dateInput = { mode: 'flexible' as const, days: 7, preferredMonth: '2026-07', window: 'moderate' as const };
-
+  it.each([
+    ['flexible with a preferred month', { mode: 'flexible' as const, days: 7, preferredMonth: '2026-07', window: 'moderate' as const }],
+    ['flexible without a preferred month', { mode: 'flexible' as const, days: 5, window: 'open' as const }],
+    ['fixed', { mode: 'fixed' as const, startDate: '2026-07-01', endDate: '2026-07-08' }],
+  ])('%s dateInput: never asks the model for suggestedDates', async (_label, dateInput) => {
     await analyzer.analyze(VALID_TRIP_ID, 1, MOCK_ITINERARY, MOCK_FORECASTS, MOCK_TIMING, dateInput);
 
-    // Check the specific dynamic user-message injection (includes the dash + month)
     const callStr = JSON.stringify(vi.mocked(anthropic.complete).mock.calls[0]);
-    expect(callStr).toContain('DATE SELECTION MODE: flexible — 7 days in 2026-07');
-    expect(callStr).toContain('suggestedDates');
+    expect(callStr).not.toContain('DATE SELECTION MODE');
+    expect(callStr).not.toContain('suggestedDates');
   });
 
-  it('fixed dateInput: does NOT inject flexible date instruction', async () => {
-    const dateInput = { mode: 'fixed' as const, startDate: '2026-07-01', endDate: '2026-07-08' };
-
-    await analyzer.analyze(VALID_TRIP_ID, 1, MOCK_ITINERARY, MOCK_FORECASTS, MOCK_TIMING, dateInput);
-
-    // The dynamic instruction contains " — N days in YYYY-MM" which only appears for flexible mode
-    const callStr = JSON.stringify(vi.mocked(anthropic.complete).mock.calls[0]);
-    expect(callStr).not.toContain('DATE SELECTION MODE: flexible —');
-  });
-
-  it('no dateInput: does NOT inject flexible date instruction', async () => {
+  it('no dateInput: never asks the model for suggestedDates', async () => {
     await analyzer.analyze(VALID_TRIP_ID, 1, MOCK_ITINERARY, MOCK_FORECASTS, MOCK_TIMING);
 
     const callStr = JSON.stringify(vi.mocked(anthropic.complete).mock.calls[0]);
-    expect(callStr).not.toContain('DATE SELECTION MODE: flexible —');
+    expect(callStr).not.toContain('DATE SELECTION MODE');
+    expect(callStr).not.toContain('suggestedDates');
   });
 
-  it('flexible dateInput without preferredMonth: does NOT inject DATE SELECTION MODE instruction', async () => {
-    const dateInput = { mode: 'flexible' as const, days: 5, window: 'open' as const };
+  // Without this block the model has no calendar to date its assessments
+  // against, returns null/wrong dates, and the real forecast — matched by date
+  // downstream — never reaches the UI.
+  // The system prompt mentions "Trip calendar" in its rules, so these assert
+  // against the dynamic user message only.
+  function lastUserMessage(): string {
+    const [, messages] = vi.mocked(anthropic.complete).mock.calls[0] as unknown as [string, Array<{ content: string }>];
+    return messages[0]?.content ?? '';
+  }
 
-    await analyzer.analyze(VALID_TRIP_ID, 1, MOCK_ITINERARY, MOCK_FORECASTS, MOCK_TIMING, dateInput);
+  it('injects the trip calendar so the model can date its own dayAssessments', async () => {
+    await analyzer.analyze(
+      VALID_TRIP_ID, 1, MOCK_ITINERARY, MOCK_FORECASTS, MOCK_TIMING,
+      null, undefined, undefined, ['2026-06-01', '2026-06-02'],
+    );
 
-    // Only the dynamic user-message injection uses "DATE SELECTION MODE: flexible —"; system prompt does not
-    const callStr = JSON.stringify(vi.mocked(anthropic.complete).mock.calls[0]);
-    expect(callStr).not.toContain('DATE SELECTION MODE: flexible —');
+    expect(lastUserMessage()).toContain('Trip calendar');
+    expect(lastUserMessage()).toContain('day 1 → 2026-06-01');
+    expect(lastUserMessage()).toContain('day 2 → 2026-06-02');
+  });
+
+  it('omits the trip calendar block when there are no trip dates', async () => {
+    await analyzer.analyze(
+      VALID_TRIP_ID, 1, MOCK_ITINERARY, MOCK_FORECASTS, MOCK_TIMING,
+      null, undefined, undefined, [],
+    );
+
+    expect(lastUserMessage()).not.toContain('Trip calendar');
   });
 });

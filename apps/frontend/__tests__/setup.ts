@@ -82,6 +82,8 @@ globalThis.useAuthStore = vi.fn(() => authStoreMock)
 globalThis.useTripPlannerStore = vi.fn(() => tripStoreMock)
 // @ts-expect-error global shim — page components call this; a no-op is enough under vitest
 globalThis.definePageMeta = vi.fn()
+// @ts-expect-error global shim — page components read their route params
+globalThis.useRoute = vi.fn(() => ({ params: { id: '11111111-1111-1111-1111-111111111111' } }))
 
 // ── useAgentStream shim (returns empty/disconnected by default) ─
 export const agentStreamMock = { events: { value: [] }, connected: { value: false } }

@@ -702,6 +702,7 @@ describe('TripInputForm — wizardRootStyle (step 3 layout)', () => {
 
 describe('TripInputForm — Step 4 weatherAssessment forwarding', () => {
   const VALID_TRIP_UUID = '11111111-1111-1111-1111-111111111111'
+  const FIXED_DATE_INPUT = { mode: 'fixed', startDate: '2026-08-10', endDate: '2026-08-12' }
 
   const mountAtStep4 = () =>
     mount(TripInputForm, {
@@ -735,7 +736,7 @@ describe('TripInputForm — Step 4 weatherAssessment forwarding', () => {
 
   it('forwards the orchestrator proposal\'s weatherAssessment to TripItineraryStep', async () => {
     mockApiGet
-      .mockResolvedValueOnce({ data: { data: { status: 'confirmed' } } })
+      .mockResolvedValueOnce({ data: { data: { status: 'confirmed', dateInput: FIXED_DATE_INPUT } } })
       .mockResolvedValueOnce({
         data: {
           data: [
@@ -765,6 +766,38 @@ describe('TripInputForm — Step 4 weatherAssessment forwarding', () => {
     const weatherAssessment = step.props('weatherAssessment') as Record<string, unknown> | null
     expect(weatherAssessment?.overallRisk).toBe('high')
     expect(weatherAssessment?.summary).toContain('Storms expected on day 1')
+    expect(step.props('dateInput')).toEqual(FIXED_DATE_INPUT)
+  })
+
+  // The exact bug the persisted gate fixes: reopened from the dashboard, none
+  // of the wizard's date refs are ever filled in, so dateMode still reads
+  // 'fixed' and weather would show on a flexible trip.
+  it('forwards the PERSISTED flexible dateInput when the trip is reopened from the dashboard', async () => {
+    const flexible = { mode: 'flexible', days: 7, preferredMonth: '2026-09', window: 'moderate' }
+    mockApiGet
+      .mockResolvedValueOnce({ data: { data: { status: 'confirmed', dateInput: flexible } } })
+      .mockResolvedValueOnce({ data: { data: [] } })
+
+    const wrapper = mountAtStep4()
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    const step = wrapper.findComponent({ name: 'TripItineraryStep' })
+    expect(step.props('dateInput')).toEqual(flexible)
+  })
+
+  it('falls back to the wizard\'s own dateInput when the trip payload carries none (legacy trips)', async () => {
+    mockApiGet
+      .mockResolvedValueOnce({ data: { data: { status: 'confirmed' } } })
+      .mockResolvedValueOnce({ data: { data: [] } })
+
+    const wrapper = mountAtStep4()
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.$nextTick()
+
+    const step = wrapper.findComponent({ name: 'TripItineraryStep' })
+    expect((step.props('dateInput') as { mode: string }).mode).toBe('fixed')
   })
 
   it('forwards a null weatherAssessment when no orchestrator proposal carries one', async () => {
