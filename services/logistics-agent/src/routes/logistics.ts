@@ -999,11 +999,13 @@ export function createLogisticsRouter(
         });
       }
 
-      // Origin-owned travel date: this stay gains that day — free slots before
-      // departure (its tourist agent fills them), outbound-transit afterwards.
-      if (outboundPlan?.owner === 'origin') {
+      // Checkout day: origin-owned travel date (existing outbound-transit
+      // blocking) OR the last city in the trip — nothing to block there,
+      // just a normal free day before heading home. Without this, the
+      // last/only city's final calendar day never gets a day-card at all.
+      if (!outboundPlan || outboundPlan.owner === 'origin') {
         pushDay(dateAt(dest.nights), (idx) =>
-          idx >= outboundPlan.outboundFromIdx ? 'outbound-transit' : undefined,
+          outboundPlan && idx >= outboundPlan.outboundFromIdx ? 'outbound-transit' : undefined,
         );
       }
 

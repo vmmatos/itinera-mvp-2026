@@ -175,15 +175,20 @@ function buildDraftDaysFromWindows(cityStays: PlanCityStay[]): DraftDay[] {
 function buildDraftDaysFromNights(cityStays: PlanCityStay[]): DraftDay[] {
   const baseTime = Math.min(...cityStays.map((cs) => new Date(cs.arrivalDate).getTime()))
   const days: DraftDay[] = []
-  for (const stay of cityStays) {
+  cityStays.forEach((stay, i) => {
     const start = new Date(stay.arrivalDate).getTime()
     const end = new Date(stay.departureDate).getTime()
-    for (let t = start; t < end; t += 86400000) {
+    // An intermediate stay's departureDate is the next stay's arrivalDate —
+    // that shared boundary day is only pushed once, by the next stay's loop.
+    // The last stay has no next stay to claim its departureDate, so it must
+    // include it here or that final calendar day is dropped entirely.
+    const isLastStay = i === cityStays.length - 1
+    for (let t = start; isLastStay ? t <= end : t < end; t += 86400000) {
       const dayNumber = Math.round((t - baseTime) / 86400000) + 1
       const date = new Date(t).toISOString().slice(0, 10)
       days.push({ day: dayNumber, date, city: stay.city, slots: emptySlots() })
     }
-  }
+  })
   return days
 }
 

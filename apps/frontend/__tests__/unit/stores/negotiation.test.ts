@@ -51,7 +51,8 @@ describe('useNegotiationStore', () => {
     })
 
     expect(store.state.stages[0]!.status).toBe('running')
-    expect(store.state.slots).toHaveLength(1)
+    // 1 night → 2 calendar days (10th arrival, 11th checkout).
+    expect(store.state.slots).toHaveLength(2)
     expect(store.filledCount).toBe(1)
     expect(store.runningTotal).toBe(14)
     expect(store.state.events.some((e) => e.chip === 'accepted')).toBe(true)
