@@ -788,10 +788,49 @@ describe('POST /plan — transit slot blocking', () => {
 
     expect(res.status).toBe(200);
     const comporta = res.body.routeGraph.cityStays[0];
-    const windows: { slot: string; isTransitDay: boolean }[] = comporta.timeWindows;
+    const windows: { date: string; slot: string; isTransitDay: boolean }[] = comporta.timeWindows;
 
+    // 2 nights → 3 calendar days (10th, 11th, 12th) × 3 slots = 9 windows.
+    // The checkout day (12th) must not be dropped just because there's no
+    // next leg to own it.
+    expect(windows).toHaveLength(9);
+    const checkoutDay = windows.filter(w => w.date === '2026-07-12');
+    expect(checkoutDay).toHaveLength(3);
+    expect(checkoutDay.every(w => !w.isTransitDay)).toBe(true);
     expect(windows.every(w => !w.isTransitDay)).toBe(true);
     expect(mockTransportService.resolveTransportOptions).not.toHaveBeenCalled();
+  });
+
+  it('last city in a multi-city trip still gets its own checkout day', async () => {
+    // Mertola is the last city — legPlans has no entry for it (no leg leaves
+    // it), so outboundPlan is undefined. Its final calendar day must still
+    // appear, in addition to its inbound-transit day.
+    vi.mocked(mockTransportService.resolveTransportOptions).mockResolvedValue([{
+      mode: 'bus',
+      durationMinutes: 120,
+      departureTime: '07:00',
+      arrivalTime: '09:00',
+      warnings: [],
+    }]);
+
+    const app = buildApp();
+    const res = await request(app).post('/plan').send({
+      ...PLAN_BASE,
+      dateInput: { mode: 'fixed', startDate: '2026-07-10', endDate: '2026-07-13' },
+      destinations: [
+        { city: 'Comporta', country: 'Portugal', nights: 1 },
+        { city: 'Mertola', country: 'Portugal', nights: 2 },
+      ],
+    });
+
+    expect(res.status).toBe(200);
+    const mertola = res.body.routeGraph.cityStays[1];
+    const windows: { date: string; slot: string; isTransitDay: boolean }[] = mertola.timeWindows;
+
+    // Mertola: arrivalDate 2026-07-11, 2 nights → checkout 2026-07-13.
+    const checkoutDay = windows.filter(w => w.date === '2026-07-13');
+    expect(checkoutDay).toHaveLength(3);
+    expect(checkoutDay.every(w => !w.isTransitDay)).toBe(true);
   });
 });
 

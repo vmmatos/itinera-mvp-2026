@@ -119,10 +119,13 @@ describe('negotiationReducer.reconcile — happy path', () => {
   it('builds the draft slot grid from agent.plan cityStays', () => {
     const state = createInitialNegotiationState()
     reconcile(state, planEvent())
-    expect(state.slots).toHaveLength(3) // 2 nights Barcelona + 1 night Mértola
+    // 2 nights Barcelona (10th, 11th — 12th belongs to Mértola's arrival) +
+    // 1 night Mértola, plus its own checkout day (13th, last stay) = 4.
+    expect(state.slots).toHaveLength(4)
     expect(state.slots[0]!.city).toBe('Barcelona')
     expect(state.slots[0]!.day).toBe(1)
     expect(state.slots[2]!.city).toBe('Mértola')
+    expect(state.slots[3]!.date).toBe('2026-08-13')
   })
 
   it('builds reserved transit slots from agent.plan timeWindows, including the outbound-transit day the nights-loop would exclude', () => {
@@ -165,7 +168,7 @@ describe('negotiationReducer.reconcile — happy path', () => {
   it('falls back to plain empty slots when agent.plan has no timeWindows (legacy payload)', () => {
     const state = createInitialNegotiationState()
     reconcile(state, planEvent())
-    expect(state.slots).toHaveLength(3)
+    expect(state.slots).toHaveLength(4)
     expect(state.slots.every((d) => Object.values(d.slots).every((s) => s.status === 'empty'))).toBe(true)
   })
 
@@ -181,7 +184,7 @@ describe('negotiationReducer.reconcile — happy path', () => {
     reconcile(state, singleCityPlanEvent())
     expect(state.agents.find((a) => a.id === 'logistics')!.lastAction).toBe('no inter-city transfers needed')
     expect(state.events[0]!.body).toBe('Single destination — no inter-city transport to plan')
-    expect(state.slots).toHaveLength(5) // 5 nights in the single city
+    expect(state.slots).toHaveLength(6) // 5 nights → 6 calendar days, incl. checkout day
     expect(state.slots.every((d) => d.city === 'Barcelona')).toBe(true)
   })
 
