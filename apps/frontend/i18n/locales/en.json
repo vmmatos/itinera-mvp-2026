@@ -295,7 +295,7 @@
         "by": "by",
         "accepted": "accepted",
         "fallbackReason": "No detailed reasoning available for this decision.",
-        "estTotalPp": "running total / pp ({filled}/{total} slots)",
+        "estTotalPp": "running total / pp",
         "budget": "budget €{amount}"
       },
       "stepV2": {
