@@ -75,6 +75,14 @@ describe('DraftItinerary', () => {
     const total = wrapper.find('[data-testid="running-total"]')
     expect(total.text()).toContain('€69')
     expect(total.text()).toContain('budget €1,400')
+    expect(wrapper.text()).toContain('running total / pp (3/9 slots)')
+  })
+
+  it('keeps the footer label reading as a running total, not a final one, even when every slot is filled', () => {
+    const wrapper = mount(DraftItinerary, {
+      props: { days: [], budgetTotal: 1400, runningTotal: 742, filledCount: 9, totalSlots: 9 },
+    })
+    expect(wrapper.text()).toContain('running total / pp (9/9 slots)')
   })
 
   it('shows the real decision status (e.g. "merged") instead of always saying "accepted"', () => {

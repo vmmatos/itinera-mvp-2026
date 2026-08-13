@@ -295,7 +295,7 @@
         "by": "por",
         "accepted": "aceite",
         "fallbackReason": "Sem justificação detalhada disponível para esta decisão.",
-        "estTotalPp": "total est. / pessoa",
+        "estTotalPp": "total corrente / pessoa",
         "budget": "orçamento €{amount}"
       },
       "stepV2": {

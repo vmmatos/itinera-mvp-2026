@@ -96,7 +96,7 @@ function toggleReason(day: DraftDay, key: string): void {
       </div>
     </div>
     <div style="border-top:var(--hair);padding:12px 16px;display:flex;justify-content:space-between;align-items:baseline">
-      <span class="mono helper">{{ t('trip.negotiate.draftItinerary.estTotalPp') }}</span>
+      <span class="mono helper">{{ t('trip.negotiate.draftItinerary.estTotalPp', { filled: filledCount, total: totalSlots }) }}</span>
       <span class="mono" style="font-size:20px;font-weight:300" data-testid="running-total">
         {{ totalLabel }}
         <small style="font-size:11px;color:var(--fg-3);margin-left:6px">{{ t('trip.negotiate.draftItinerary.budget', { amount: budgetTotal.toLocaleString() }) }}</small>
