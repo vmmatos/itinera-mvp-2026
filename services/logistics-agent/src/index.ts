@@ -22,6 +22,7 @@ import { TimingValidator } from '@/validators/TimingValidator';
 import { RestrictionsValidator } from '@/validators/RestrictionsValidator';
 import { WeatherAnalyzer } from '@/agents/WeatherAnalyzer';
 import { HolidayService } from '@/services/HolidayService';
+import { SpecialEventsService } from '@/services/SpecialEventsService';
 import { createHealthRouter } from '@/routes/health';
 import { createLogisticsRouter } from '@/routes/logistics';
 
@@ -51,6 +52,7 @@ async function start(): Promise<void> {
   const timing = new TimingValidator();
   const analyzer = new WeatherAnalyzer(anthropic, publisher, redis, storage);
   const holidays = new HolidayService(redis);
+  const events = new SpecialEventsService(redis);
   const restrictions = new RestrictionsValidator();
   const hotelPrices = new HotelPriceService();
   const attractionPrices = new AttractionPriceRepository();
@@ -60,7 +62,7 @@ async function start(): Promise<void> {
 
   app.use(createHealthRouter(publisher, redis));
   app.use(authMiddleware);
-  app.use(createLogisticsRouter(weather, attractions, timing, analyzer, redis, holidays, restrictions, transport, pricingEnricher, activityTransportResolver));
+  app.use(createLogisticsRouter(weather, attractions, timing, analyzer, redis, holidays, restrictions, transport, pricingEnricher, activityTransportResolver, events));
   app.use(errorHandler);
 
   const server = app.listen(config.PORT, () => {

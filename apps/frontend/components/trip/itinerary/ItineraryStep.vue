@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import type { BudgetBreakdown, DateInput, ItineraryDay, TravellerScore } from '~/types/index'
-import type { RestrictionWarning } from '~/utils/itinerary'
+import type { RestrictionWarning, SpecialEvent } from '~/utils/itinerary'
 import {
   groupIntoSegments,
   buildDayViewModels,
@@ -39,6 +39,7 @@ const props = defineProps<{
   weatherAssessment: Record<string, unknown> | null
   dateInput: DateInput | null
   restrictionWarnings?: RestrictionWarning[]
+  specialEvents?: SpecialEvent[]
   validatorSummary: ValidatorSummary | null
   travellerScores: TravellerScore[]
   agentNames: string[]
@@ -154,6 +155,7 @@ watch(() => dayVMs.value.length, (len) => {
         :travellers="props.travellers"
         :currency-symbol="currencySymbol"
         :restriction-warnings="props.restrictionWarnings"
+        :special-events="props.specialEvents"
         @prev="select(selectedDay - 1)"
         @next="select(selectedDay + 1)"
       />

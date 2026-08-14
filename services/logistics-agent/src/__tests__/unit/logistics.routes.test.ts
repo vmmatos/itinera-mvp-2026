@@ -43,6 +43,7 @@ import type { Place } from '@/services/PlacesService';
 import type { TransportService } from '@/services/TransportService';
 import type { PricingEnricher } from '@/services/PricingEnricher';
 import type { ActivityTransportResolver } from '@/services/ActivityTransportResolver';
+import type { SpecialEventsService } from '@/services/SpecialEventsService';
 
 const VALID_UUID = '550e8400-e29b-41d4-a716-446655440000';
 
@@ -138,6 +139,7 @@ const mockPricingEnricher = {
 const mockActivityTransportResolver = {
   resolveForItinerary: vi.fn().mockResolvedValue({ itinerary: [], satelliteLegs: [] }),
 } as unknown as ActivityTransportResolver;
+const mockEventsService = { getEvents: vi.fn().mockResolvedValue([]) } as unknown as SpecialEventsService;
 
 function buildApp(): express.Express {
   const app = express();
@@ -145,7 +147,7 @@ function buildApp(): express.Express {
   app.use(createLogisticsRouter(
     mockWeather, mockAttractions, mockTiming, mockAnalyzer, mockRedis,
     mockHolidayService, mockRestrictionsValidator, mockTransportService, mockPricingEnricher,
-    mockActivityTransportResolver,
+    mockActivityTransportResolver, mockEventsService,
   ));
   app.use((err: Error & { statusCode?: number }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     res.status(err.statusCode ?? 400).json({ success: false, error: { message: err.message } });
@@ -848,7 +850,7 @@ describe('POST /restrictions', () => {
     app.use(createLogisticsRouter(
       mockWeather, mockAttractions, mockTiming, mockAnalyzer, mockRedis,
       realHolidayService, realRestrictionsValidator, mockTransportService, mockPricingEnricher,
-      mockActivityTransportResolver,
+      mockActivityTransportResolver, mockEventsService,
     ));
     app.use((err: Error & { statusCode?: number }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
       res.status(err.statusCode ?? 400).json({ success: false, error: { message: err.message } });
@@ -1486,5 +1488,64 @@ describe('POST /pricing-overlay', () => {
     expect(mockPricingEnricher.enrich).toHaveBeenCalledWith(
       'Portugal', expect.any(Array), '2026-09-01', '2026-09-04', undefined,
     );
+  });
+});
+
+describe('POST /events', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('400 when tripId is missing', async () => {
+    const app = buildApp();
+    const res = await request(app).post('/events').send({
+      itinerary: [VALID_ITINERARY_DAY],
+      region: 'Paris',
+      dateInput: FIXED_DATE_INPUT_1D,
+    });
+    expect(res.status).toBe(400);
+  });
+
+  it('200 with events for a fixed-date trip, tagging matchesMustHave and day', async () => {
+    vi.mocked(mockEventsService.getEvents).mockResolvedValue([
+      {
+        id: 'evt-1',
+        name: 'Festival de Música',
+        url: 'https://tm.example/evt-1',
+        startDate: '2026-06-01',
+        city: 'Paris',
+        category: 'Music',
+        genre: 'Rock',
+      },
+    ]);
+
+    const app = buildApp();
+    const res = await request(app).post('/events').send({
+      tripId: VALID_UUID,
+      itinerary: [VALID_ITINERARY_DAY],
+      region: 'Paris',
+      dateInput: FIXED_DATE_INPUT_1D,
+      mustHaves: ['festival de musica'],
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockEventsService.getEvents).toHaveBeenCalledWith('Paris', '2026-06-01', '2026-06-01');
+    expect(res.body.events).toHaveLength(1);
+    expect(res.body.events[0]).toMatchObject({ day: 1, matchesMustHave: true });
+  });
+
+  it('200 with empty events for a flexible-date trip (skips the events lookup)', async () => {
+    const app = buildApp();
+    const res = await request(app).post('/events').send({
+      tripId: VALID_UUID,
+      itinerary: [VALID_ITINERARY_DAY],
+      region: 'Paris',
+      dateInput: { mode: 'flexible', days: 5, window: 'open' },
+      mustHaves: [],
+    });
+
+    expect(res.status).toBe(200);
+    expect(res.body.events).toEqual([]);
+    expect(mockEventsService.getEvents).not.toHaveBeenCalled();
   });
 });

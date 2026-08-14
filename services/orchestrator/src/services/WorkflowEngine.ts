@@ -1,6 +1,6 @@
 import { BaseService, hasGroupPreferences, resolveGroupPreferences, deriveGroupPersonaWeights, evaluateTransportPriority, isPersonaKey, matchesPreferenceTerm, PERSONA_CATEGORIES } from '@itinera/shared';
 import type { GroupPreferences, PersonaKey } from '@itinera/shared';
-import type { TransportMode, AgentEvent, NegotiationCompleteEvent, TransportOption, TransportLeg, RouteGraph, RestrictionWarning } from '@itinera/shared';
+import type { TransportMode, AgentEvent, NegotiationCompleteEvent, TransportOption, TransportLeg, RouteGraph, RestrictionWarning, SpecialEvent } from '@itinera/shared';
 import type { WorkflowContext, WorkflowState, TouristSlotInput, TransportPriorityResult, ProposalDecision, ProposalDecisionStatus, SlotProposal, AgentName, AgentAction, SuggestedCut, ScoreFeedback, ScoreBreakdown, LowScoringTraveller, RepairEdit } from '@itinera/shared';
 import { config } from '@/config';
 import { WorkflowStateMachine } from '@/services/WorkflowStateMachine';
@@ -733,6 +733,36 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
         });
       }
 
+      // Real-world special events (festivals, concerts, sports, etc —
+      // Ticketmaster Discovery API) happening in the destination cities
+      // during the trip. Informational only — never wired into scoring or
+      // preference-agent proposals. Fixed-date trips only (logistics-agent
+      // skips flexible dates cleanly, same as weather). Non-blocking: a
+      // failure here must never stop the itinerary from being saved.
+      const eventsStart = Date.now();
+      let specialEvents: SpecialEvent[] = [];
+      try {
+        specialEvents = await this.agentCaller.callLogisticsEvents(
+          context.tripId,
+          (withTransport as Record<string, unknown>)['itinerary'] as Array<Record<string, unknown>> ?? [],
+          trip.region ?? null,
+          context.dates,
+          context.mustHaves,
+        );
+        await this.stateManager.logAgentCall({
+          tripId: context.tripId,
+          agent: 'logistics',
+          round: 1,
+          action: 'events',
+          latencyMs: Date.now() - eventsStart,
+          tokensUsed: 0,
+        });
+      } catch (eventsErr) {
+        this.logger.warn('Special events check failed — continuing without events', {
+          tripId: context.tripId, error: String(eventsErr),
+        });
+      }
+
       // Real pricing overlay — replaces/tags the merge LLM's own unlabelled
       // cost guess with real attraction DB / Google Places / hotel prices
       // where available. Non-blocking: a failure here must never stop the
@@ -803,7 +833,7 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
         });
       }
 
-      const finalItinerary = { ...withTransport, restrictionWarnings, weatherAssessment, agentWinRates };
+      const finalItinerary = { ...withTransport, restrictionWarnings, weatherAssessment, specialEvents, agentWinRates };
 
       await this.stateManager.logAgentCall({
         tripId: context.tripId,

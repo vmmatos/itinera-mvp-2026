@@ -87,6 +87,14 @@ const EnvSchema = z.object({
   // Meals assumed per day (lunch + dinner) when injecting the previously-
   // always-empty day.meals budget category from the blended restaurant estimate.
   MEALS_PER_DAY: z.coerce.number().default(2),
+  // Ticketmaster Discovery API — real-world special events (festivals,
+  // concerts, sports, etc) in destination cities. Empty key = feature
+  // disabled (same convention as SERPAPI_KEY), fails open elsewhere.
+  TICKETMASTER_API_KEY: z.string().default(''),
+  TICKETMASTER_BASE_URL: z.string().default('https://app.ticketmaster.com/discovery/v2'),
+  EVENTS_MOCK: z.coerce.boolean().default(false),
+  EVENTS_CACHE_TTL_SECONDS: z.coerce.number().default(21600),
+  EVENTS_MAX_PER_CITY: z.coerce.number().default(20),
 });
 
 const parsed = EnvSchema.safeParse(process.env);

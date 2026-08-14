@@ -2,8 +2,8 @@
 import { computed } from 'vue'
 import type { ActivityCardProps } from '~/components/trip/ActivityCard.vue'
 import type { WeatherAssessment } from '~/types/index'
-import type { RestrictionWarning } from '~/utils/itinerary'
-import { formatDayHeader, warningsForDay } from '~/utils/itinerary'
+import type { RestrictionWarning, SpecialEvent } from '~/utils/itinerary'
+import { formatDayHeader, warningsForDay, eventsForDay } from '~/utils/itinerary'
 import { buildDayWeather, type DayWeatherVM } from '~/utils/itineraryViewModel'
 
 export interface TimelineActivity extends ActivityCardProps {
@@ -25,6 +25,7 @@ const props = defineProps<{
   isDebug?:             boolean
   currencySymbol?:      string
   restrictionWarnings?: RestrictionWarning[]
+  specialEvents?:       SpecialEvent[]
   // Already gated by the caller (resolveWeatherGate): null means render no
   // weather at all — flexible dates, or no live forecast for this trip.
   weather?:             WeatherAssessment | null
@@ -106,6 +107,24 @@ function activitiesForSlot(activities: TimelineActivity[], slot: TimeSlot): Time
           :key="wi"
           class="tl-restriction-item"
         >{{ w.message }}</p>
+      </div>
+
+      <!-- Special events (festivals, concerts, sports, etc — Ticketmaster) -->
+      <div
+        v-if="eventsForDay(props.specialEvents, day.day).length > 0"
+        class="tl-events"
+      >
+        <a
+          v-for="e in eventsForDay(props.specialEvents, day.day)"
+          :key="e.id"
+          class="tl-event-item"
+          :href="e.url"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {{ e.name }} · {{ e.category }}<template v-if="e.venueName"> · {{ e.venueName }}</template>
+          <span v-if="e.matchesMustHave" class="tl-event-badge">match</span>
+        </a>
       </div>
 
       <!-- Activities grouped by time slot -->
@@ -254,6 +273,34 @@ function activitiesForSlot(activities: TimelineActivity[], slot: TimeSlot): Time
   color: var(--amber);
   margin: 0;
   line-height: 1.5;
+}
+
+.tl-events {
+  background: var(--blue-bg);
+  border-top: 1px solid var(--blue-line);
+  padding: var(--s-2) var(--s-4);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tl-event-item {
+  font-family: var(--mono);
+  font-size: var(--t-12);
+  color: var(--fg-1);
+  text-decoration: none;
+  line-height: 1.5;
+}
+
+.tl-event-badge {
+  margin-left: 6px;
+  color: var(--green);
+  border: 1px solid var(--green-line);
+  background: var(--green-bg);
+  padding: 0 5px;
+  border-radius: var(--r-1);
+  text-transform: uppercase;
+  letter-spacing: .04em;
 }
 
 </style>
