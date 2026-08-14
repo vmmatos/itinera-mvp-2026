@@ -1,5 +1,5 @@
 import { BaseService } from '@itinera/shared';
-import type { DateInput, TransportMode, RouteGraph, BudgetPlan, TouristSlotInput, RestrictionWarning, GroupPreferences, TransportLeg, FinanceFeedback } from '@itinera/shared';
+import type { DateInput, TransportMode, RouteGraph, BudgetPlan, TouristSlotInput, RestrictionWarning, SpecialEvent, GroupPreferences, TransportLeg, FinanceFeedback } from '@itinera/shared';
 import jwt from 'jsonwebtoken';
 import { config } from '@/config';
 
@@ -203,6 +203,21 @@ export class AgentCaller extends BaseService {
       { tripId, itinerary, region: region ?? 'unknown', dateInput },
     );
     return resp.warnings;
+  }
+
+  async callLogisticsEvents(
+    tripId: string,
+    itinerary: Array<Record<string, unknown>>,
+    region: string | null,
+    dateInput: DateInput | null,
+    mustHaves: string[],
+  ): Promise<SpecialEvent[]> {
+    const resp = await this.post<{ events: SpecialEvent[] }>(
+      'logistics',
+      '/events',
+      { tripId, itinerary, region: region ?? 'unknown', dateInput, mustHaves },
+    );
+    return resp.events;
   }
 
   async callLogisticsWeatherAssessment(

@@ -3,7 +3,7 @@ import { ref, computed, watch, onUnmounted, onMounted } from 'vue'
 import { PERSONA_LABELS, PERSONA_AGENT, AGENT_COLOURS } from '~/types/index'
 import type { Persona, Flexibility, Currency, DateWindow, DateInput, CreateTripInput, TravellerInput, TravellerScore, TransportMode, TransportOption, TransportActivityData, BudgetBreakdown, ItineraryDay, ItineraryActivity, ItineraryCityTransition, LocalTransportPriorityResult } from '~/types/index'
 import { formatTransportLabel } from '~/utils/itinerary'
-import type { RestrictionWarning } from '~/utils/itinerary'
+import type { RestrictionWarning, SpecialEvent } from '~/utils/itinerary'
 
 const props = withDefaults(defineProps<{ viewTripId?: string }>(), { viewTripId: undefined })
 
@@ -687,6 +687,13 @@ const restrictionWarnings = computed((): RestrictionWarning[] => {
   const c = latestOrchestratorContent.value
   return Array.isArray(c?.['restrictionWarnings'])
     ? (c['restrictionWarnings'] as RestrictionWarning[])
+    : []
+})
+
+const specialEvents = computed((): SpecialEvent[] => {
+  const c = latestOrchestratorContent.value
+  return Array.isArray(c?.['specialEvents'])
+    ? (c['specialEvents'] as SpecialEvent[])
     : []
 })
 
@@ -1435,6 +1442,7 @@ const PERSONAS = computed(() => [
       :weather-assessment="weatherAssessment"
       :date-input="effectiveDateInput"
       :restriction-warnings="restrictionWarnings"
+      :special-events="specialEvents"
       :validator-summary="validatorSummary"
       :traveller-scores="travellerScores"
       :agent-names="Object.keys(latestByAgent)"

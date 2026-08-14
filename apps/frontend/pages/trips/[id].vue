@@ -2,7 +2,7 @@
 import { ref, computed, onMounted } from 'vue'
 import type { Trip, TransportOption, TransportActivityData, BudgetBreakdown, LocalTransportPriorityResult } from '~/types/index'
 import type { TimelineDay, TimelineActivity } from '~/components/trip/Timeline.vue'
-import type { RestrictionWarning } from '~/utils/itinerary'
+import type { RestrictionWarning, SpecialEvent } from '~/utils/itinerary'
 import { formatTransportLabel } from '~/utils/itinerary'
 import { parseWeatherAssessment, resolveWeatherGate } from '~/utils/itineraryViewModel'
 
@@ -171,6 +171,13 @@ const restrictionWarnings = computed((): RestrictionWarning[] => {
     : []
 })
 
+const specialEvents = computed((): SpecialEvent[] => {
+  const c = latestMergedContent.value
+  return Array.isArray(c?.['specialEvents'])
+    ? (c['specialEvents'] as SpecialEvent[])
+    : []
+})
+
 const handleRefine = (): void => {
   if (trip.value && !tripStore.lastInput) {
     tripStore.setLastInput({
@@ -282,6 +289,7 @@ onMounted(async () => {
             :days="timelineDays"
             :weather="timelineWeather"
             :restriction-warnings="restrictionWarnings"
+            :special-events="specialEvents"
             :currency-symbol="currencySymbol"
           />
         </div>

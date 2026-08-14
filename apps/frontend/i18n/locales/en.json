@@ -188,7 +188,11 @@
         "heatAdvisory": "heat advisory",
         "lowRisk": "low risk",
         "heatAdvisoryBody": "{temp}°C peak — plan indoor/shaded activities and keep midday light",
-        "noActivities": "No activities planned for this day yet."
+        "noActivities": "No activities planned for this day yet.",
+        "specialEvents": {
+          "title": "Happening nearby",
+          "matchesMustHave": "matches your must-have"
+        }
       },
       "daySlot": {
         "phase": {

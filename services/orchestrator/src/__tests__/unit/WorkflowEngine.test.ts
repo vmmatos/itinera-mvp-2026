@@ -1161,6 +1161,86 @@ describe('WorkflowEngine — local restriction warnings (#76)', () => {
   });
 });
 
+describe('WorkflowEngine — special events (Ticketmaster)', () => {
+  it('attaches specialEvents from callLogisticsEvents onto the saved merge proposal', async () => {
+    setupCommonMocks(stateManager, eventPublisher);
+    vi.mocked(agentCaller.callLogisticsPlan).mockResolvedValue(ROUTE_GRAPH);
+    vi.mocked(agentCaller.callFinanceEstimate).mockResolvedValue(BUDGET_PLAN);
+    vi.mocked(agentCaller.callPreferenceAgentSlots).mockResolvedValue([
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+    ]);
+    vi.mocked(agentCaller.callOrchestratorMerge).mockResolvedValue({
+      content: JSON.parse(JSON.stringify(MERGED_ITINERARY)) as Record<string, unknown>,
+      latencyMs: 200,
+      tokensUsed: 200,
+    });
+    vi.mocked(agentCaller.callFinanceAgent).mockResolvedValue({
+      content: { verdict: { approved: true, budgetFeasible: true, issues: [] } },
+      latencyMs: 100,
+      tokensUsed: 100,
+    });
+    vi.mocked(agentCaller.callValidatorAgent).mockResolvedValue({
+      content: { scoring: { overallScore: 80 } },
+      latencyMs: 50,
+      tokensUsed: 50,
+    });
+    vi.mocked(agentCaller.callLogisticsRestrictions).mockResolvedValue([]);
+    const events = [
+      { id: 'evt1', name: 'Rock in Rio Lisboa', url: 'https://tm.example/evt1', startDate: '2026-08-10', city: 'Lisbon', category: 'Music', matchesMustHave: true },
+    ];
+    vi.mocked(agentCaller.callLogisticsEvents).mockResolvedValue(events);
+    driveHappyPath();
+
+    await engine.run(TRIP_ID);
+
+    expect(agentCaller.callLogisticsEvents).toHaveBeenCalledWith(
+      TRIP_ID, MERGED_ITINERARY.itinerary, MOCK_TRIP.region, expect.objectContaining({ mode: 'fixed' }), [],
+    );
+    expect(mergedProposalContent()['specialEvents']).toEqual(events);
+    expect(stateManager.logAgentCall).toHaveBeenCalledWith(
+      expect.objectContaining({ agent: 'logistics', action: 'events' }),
+    );
+  });
+
+  it('does not block the merge or trip confirmation when the events check fails', async () => {
+    setupCommonMocks(stateManager, eventPublisher);
+    vi.mocked(agentCaller.callLogisticsPlan).mockResolvedValue(ROUTE_GRAPH);
+    vi.mocked(agentCaller.callFinanceEstimate).mockResolvedValue(BUDGET_PLAN);
+    vi.mocked(agentCaller.callPreferenceAgentSlots).mockResolvedValue([
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+      { content: {}, latencyMs: 100, tokensUsed: 50 },
+    ]);
+    vi.mocked(agentCaller.callOrchestratorMerge).mockResolvedValue({
+      content: JSON.parse(JSON.stringify(MERGED_ITINERARY)) as Record<string, unknown>,
+      latencyMs: 200,
+      tokensUsed: 200,
+    });
+    vi.mocked(agentCaller.callFinanceAgent).mockResolvedValue({
+      content: { verdict: { approved: true, budgetFeasible: true, issues: [] } },
+      latencyMs: 100,
+      tokensUsed: 100,
+    });
+    vi.mocked(agentCaller.callValidatorAgent).mockResolvedValue({
+      content: { scoring: { overallScore: 80 } },
+      latencyMs: 50,
+      tokensUsed: 50,
+    });
+    vi.mocked(agentCaller.callLogisticsRestrictions).mockResolvedValue([]);
+    vi.mocked(agentCaller.callLogisticsEvents).mockRejectedValue(new Error('logistics-agent unreachable'));
+    driveHappyPath();
+
+    await engine.run(TRIP_ID);
+
+    expect(mergedProposalContent()['specialEvents']).toEqual([]);
+    expect(stateManager.transitionStatus).toHaveBeenCalledWith(TRIP_ID, 'confirmed');
+  });
+});
+
 describe('WorkflowEngine — weather assessment (not-show-meteo)', () => {
   it('attaches weatherAssessment from callLogisticsWeatherAssessment onto the saved merge proposal', async () => {
     setupCommonMocks(stateManager, eventPublisher);

@@ -160,6 +160,28 @@ export interface RestrictionWarning {
   message: string;
 }
 
+/**
+ * Real-world event (festival, concert, sports fixture, etc — any Ticketmaster
+ * Discovery API segment) happening in a destination city during the trip.
+ * Informational only: never wired into scoring or preference-agent proposals.
+ */
+export interface SpecialEvent {
+  id: string;
+  name: string;
+  url: string;
+  startDate: string;
+  startTime?: string;
+  city: string;
+  venueName?: string;
+  category: string;
+  genre?: string;
+  imageUrl?: string;
+  /** 1-based itinerary day this date maps to, when within tripDates. */
+  day?: number;
+  /** True when the event's name/genre/category fuzzy-matches one of the trip's mustHaves. */
+  matchesMustHave?: boolean;
+}
+
 export interface WeatherAffectedActivity {
   name: string;
   venue: string;

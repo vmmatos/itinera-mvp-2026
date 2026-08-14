@@ -20,6 +20,25 @@ export interface RestrictionWarning {
   message:      string
 }
 
+// Typed mirror of the shared backend SpecialEvent (services/shared/src/types/workflow.ts).
+// Real-world event (festival, concert, sports fixture, etc — any Ticketmaster
+// Discovery API segment) happening in a destination city during the trip.
+// Informational only.
+export interface SpecialEvent {
+  id:               string
+  name:             string
+  url:              string
+  startDate:        string
+  startTime?:       string
+  city:             string
+  venueName?:       string
+  category:         string
+  genre?:           string
+  imageUrl?:        string
+  day?:             number
+  matchesMustHave?: boolean
+}
+
 export interface CityTransitionFields {
   to:               string
   travelTime:       string
@@ -124,6 +143,10 @@ export function formatTransition(t: CityTransitionFields): string {
 
 export function warningsForDay(warnings: RestrictionWarning[] | undefined, dayNum: number): RestrictionWarning[] {
   return (warnings ?? []).filter((w) => w.day === dayNum)
+}
+
+export function eventsForDay(events: SpecialEvent[] | undefined, dayNum: number): SpecialEvent[] {
+  return (events ?? []).filter((e) => e.day === dayNum)
 }
 
 export function localModeIcon(mode: string): string {

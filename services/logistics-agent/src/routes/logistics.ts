@@ -1,8 +1,8 @@
 import { Router } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { ValidationError, createLogger } from '@itinera/shared';
-import type { TransportMode, TransportOption, RouteGraph, CityStay, TimeWindow, TransportLeg, RestrictionWarning, AgentEvent } from '@itinera/shared';
+import { ValidationError, createLogger, matchesPreferenceTerm } from '@itinera/shared';
+import type { TransportMode, TransportOption, RouteGraph, CityStay, TimeWindow, TransportLeg, RestrictionWarning, SpecialEvent, AgentEvent } from '@itinera/shared';
 import type { WeatherService, WeatherForecast } from '@/services/WeatherService';
 import { isDateWithinForecastHorizon, deriveWeatherRisk } from '@/services/WeatherService';
 import type { AttractionDB } from '@/services/AttractionDB';
@@ -10,6 +10,7 @@ import type { RedisService } from '@/services/RedisService';
 import type { TimingValidator, ScheduledActivity, ScheduledTransport } from '@/validators/TimingValidator';
 import type { WeatherAnalyzer } from '@/agents/WeatherAnalyzer';
 import type { HolidayService } from '@/services/HolidayService';
+import type { SpecialEventsService } from '@/services/SpecialEventsService';
 import type { RestrictionsValidator } from '@/validators/RestrictionsValidator';
 import type { TransportService } from '@/services/TransportService';
 import type { PricingEnricher } from '@/services/PricingEnricher';
@@ -97,6 +98,14 @@ const RestrictionsSchema = z.object({
   itinerary: z.array(z.record(z.unknown())).default([]),
   region:    z.string().default('unknown'),
   dateInput: DateInputSchema,
+});
+
+const EventsSchema = z.object({
+  tripId:    z.string().uuid(),
+  itinerary: z.array(z.record(z.unknown())).default([]),
+  region:    z.string().default('unknown'),
+  dateInput: DateInputSchema,
+  mustHaves: z.array(z.string()).default([]),
 });
 
 const RestrictionWarningSchema = z.object({
@@ -304,6 +313,73 @@ async function computeRestrictionWarnings(
 }
 
 /**
+ * Real-world special events (festivals, concerts, sports, etc — any
+ * Ticketmaster Discovery API segment) happening in the destination cities
+ * during the trip. Pure informational enrichment: never wired into scoring
+ * or preference-agent proposals. Fixed-date trips only — same gate as
+ * fetchWeatherForecastsForItinerary, since "some week in September" has no
+ * calendar to query events against.
+ */
+async function computeSpecialEvents(
+  rawItinerary: Array<Record<string, unknown>>,
+  region: string,
+  dateInput: z.infer<typeof DateInputSchema>,
+  mustHaves: string[],
+  eventsService: SpecialEventsService,
+): Promise<SpecialEvent[]> {
+  const tripDates = buildTripDates(rawItinerary, dateInput);
+  if (dateInput?.mode !== 'fixed' || tripDates.length === 0) {
+    logger.info('Special events skipped — only checked for fixed trip dates', {
+      mode: dateInput?.mode ?? 'none',
+    });
+    return [];
+  }
+
+  // Same per-day city resolution as fetchWeatherForecastsForItinerary: the
+  // itinerary's own per-day `city` field, falling back to the trip region.
+  const cityByDate = new Map<string, string>();
+  rawItinerary.forEach((day, i) => {
+    const date = tripDates[i];
+    if (!date) return;
+    const city = typeof day['city'] === 'string' && day['city'].trim() ? day['city'] : region;
+    cityByDate.set(date, city);
+  });
+  if (cityByDate.size === 0) return [];
+
+  const datesByCity = new Map<string, string[]>();
+  for (const [date, city] of cityByDate) {
+    const dates = datesByCity.get(city) ?? [];
+    dates.push(date);
+    datesByCity.set(city, dates);
+  }
+
+  const results = await Promise.allSettled(
+    [...datesByCity.entries()].map(async ([city, dates]) => {
+      const sorted = [...dates].sort();
+      const startDate = sorted[0]!;
+      const endDate = sorted[sorted.length - 1]!;
+      const events = await eventsService.getEvents(city, startDate, endDate);
+      return events.filter((e) => sorted.includes(e.startDate));
+    }),
+  );
+
+  const dayByDate = new Map(tripDates.map((date, i) => [date, i + 1]));
+  const events = results
+    .filter((r): r is PromiseFulfilledResult<SpecialEvent[]> => r.status === 'fulfilled')
+    .flatMap((r) => r.value)
+    .map((event) => {
+      const haystack = `${event.name} ${event.genre ?? ''} ${event.category}`;
+      return {
+        ...event,
+        day: dayByDate.get(event.startDate),
+        matchesMustHave: mustHaves.some((term) => matchesPreferenceTerm(term, haystack)),
+      };
+    });
+
+  return events;
+}
+
+/**
  * Weather + timing impact assessment for the final merged itinerary. Lean
  * counterpart to /validate's inline weather block: skips transport
  * resolution and pricing (the orchestrator already resolved those before
@@ -506,6 +582,7 @@ export function createLogisticsRouter(
   transportService: TransportService,
   pricingEnricher: PricingEnricher,
   activityTransportResolver: ActivityTransportResolver,
+  eventsService: SpecialEventsService,
 ): Router {
   const router = Router();
 
@@ -689,6 +766,24 @@ export function createLogisticsRouter(
     );
 
     res.json({ warnings });
+  });
+
+  // Lightweight endpoint: real-world special events (festivals, concerts,
+  // sports, etc) in the destination cities during the trip — Ticketmaster
+  // Discovery API. Informational only, same non-blocking tier as
+  // /restrictions. Used by the orchestrator right after the final itinerary
+  // is merged.
+  router.post('/events', async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const parsed = EventsSchema.safeParse(req.body);
+    if (!parsed.success) {
+      next(new ValidationError(JSON.stringify(parsed.error.flatten().fieldErrors)));
+      return;
+    }
+
+    const { itinerary, region, dateInput, mustHaves } = parsed.data;
+    const events = await computeSpecialEvents(itinerary, region, dateInput, mustHaves, eventsService);
+
+    res.json({ events });
   });
 
   // Weather + timing impact assessment (OpenWeatherMap-backed LLM analysis).

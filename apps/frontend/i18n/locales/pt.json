@@ -188,7 +188,11 @@
         "heatAdvisory": "aviso de calor",
         "lowRisk": "risco baixo",
         "heatAdvisoryBody": "pico de {temp}°C — planeie atividades interiores/à sombra e evite o sol do meio-dia",
-        "noActivities": "Ainda sem atividades planeadas para este dia."
+        "noActivities": "Ainda sem atividades planeadas para este dia.",
+        "specialEvents": {
+          "title": "A acontecer por perto",
+          "matchesMustHave": "corresponde ao seu must-have"
+        }
       },
       "daySlot": {
         "phase": {
