@@ -208,7 +208,10 @@
           "car": "Drive",
           "flight": "Flight",
           "train": "Train",
-          "bus": "Bus"
+          "bus": "Bus",
+          "metro": "Metro",
+          "tram": "Tram",
+          "ferry": "Ferry"
         }
       },
       "itineraryStep": {

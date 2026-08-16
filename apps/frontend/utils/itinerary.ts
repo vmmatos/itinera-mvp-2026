@@ -150,11 +150,38 @@ export function eventsForDay(events: SpecialEvent[] | undefined, dayNum: number)
 }
 
 export function localModeIcon(mode: string): string {
-  const icons: Record<string, string> = { drive: '🚗', transit: '🚌', walk: '🚶' }
+  const icons: Record<string, string> = {
+    drive: '🚗', transit: '🚌', walk: '🚶',
+    metro: '🚇', tram: '🚊', ferry: '⛴️',
+    train: '🚆', bus: '🚌',
+  }
   return icons[mode] ?? '→'
 }
 
-export type GettingThereModeKey = 'drive' | 'transit' | 'walk' | TransportOption['mode']
+export type GettingThereModeKey = 'drive' | 'transit' | 'walk' | 'metro' | 'tram' | 'ferry' | TransportOption['mode']
+
+// Google Routes' transitLine.vehicle.type is far finer-grained than our
+// LocalTransportMode routing enum ('drive'|'transit'|'walk') — this only
+// refines what icon/label the getting-there line shows, it does not touch
+// routing/preference logic elsewhere (LocalTransportMode stays untouched).
+// Deliberate simplification: CABLE_CAR/GONDOLA_LIFT/FUNICULAR are grouped
+// under the 'tram' bucket rather than given individual treatment.
+const TRANSIT_VEHICLE_MODE_KEY: Record<string, GettingThereModeKey> = {
+  SUBWAY: 'metro', METRO_RAIL: 'metro', HEAVY_RAIL: 'metro',
+  RAIL: 'train', COMMUTER_TRAIN: 'train', HIGH_SPEED_TRAIN: 'train',
+  LONG_DISTANCE_TRAIN: 'train', MONORAIL: 'train',
+  BUS: 'bus', INTERCITY_BUS: 'bus', TROLLEYBUS: 'bus', SHARE_TAXI: 'bus',
+  TRAM: 'tram', CABLE_CAR: 'tram', GONDOLA_LIFT: 'tram', FUNICULAR: 'tram',
+  FERRY: 'ferry',
+}
+
+// Falls back to the generic 'transit' bucket ("Public transport" / 🚌) when
+// Google didn't return a vehicle type, or returned OTHER/UNKNOWN, or an
+// enum value we don't recognize — never renders an undefined/broken label.
+export function transitVehicleModeKey(vehicleType?: string): GettingThereModeKey {
+  if (!vehicleType) return 'transit'
+  return TRANSIT_VEHICLE_MODE_KEY[vehicleType] ?? 'transit'
+}
 
 export interface GettingThereVM {
   icon: string
@@ -195,9 +222,10 @@ export function buildGettingThereVM(activity: GettingThereSource): GettingThereV
 
   const opt = activity.localTransport?.selectedOption
   if (opt && typeof opt.durationMinutes === 'number') {
+    const modeKey = opt.mode === 'transit' ? transitVehicleModeKey(opt.transitVehicleType) : opt.mode
     return {
-      icon: localModeIcon(opt.mode),
-      modeKey: opt.mode,
+      icon: localModeIcon(modeKey),
+      modeKey,
       durationLabel: formatDuration(opt.durationMinutes),
       priceEurPerPerson: opt.priceEur,
     }
