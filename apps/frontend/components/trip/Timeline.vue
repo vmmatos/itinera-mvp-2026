@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import type { ActivityCardProps } from '~/components/trip/ActivityCard.vue'
 import type { WeatherAssessment } from '~/types/index'
 import type { RestrictionWarning, SpecialEvent } from '~/utils/itinerary'
-import { formatDayHeader, warningsForDay, eventsForDay } from '~/utils/itinerary'
+import { formatDayHeader, warningsForDay, eventsForDay, formatEventDateTime } from '~/utils/itinerary'
 import { buildDayWeather, type DayWeatherVM } from '~/utils/itineraryViewModel'
 
 export interface TimelineActivity extends ActivityCardProps {
@@ -122,7 +122,7 @@ function activitiesForSlot(activities: TimelineActivity[], slot: TimeSlot): Time
           target="_blank"
           rel="noopener noreferrer"
         >
-          {{ e.name }} · {{ e.category }}<template v-if="e.venueName"> · {{ e.venueName }}</template>
+          {{ e.name }} · {{ formatEventDateTime(e) }} · {{ e.category }}<template v-if="e.venueName"> · {{ e.venueName }}</template>
           <span v-if="e.matchesMustHave" class="tl-event-badge">match</span>
         </a>
       </div>

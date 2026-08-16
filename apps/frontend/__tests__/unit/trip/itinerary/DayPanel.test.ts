@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import DayPanel from '~/components/trip/itinerary/DayPanel.vue'
 import type { DayVM } from '~/utils/itineraryViewModel'
-import type { RestrictionWarning } from '~/utils/itinerary'
+import type { RestrictionWarning, SpecialEvent } from '~/utils/itinerary'
 
 function dayVM(overrides: Partial<DayVM> = {}): DayVM {
   return {
@@ -117,5 +117,28 @@ describe('DayPanel', () => {
       props: { day: dayVM({ day: 1 }), dayIndex: 0, totalDays: 8, priceMode: 'pp', travellers: 2, currencySymbol: '€' },
     })
     expect(wrapper.find('[data-testid="restriction-warnings"]').exists()).toBe(false)
+  })
+
+  it('shows special events for the current day, including a formatted date/time', () => {
+    const events: SpecialEvent[] = [
+      { id: 'e1', name: 'Rock in Rio', url: 'https://x', startDate: '2026-09-10', startTime: '20:00:00', city: 'Lisbon', venueName: 'Passeio Marítimo', category: 'Music', day: 1 },
+      { id: 'e2', name: 'Off-day fair', url: 'https://x', startDate: '2026-09-11', city: 'Lisbon', category: 'Arts & Theatre', day: 2 },
+    ]
+    const wrapper = mount(DayPanel, {
+      props: { day: dayVM({ day: 1 }), dayIndex: 0, totalDays: 8, priceMode: 'pp', travellers: 2, currencySymbol: '€', specialEvents: events },
+    })
+    const panel = wrapper.find('[data-testid="special-events"]')
+    expect(panel.exists()).toBe(true)
+    expect(panel.text()).toContain('Rock in Rio')
+    expect(panel.text()).toContain('10 Sept · 20:00')
+    expect(panel.text()).not.toContain('Off-day fair')
+  })
+
+  it('does not show the special-events panel when no events match the current day', () => {
+    const events: SpecialEvent[] = [{ id: 'e1', name: 'Elsewhere', url: 'https://x', startDate: '2026-09-11', city: 'Porto', category: 'Music', day: 2 }]
+    const wrapper = mount(DayPanel, {
+      props: { day: dayVM({ day: 1 }), dayIndex: 0, totalDays: 8, priceMode: 'pp', travellers: 2, currencySymbol: '€', specialEvents: events },
+    })
+    expect(wrapper.find('[data-testid="special-events"]').exists()).toBe(false)
   })
 })

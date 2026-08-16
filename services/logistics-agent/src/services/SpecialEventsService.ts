@@ -54,29 +54,6 @@ function mapTicketmasterEvent(city: string, event: TicketmasterEvent): SpecialEv
   };
 }
 
-const MOCK_EVENTS: Record<string, Array<Omit<SpecialEvent, 'city'>>> = {
-  default: [
-    {
-      id: 'mock-music-1',
-      name: 'Festival de Música da Cidade',
-      url: 'https://example.com/mock-event/festival-musica',
-      startDate: '',
-      startTime: '20:00',
-      venueName: 'Praça Central',
-      category: 'Music',
-      genre: 'Rock',
-    },
-    {
-      id: 'mock-arts-1',
-      name: 'Feira de Arte Contemporânea',
-      url: 'https://example.com/mock-event/feira-arte',
-      startDate: '',
-      venueName: 'Centro Cultural',
-      category: 'Arts & Theatre',
-    },
-  ],
-};
-
 export class SpecialEventsService extends BaseService {
   constructor(private readonly redis: RedisService) {
     super('special-events-service');
@@ -140,6 +117,27 @@ export class SpecialEventsService extends BaseService {
   }
 
   private mockEvents(city: string, startDate: string): SpecialEvent[] {
-    return MOCK_EVENTS.default.map((e) => ({ ...e, city, startDate }));
+    return [
+      {
+        id: `mock-music-1:${city}`,
+        name: `${city} Music Festival`,
+        url: 'https://example.com/mock-event/festival-musica',
+        startDate,
+        startTime: '20:00',
+        city,
+        venueName: `${city} Central Square`,
+        category: 'Music',
+        genre: 'Rock',
+      },
+      {
+        id: `mock-arts-1:${city}`,
+        name: `${city} Contemporary Art Fair`,
+        url: 'https://example.com/mock-event/feira-arte',
+        startDate,
+        city,
+        venueName: `${city} Cultural Centre`,
+        category: 'Arts & Theatre',
+      },
+    ];
   }
 }

@@ -85,6 +85,18 @@ describe('SpecialEventsService', () => {
       expect(result[0]?.startDate).toBe('2026-09-10');
     });
 
+    it('scopes mock event fixtures per city, not a single shared fixture', async () => {
+      config.EVENTS_MOCK = true;
+      mockRedis.get.mockResolvedValue(null);
+
+      const lisbon = await service.getEvents('Lisbon', '2026-09-10', '2026-09-12');
+      const porto = await service.getEvents('Porto', '2026-09-10', '2026-09-12');
+
+      expect(lisbon.map((e) => e.name)).not.toEqual(porto.map((e) => e.name));
+      expect(lisbon.every((e) => e.name.includes('Lisbon') || e.venueName?.includes('Lisbon'))).toBe(true);
+      expect(porto.every((e) => e.name.includes('Porto') || e.venueName?.includes('Porto'))).toBe(true);
+    });
+
     it('returns empty array and does not fetch when API key is not configured', async () => {
       config.TICKETMASTER_API_KEY = '';
       mockRedis.get.mockResolvedValue(null);
