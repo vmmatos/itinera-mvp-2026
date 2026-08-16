@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
 import Timeline, { type TimelineDay } from '~/components/trip/Timeline.vue'
 import { formatDayHeader, formatTransition, warningsForDay } from '~/utils/itinerary'
-import type { RestrictionWarning } from '~/utils/itinerary'
+import type { RestrictionWarning, SpecialEvent } from '~/utils/itinerary'
 import type { WeatherAssessment } from '~/types/index'
 
 describe('formatDayHeader', () => {
@@ -174,5 +174,33 @@ describe('Timeline.vue — day weather', () => {
   it('renders no chip when the weather prop is omitted entirely (other call sites)', () => {
     const wrapper = mount(Timeline, { props: { days: days() } })
     expect(wrapper.findAll('[data-testid="timeline-day-weather"]')).toHaveLength(0)
+  })
+})
+
+describe('Timeline.vue — special events', () => {
+  function days(): TimelineDay[] {
+    return [
+      { day: 1, date: '2026-09-10', city: 'Lisboa', activities: [] },
+      { day: 2, date: '2026-09-11', city: 'Porto', activities: [] },
+    ]
+  }
+
+  it('renders events with a formatted date/time only under their matching day', () => {
+    const events: SpecialEvent[] = [
+      { id: 'e1', name: 'Rock in Rio', url: 'https://x', startDate: '2026-09-10', startTime: '20:00:00', city: 'Lisboa', venueName: 'Passeio Marítimo', category: 'Music', day: 1 },
+      { id: 'e2', name: 'FC Porto vs Benfica', url: 'https://x', startDate: '2026-09-11', city: 'Porto', category: 'Sports', day: 2 },
+    ]
+    const wrapper = mount(Timeline, { props: { days: days(), specialEvents: events } })
+
+    const dayBlocks = wrapper.findAll('.tl-day')
+    expect(dayBlocks[0]!.text()).toContain('Rock in Rio')
+    expect(dayBlocks[0]!.text()).toContain('10 Sept · 20:00')
+    expect(dayBlocks[0]!.text()).not.toContain('FC Porto vs Benfica')
+    expect(dayBlocks[1]!.text()).toContain('FC Porto vs Benfica')
+  })
+
+  it('renders no events block when specialEvents is omitted', () => {
+    const wrapper = mount(Timeline, { props: { days: days() } })
+    expect(wrapper.find('.tl-events').exists()).toBe(false)
   })
 })

@@ -2,7 +2,7 @@
 import { ref, watch, computed } from 'vue'
 import type { DayVM, Phase } from '~/utils/itineraryViewModel'
 import type { RestrictionWarning, SpecialEvent } from '~/utils/itinerary'
-import { warningsForDay, eventsForDay } from '~/utils/itinerary'
+import { warningsForDay, eventsForDay, formatEventDateTime } from '~/utils/itinerary'
 import TripItineraryDaySlot from './DaySlot.vue'
 
 const { t } = useI18n()
@@ -79,7 +79,7 @@ const riskLabel = computed(() => {
         rel="noopener noreferrer"
       >
         <span class="dp-event-name">{{ e.name }}</span>
-        <span class="dp-event-meta">{{ e.category }}<template v-if="e.venueName"> · {{ e.venueName }}</template></span>
+        <span class="dp-event-meta">{{ formatEventDateTime(e) }} · {{ e.category }}<template v-if="e.venueName"> · {{ e.venueName }}</template></span>
         <span v-if="e.matchesMustHave" class="dp-event-badge">{{ t('trip.itinerary.dayPanel.specialEvents.matchesMustHave') }}</span>
       </a>
     </div>

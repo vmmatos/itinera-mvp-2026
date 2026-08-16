@@ -149,6 +149,17 @@ export function eventsForDay(events: SpecialEvent[] | undefined, dayNum: number)
   return (events ?? []).filter((e) => e.day === dayNum)
 }
 
+export function formatEventDateTime(e: SpecialEvent): string {
+  const date = new Date(`${e.startDate}T00:00:00`)
+  if (Number.isNaN(date.getTime())) return e.startDate
+
+  const dateLabel = date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+  if (!e.startTime) return dateLabel
+
+  const time = e.startTime.slice(0, 5)
+  return `${dateLabel} · ${time}`
+}
+
 export function localModeIcon(mode: string): string {
   const icons: Record<string, string> = {
     drive: '🚗', transit: '🚌', walk: '🚶',

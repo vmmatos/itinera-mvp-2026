@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { modeName, optHeadLabel, priceDelta, transitQualifier, localModeIcon, buildGettingThereVM, transitVehicleModeKey } from '~/utils/itinerary'
+import { modeName, optHeadLabel, priceDelta, transitQualifier, localModeIcon, buildGettingThereVM, transitVehicleModeKey, formatEventDateTime } from '~/utils/itinerary'
 import type { TransportOption, LocalTransportPriorityResult } from '~/types/index'
+import type { SpecialEvent } from '~/utils/itinerary'
 
 function opt(overrides: Partial<TransportOption> = {}): TransportOption {
   return { mode: 'car', durationMinutes: 60, warnings: [], ...overrides }
@@ -207,5 +208,23 @@ describe('buildGettingThereVM', () => {
       selectedOption: { mode: 'drive', warnings: [] },
     } as unknown as LocalTransportPriorityResult
     expect(buildGettingThereVM({ localTransport: malformed })).toBeNull()
+  })
+})
+
+function event(overrides: Partial<SpecialEvent> = {}): SpecialEvent {
+  return { id: 'e1', name: 'Test Event', url: '', startDate: '2026-09-10', city: 'Lisbon', category: 'Music', ...overrides }
+}
+
+describe('formatEventDateTime', () => {
+  it('formats date and time when startTime is present', () => {
+    expect(formatEventDateTime(event({ startDate: '2026-09-10', startTime: '20:00:00' }))).toBe('10 Sept · 20:00')
+  })
+
+  it('formats date only when startTime is absent', () => {
+    expect(formatEventDateTime(event({ startDate: '2026-09-10', startTime: undefined }))).toBe('10 Sept')
+  })
+
+  it('error: falls back to the raw startDate string when it cannot be parsed', () => {
+    expect(formatEventDateTime(event({ startDate: 'not-a-date', startTime: undefined }))).toBe('not-a-date')
   })
 })
