@@ -41,11 +41,14 @@ defineEmits<{ select: [index: number] }>()
                 @click="$emit('select', di)"
               >
                 <div class="dn"><span>D{{ props.days[di]?.day }}</span><span class="dd">{{ props.days[di]?.dateLabel }}</span></div>
-                <div v-if="props.days[di]?.weather" class="wx">
-                  <span class="ic">{{ props.days[di]?.weather?.icon }}</span>
-                  <span v-if="props.days[di]?.weather?.tempHigh !== undefined" class="tp">
-                    {{ props.days[di]?.weather?.tempHigh }}°<small>/{{ props.days[di]?.weather?.tempLow }}°</small>
-                  </span>
+                <div v-if="props.showWeather" class="wx" :class="{ empty: !props.days[di]?.weather }">
+                  <template v-if="props.days[di]?.weather">
+                    <span class="ic">{{ props.days[di]?.weather?.icon }}</span>
+                    <span v-if="props.days[di]?.weather?.tempHigh !== undefined" class="tp">
+                      {{ props.days[di]?.weather?.tempHigh }}°<small>/{{ props.days[di]?.weather?.tempLow }}°</small>
+                    </span>
+                  </template>
+                  <span v-else class="ic muted">–</span>
                 </div>
                 <div class="cst">{{ formatMoney(props.days[di]?.costPerPerson ?? 0, props.priceMode, props.travellers, props.currencySymbol) }}</div>
                 <span v-if="props.days[di]?.weather?.risk === 'heat'" class="heat" data-testid="heat-flag">▲</span>
@@ -88,8 +91,9 @@ defineEmits<{ select: [index: number] }>()
 .daycell .dn { font-family: var(--mono); font-size: var(--t-12); color: var(--fg-1); display: flex; justify-content: space-between; align-items: baseline; }
 .daycell.sel .dn { color: var(--green); }
 .daycell .dn .dd { color: var(--fg-4); font-size: 9px; }
-.daycell .wx { display: flex; align-items: center; gap: 5px; }
+.daycell .wx { display: flex; align-items: center; gap: 5px; min-height: var(--t-16); }
 .daycell .wx .ic { font-size: var(--t-16); line-height: 1; }
+.daycell .wx .ic.muted { color: var(--fg-4); opacity: .5; }
 .daycell .wx .tp { font-family: var(--mono); font-size: var(--t-13); color: var(--fg-1); }
 .daycell .wx .tp small { color: var(--fg-4); }
 .daycell .cst { font-family: var(--mono); font-size: 10px; color: var(--fg-3); }
