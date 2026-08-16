@@ -75,4 +75,50 @@ describe('TimelineRail', () => {
     })
     expect(wrapper.find('[data-testid="rail-weather-chip"]').text()).toContain('live forecast')
   })
+
+  it('reserves the weather row for a day with no forecast data when showWeather is true', () => {
+    const wrapper = mount(TimelineRail, {
+      props: {
+        segments: oneSegment,
+        days: [dayVM(0, { weather: { icon: '☀️', risk: 'low', tempHigh: 25 } }), dayVM(1, { weather: null })],
+        selectedDay: 0, priceMode: 'pp', travellers: 2, currencySymbol: '€', showWeather: true,
+      },
+    })
+    const cells = wrapper.findAll('[data-testid="day-cell"]')
+    expect(cells[0]?.find('.wx').exists()).toBe(true)
+    expect(cells[1]?.find('.wx').exists()).toBe(true)
+    expect(cells[1]?.find('.wx').classes()).toContain('empty')
+  })
+
+  it('renders no weather row on any cell when showWeather is false, even if a day carries weather data', () => {
+    const wrapper = mount(TimelineRail, {
+      props: {
+        segments: oneSegment,
+        days: [dayVM(0, { weather: { icon: '☀️', risk: 'low', tempHigh: 25 } }), dayVM(1, { weather: null })],
+        selectedDay: 0, priceMode: 'pp', travellers: 2, currencySymbol: '€', showWeather: false,
+      },
+    })
+    const cells = wrapper.findAll('[data-testid="day-cell"]')
+    expect(cells[0]?.find('.wx').exists()).toBe(false)
+    expect(cells[1]?.find('.wx').exists()).toBe(false)
+  })
+
+  it('keeps weather-row structure consistent across segments with mixed forecast coverage', () => {
+    const wrapper = mount(TimelineRail, {
+      props: {
+        segments: twoSegments,
+        days: [
+          dayVM(0, { weather: { icon: '☀️', risk: 'low', tempHigh: 25 } }),
+          dayVM(1, { weather: { icon: '⛅', risk: 'low', tempHigh: 22 } }),
+          dayVM(2, { weather: null }),
+        ],
+        selectedDay: 0, priceMode: 'pp', travellers: 2, currencySymbol: '€', showWeather: true,
+      },
+    })
+    const cells = wrapper.findAll('[data-testid="day-cell"]')
+    expect(cells).toHaveLength(3)
+    for (const cell of cells) {
+      expect(cell.find('.wx').exists()).toBe(true)
+    }
+  })
 })
