@@ -1,5 +1,6 @@
-import { BaseService, NotFoundError } from '@itinera/shared';
-import type { TripStatus, DateInput } from '@itinera/shared';
+import { BaseService, NotFoundError, TooManyTripsError } from '@itinera/shared';
+import type { TripStatus, DateInput, UserRole } from '@itinera/shared';
+import { Not } from 'typeorm';
 import { AppDataSource } from '@/data-source';
 import { Trip } from '@/entities/Trip';
 import { Traveller } from '@/entities/Traveller';
@@ -10,6 +11,7 @@ import { StateManager } from '@/services/StateManager';
 import type { IOrchestrationEngine } from '@/services/WorkflowEngine';
 import { DestinationParser } from '@/services/DestinationParser';
 import type { CreateTripInput } from '@/validation/trip.schemas';
+import { config } from '@/config';
 
 export interface TripSummary {
   id: string;
@@ -102,9 +104,16 @@ export class TripService extends BaseService {
     this.destinationParser = destinationParser ?? new DestinationParser();
   }
 
-  async createTrip(ownerId: string, input: CreateTripInput): Promise<TripSummary> {
+  async createTrip(ownerId: string, input: CreateTripInput, role?: UserRole): Promise<TripSummary> {
     const tripRepo = AppDataSource.getRepository(Trip);
     const travellerRepo = AppDataSource.getRepository(Traveller);
+
+    if (role !== 'admin') {
+      const activeCount = await tripRepo.count({ where: { ownerId, status: Not('cancelled') } });
+      if (activeCount >= config.MAX_TRIPS_PER_USER) {
+        throw new TooManyTripsError(config.MAX_TRIPS_PER_USER);
+      }
+    }
 
     // Structured destinations drive nights-per-city enforcement. When the form
     // only sends a free-text region, parse it so every leg (incl. the last city)

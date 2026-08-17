@@ -7,6 +7,7 @@ import {
   UnauthorizedError,
   ForbiddenError,
   ConflictError,
+  TooManyTripsError,
 } from '../../errors';
 import { errorHandler } from '../../middleware/errorHandler';
 
@@ -30,6 +31,7 @@ describe('errorHandler — AppError subclasses', () => {
     ['UnauthorizedError', new UnauthorizedError(), 401, 'UNAUTHORIZED'],
     ['ForbiddenError', new ForbiddenError(), 403, 'FORBIDDEN'],
     ['ConflictError', new ConflictError('already exists'), 409, 'CONFLICT'],
+    ['TooManyTripsError', new TooManyTripsError(3), 429, 'TRIP_LIMIT_REACHED'],
   ])('%s → correct status and code', (_name, error, expectedStatus, expectedCode) => {
     const res = makeRes();
     errorHandler(error, req, res as unknown as Response, next);

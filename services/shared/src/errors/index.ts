@@ -45,3 +45,14 @@ export class ConflictError extends AppError {
     this.name = 'ConflictError';
   }
 }
+
+export class TooManyTripsError extends AppError {
+  constructor(limit: number) {
+    super(
+      429,
+      'TRIP_LIMIT_REACHED',
+      `You've reached the maximum of ${limit} active trips. Cancel one to create another.`,
+    );
+    this.name = 'TooManyTripsError';
+  }
+}

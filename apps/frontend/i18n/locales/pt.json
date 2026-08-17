@@ -77,6 +77,8 @@
     "travellerFallback": "Viajante",
     "subtitle": "Planeie a sua próxima viagem em grupo com agentes de IA.",
     "planTrip": "Planear viagem",
+    "tripLimitReached": "Limite de viagens atingido",
+    "tripLimitHint": "Atingiu o limite de viagens durante esta fase beta. Cancele uma viagem para criar outra.",
     "yourTrips": "As suas viagens",
     "loadingTrips": "A carregar viagens…",
     "viewResults": "Ver resultados",

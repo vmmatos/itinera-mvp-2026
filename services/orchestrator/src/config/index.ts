@@ -36,6 +36,10 @@ const EnvSchema = z.object({
   // Must match the finance-agent's own BUDGET_TOLERANCE_PCT — used here to
   // compute the repair target (budget × (1 + pct/100)).
   BUDGET_TOLERANCE_PCT: z.coerce.number().min(0).max(50).default(10),
+  // Temporary beta-launch guardrail: caps trips-per-user (excluding cancelled) so
+  // testers don't burn Anthropic token / SerpAPI quota unbounded. Not a real
+  // billing/plan limit — remove this whole check post-beta.
+  MAX_TRIPS_PER_USER: z.coerce.number().int().min(1).max(100).default(3),
 });
 
 const parsed = EnvSchema.safeParse(process.env);

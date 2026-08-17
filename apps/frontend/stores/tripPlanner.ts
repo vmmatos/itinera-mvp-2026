@@ -25,6 +25,14 @@ const removeLastInput = (): void => {
   } catch { /* SSR — silently skip */ }
 }
 
+const _extractMessage = (err: unknown, fallback: string): string => {
+  if (err && typeof err === 'object' && 'response' in err) {
+    const response = (err as { response?: { data?: { error?: { message?: string } } } }).response
+    return response?.data?.error?.message ?? fallback
+  }
+  return err instanceof Error ? err.message : fallback
+}
+
 export const useTripPlannerStore = defineStore('tripPlanner', () => {
   const api = useApi()
   const trips = ref<Trip[]>([])
@@ -40,7 +48,7 @@ export const useTripPlannerStore = defineStore('tripPlanner', () => {
       const { data } = await api.get<{ success: true; data: Trip[] }>('/api/v1/trips')
       trips.value = data.data
     } catch (err: unknown) {
-      error.value = err instanceof Error ? err.message : 'Failed to load trips'
+      error.value = _extractMessage(err, 'Failed to load trips')
     } finally {
       loading.value = false
     }
@@ -55,7 +63,7 @@ export const useTripPlannerStore = defineStore('tripPlanner', () => {
       await fetchTrips()
       return data.data.tripId
     } catch (err: unknown) {
-      error.value = err instanceof Error ? err.message : 'Failed to create trip'
+      error.value = _extractMessage(err, 'Failed to create trip')
       throw err
     } finally {
       loading.value = false

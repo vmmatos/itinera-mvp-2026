@@ -23,6 +23,7 @@ vi.mock('@/config', () => ({
     FINANCE_AGENT_URL: 'http://finance-agent:3004',
     LOGISTICS_AGENT_URL: 'http://logistics-agent:3005',
     VALIDATOR_URL: 'http://validator:3006',
+    MAX_TRIPS_PER_USER: 3,
   },
   getRabbitMQUrl: () => 'amqp://localhost',
 }));
@@ -36,6 +37,8 @@ vi.mock('@/data-source', () => ({
 
 vi.mock('@/services/StateManager');
 
+import { Not } from 'typeorm';
+import { TooManyTripsError } from '@itinera/shared';
 import { TripService } from '@/services/TripService';
 import { StateManager } from '@/services/StateManager';
 import type { IOrchestrationEngine } from '@/services/WorkflowEngine';
@@ -431,6 +434,7 @@ describe('TripService.createTrip', () => {
   let service: TripService;
   let mockCreate: ReturnType<typeof vi.fn>;
   let mockSave: (entity: unknown) => Promise<unknown>;
+  let mockCount: ReturnType<typeof vi.fn>;
 
   const BASE_INPUT = {
     name: 'Lisbon',
@@ -451,7 +455,8 @@ describe('TripService.createTrip', () => {
       Array.isArray(entity)
         ? entity
         : { id: 'trip-new', createdAt: new Date('2026-01-01'), updatedAt: new Date('2026-01-01'), ...(entity as object) };
-    vi.mocked(AppDataSource.getRepository).mockReturnValue({ create: mockCreate } as never);
+    mockCount = vi.fn().mockResolvedValue(0); // under the cap by default
+    vi.mocked(AppDataSource.getRepository).mockReturnValue({ create: mockCreate, count: mockCount } as never);
     vi.mocked(AppDataSource.transaction).mockImplementation(
       async (cb: unknown) => (cb as (m: { save: typeof mockSave }) => Promise<unknown>)({ save: mockSave }),
     );
@@ -499,5 +504,43 @@ describe('TripService.createTrip', () => {
 
     expect(createdTravellers()).toHaveLength(0);
     expect(createdTrip().preferences).toEqual({ pace: 'high' });
+  });
+
+  // ── Error / edge scenarios: beta trip-creation quota ──
+
+  it('creates the trip when the caller is under the limit', async () => {
+    mockCount.mockResolvedValue(2);
+
+    await service.createTrip(OWNER_ID, BASE_INPUT as never);
+
+    expect(createdTrip()).toBeDefined();
+  });
+
+  it('error: throws TooManyTripsError once the caller is at the limit', async () => {
+    mockCount.mockResolvedValue(3);
+
+    await expect(service.createTrip(OWNER_ID, BASE_INPUT as never)).rejects.toThrow(TooManyTripsError);
+    expect(AppDataSource.transaction).not.toHaveBeenCalled();
+  });
+
+  it('counts non-cancelled trips only', async () => {
+    mockCount.mockResolvedValue(1);
+
+    await service.createTrip(OWNER_ID, BASE_INPUT as never);
+
+    expect(mockCount).toHaveBeenCalledWith({ where: { ownerId: OWNER_ID, status: Not('cancelled') } });
+  });
+
+  it('admin role bypasses the trip limit entirely', async () => {
+    mockCount.mockResolvedValue(99);
+
+    await expect(service.createTrip(ADMIN_ID, BASE_INPUT as never, 'admin')).resolves.toBeDefined();
+    expect(mockCount).not.toHaveBeenCalled();
+  });
+
+  it('error: a role of "user" (or undefined) is still subject to the limit', async () => {
+    mockCount.mockResolvedValue(3);
+
+    await expect(service.createTrip(OWNER_ID, BASE_INPUT as never, 'user')).rejects.toThrow(TooManyTripsError);
   });
 });
