@@ -114,14 +114,16 @@ function onKeydown(e: KeyboardEvent): void {
   if (e.key === 'ArrowLeft') select(selectedDay.value - 1)
 }
 
+let explainerDriver: ReturnType<typeof driver> | null = null
+
 onMounted(() => {
   document.addEventListener('keydown', onKeydown)
   if (walkthroughStore.active) {
-    const d = driver({
+    explainerDriver = driver({
       allowClose: false,
       onDestroyed: () => { void walkthroughStore.complete() },
     })
-    d.setSteps([{
+    explainerDriver.setSteps([{
       element: '[data-testid="itinerary-review-header"]',
       popover: {
         title: t('walkthrough.step4.title'),
@@ -130,10 +132,16 @@ onMounted(() => {
         align: 'start',
       },
     }])
-    d.drive()
+    explainerDriver.drive()
   }
 })
-onUnmounted(() => document.removeEventListener('keydown', onKeydown))
+onUnmounted(() => {
+  document.removeEventListener('keydown', onKeydown)
+  // Leaving step 4 by any means (Accept/Reject/Cancel/navigating away) must
+  // still mark the walkthrough seen — not just dismissing the driver popover
+  // itself. destroy() re-fires onDestroyed, so this reuses the same path.
+  explainerDriver?.destroy()
+})
 
 // Clamp selection if the itinerary shrinks/changes underneath us (e.g. a
 // re-run produces fewer days).

@@ -73,4 +73,25 @@ describe('ItineraryStep — product walkthrough', () => {
 
     expect(mockCompleteWalkthroughFlow).toHaveBeenCalledTimes(1)
   })
+
+  it('destroys the tour on unmount so leaving via a real app button (not the popover) still marks it complete', () => {
+    walkthroughStoreMock.active = true
+    wrapper = mount(ItineraryStep, { props: baseProps() })
+    expect(mockDriverInstance.destroy).not.toHaveBeenCalled()
+
+    wrapper.unmount()
+    wrapper = null
+
+    expect(mockDriverInstance.destroy).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not attempt to destroy anything on unmount when the walkthrough was never active', () => {
+    walkthroughStoreMock.active = false
+    wrapper = mount(ItineraryStep, { props: baseProps() })
+
+    wrapper.unmount()
+    wrapper = null
+
+    expect(mockDriverInstance.destroy).not.toHaveBeenCalled()
+  })
 })
