@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue'
+import { computed, onMounted, onUnmounted, watch } from 'vue'
+import { driver } from 'driver.js'
+import 'driver.js/dist/driver.css'
 import type { Trip } from '~/types/index'
 import { useIdleTimeout } from '~/composables/useIdleTimeout'
 
@@ -11,6 +13,7 @@ definePageMeta({
 const { t } = useI18n()
 const authStore = useAuthStore()
 const tripStore = useTripPlannerStore()
+const walkthroughStore = useWalkthroughStore()
 
 const hasNegotiating = computed(() =>
   tripStore.trips.some((t: Trip) => t.status === 'negotiating'),
@@ -30,12 +33,43 @@ const stopPolling = (): void => {
   if (pollTimer !== null) { clearInterval(pollTimer); pollTimer = null }
 }
 
+let dashboardDriver: ReturnType<typeof driver> | null = null
+
+const startDashboardTour = (): void => {
+  if (!dashboardDriver) {
+    dashboardDriver = driver({
+      allowClose: false,
+      onCloseClick: () => {
+        void walkthroughStore.skip()
+        dashboardDriver?.destroy()
+      },
+    })
+  }
+  dashboardDriver.setSteps([{
+    element: '[data-testid="plan-trip-btn"]',
+    popover: {
+      title: t('walkthrough.dashboard.planTrip.title'),
+      description: t('walkthrough.dashboard.planTrip.description'),
+      side: 'bottom',
+      align: 'end',
+    },
+  }])
+  dashboardDriver.drive()
+}
+
+watch(() => walkthroughStore.active, (active) => { if (active) startDashboardTour() })
+
 onMounted(async () => {
+  if (walkthroughStore.active) startDashboardTour()
+
   await tripStore.fetchTrips()
   if (hasNegotiating.value) startPolling()
 })
 
-onUnmounted(() => stopPolling())
+onUnmounted(() => {
+  stopPolling()
+  dashboardDriver?.destroy()
+})
 
 useIdleTimeout(() => { void authStore.logout() })
 

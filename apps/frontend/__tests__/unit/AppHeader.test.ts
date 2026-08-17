@@ -1,8 +1,15 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { mockRestartWalkthrough, mockClearLastInput, mockNavigateTo } from '../setup'
 import AppHeader from '~/components/AppHeader.vue'
 
 describe('AppHeader', () => {
+  beforeEach(() => {
+    mockRestartWalkthrough.mockClear()
+    mockClearLastInput.mockClear()
+    mockNavigateTo.mockClear()
+  })
+
   it('always renders the logo, theme toggle and language switcher', () => {
     const wrapper = mount(AppHeader)
     expect(wrapper.findComponent({ name: 'AppLogo' }).exists()).toBe(true)
@@ -50,5 +57,16 @@ describe('AppHeader', () => {
     expect(wrapper.classes()).toContain('flex-wrap')
     const rightGroup = wrapper.find('.app-header-right')
     expect(rightGroup.classes()).toContain('flex-wrap')
+  })
+
+  it('renders a "How it works" button that restarts the walkthrough and returns to the dashboard', async () => {
+    const wrapper = mount(AppHeader)
+    const btn = wrapper.find('[data-testid="how-it-works-btn"]')
+    expect(btn.exists()).toBe(true)
+
+    await btn.trigger('click')
+    expect(mockRestartWalkthrough).toHaveBeenCalledTimes(1)
+    expect(mockClearLastInput).toHaveBeenCalledTimes(1)
+    expect(mockNavigateTo).toHaveBeenCalledWith('/dashboard')
   })
 })

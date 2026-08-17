@@ -70,4 +70,14 @@ export class AuthController {
       next(err);
     }
   };
+
+  completeWalkthrough = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const userId = (req as AuthenticatedRequest).user.sub;
+      const result = await this.authService.completeWalkthrough(userId);
+      res.json(ok(result));
+    } catch (err) {
+      next(err);
+    }
+  };
 }

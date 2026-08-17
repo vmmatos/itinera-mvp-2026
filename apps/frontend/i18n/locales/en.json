@@ -8,7 +8,69 @@
   },
   "nav": {
     "debug": "Debug",
-    "signOut": "Sign out"
+    "signOut": "Sign out",
+    "howItWorks": "How it works"
+  },
+  "walkthrough": {
+    "dashboard": {
+      "planTrip": {
+        "title": "Start here",
+        "description": "Click \"Plan a trip\" to open the trip-creation wizard — that's where the group, brief and negotiation happen."
+      }
+    },
+    "step1": {
+      "travellerCard": {
+        "title": "Your travel group",
+        "description": "Each traveller gets a persona — Culture, Relaxation, Action or Gastronomy — argued by its own AI agent during negotiation."
+      },
+      "persona": {
+        "title": "Pick a persona",
+        "description": "This decides which AI agent advocates for this traveller when the group's preferences are negotiated."
+      },
+      "flexibility": {
+        "title": "Flexibility",
+        "description": "How willing this traveller is to compromise on the final itinerary — low, medium or high."
+      },
+      "addTraveller": {
+        "title": "Add more travellers",
+        "description": "Add everyone joining the trip — each one gets their own persona and agent."
+      }
+    },
+    "step2": {
+      "tripName": {
+        "title": "Name your trip",
+        "description": "A label to identify this trip — you can change it later."
+      },
+      "region": {
+        "title": "Destination",
+        "description": "Where you're headed — a city, region or country."
+      },
+      "dates": {
+        "title": "Dates",
+        "description": "Pick fixed dates, or tell us you're flexible and how many days you have."
+      },
+      "budget": {
+        "title": "Budget",
+        "description": "The total budget the agents will negotiate against."
+      },
+      "transport": {
+        "title": "Transport",
+        "description": "How you'd like to get there — flight, train, car, or let the agents pick the best option."
+      },
+      "submit": {
+        "title": "Start negotiation",
+        "description": "Once you're ready, the AI agents take over and negotiate your itinerary automatically."
+      }
+    },
+    "step4": {
+      "title": "Your proposed itinerary",
+      "description": "This is what the agents agreed on. Review it day by day, then re-run the negotiation or continue to confirm and export."
+    },
+    "buttons": {
+      "next": "Next",
+      "prev": "Back",
+      "done": "Got it"
+    }
   },
   "dashboard": {
     "welcome": "Welcome, {name}",

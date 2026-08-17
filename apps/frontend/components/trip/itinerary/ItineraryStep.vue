@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { driver } from 'driver.js'
+import 'driver.js/dist/driver.css'
 import type { BudgetBreakdown, DateInput, ItineraryDay, TravellerScore } from '~/types/index'
 import type { RestrictionWarning, SpecialEvent } from '~/utils/itinerary'
 import {
@@ -24,6 +26,7 @@ interface ValidatorSummary {
 }
 
 const { t } = useI18n()
+const walkthroughStore = useWalkthroughStore()
 
 const props = defineProps<{
   tripName: string
@@ -111,8 +114,34 @@ function onKeydown(e: KeyboardEvent): void {
   if (e.key === 'ArrowLeft') select(selectedDay.value - 1)
 }
 
-onMounted(() => document.addEventListener('keydown', onKeydown))
-onUnmounted(() => document.removeEventListener('keydown', onKeydown))
+let explainerDriver: ReturnType<typeof driver> | null = null
+
+onMounted(() => {
+  document.addEventListener('keydown', onKeydown)
+  if (walkthroughStore.active) {
+    explainerDriver = driver({
+      allowClose: false,
+      onDestroyed: () => { void walkthroughStore.complete() },
+    })
+    explainerDriver.setSteps([{
+      element: '[data-testid="itinerary-review-header"]',
+      popover: {
+        title: t('walkthrough.step4.title'),
+        description: t('walkthrough.step4.description'),
+        side: 'bottom',
+        align: 'start',
+      },
+    }])
+    explainerDriver.drive()
+  }
+})
+onUnmounted(() => {
+  document.removeEventListener('keydown', onKeydown)
+  // Leaving step 4 by any means (Accept/Reject/Cancel/navigating away) must
+  // still mark the walkthrough seen — not just dismissing the driver popover
+  // itself. destroy() re-fires onDestroyed, so this reuses the same path.
+  explainerDriver?.destroy()
+})
 
 // Clamp selection if the itinerary shrinks/changes underneath us (e.g. a
 // re-run produces fewer days).

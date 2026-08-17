@@ -1,12 +1,14 @@
 import { vi } from 'vitest'
+import { reactive } from 'vue'
 import en from '../i18n/locales/en.json'
 
 // Stub Nuxt auto-imports for all tests.
 // Stores/composables use these as globals in Nuxt runtime; tests shim them here.
 
-// ── API mock (overridable per test via mockApiGet/mockApiPost) ─
-export const mockApiGet  = vi.fn()
-export const mockApiPost = vi.fn()
+// ── API mock (overridable per test via mockApiGet/mockApiPost/mockApiPatch) ─
+export const mockApiGet   = vi.fn()
+export const mockApiPost  = vi.fn()
+export const mockApiPatch = vi.fn()
 
 // ── Trip planner store mock (overridable per test) ─────────────
 export const mockCreateTrip    = vi.fn()
@@ -32,8 +34,9 @@ export const tripStoreMock = {
 
 // ── Auth store mock ────────────────────────────────────────────
 export const mockUpdateLanguage = vi.fn()
+export const mockCompleteWalkthrough = vi.fn()
 export const authStoreMock = {
-  user: { id: 'user-1', name: 'Test User', email: 'test@test.com', role: 'user', language: 'en' },
+  user: { id: 'user-1', name: 'Test User', email: 'test@test.com', role: 'user', language: 'en', hasSeenWalkthrough: false },
   token: 'mock-token',
   isAuthenticated: true,
   tryRefresh: vi.fn().mockResolvedValue(true),
@@ -41,6 +44,7 @@ export const authStoreMock = {
   updateToken: vi.fn(),
   logout: vi.fn(),
   updateLanguage: mockUpdateLanguage,
+  completeWalkthrough: mockCompleteWalkthrough,
 }
 
 // ── i18n mock — real lookup against en.json, no vue-i18n instance ─
@@ -71,11 +75,12 @@ globalThis.useNuxtApp = vi.fn(() => ({ $i18n: i18nMock }))
 globalThis.isValidUUID = (v: string | null | undefined): boolean =>
   typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v)
 // @ts-expect-error global shim
-globalThis.useApi = vi.fn(() => ({ get: mockApiGet, post: mockApiPost }))
+globalThis.useApi = vi.fn(() => ({ get: mockApiGet, post: mockApiPost, patch: mockApiPatch }))
 // @ts-expect-error global shim
 globalThis.useRuntimeConfig = vi.fn(() => ({ public: { apiBase: 'http://localhost' } }))
+export const mockNavigateTo = vi.fn()
 // @ts-expect-error global shim
-globalThis.navigateTo = vi.fn()
+globalThis.navigateTo = mockNavigateTo
 // @ts-expect-error global shim
 globalThis.useAuthStore = vi.fn(() => authStoreMock)
 // @ts-expect-error global shim
@@ -116,3 +121,19 @@ export const themeStoreMock = {
 }
 // @ts-expect-error global shim
 globalThis.useThemeStore = vi.fn(() => themeStoreMock)
+
+// ── Walkthrough store mock (overridable per test) ────────────────
+export const mockSkipWalkthrough = vi.fn()
+export const mockCompleteWalkthroughFlow = vi.fn()
+export const mockRestartWalkthrough = vi.fn()
+// reactive() so components that `watch(() => walkthroughStore.active, ...)`
+// (e.g. dashboard.vue, to re-drive the tour on a same-route replay) actually
+// react to a test mutating this after mount, matching real Pinia reactivity.
+export const walkthroughStoreMock = reactive({
+  active: false,
+  skip: mockSkipWalkthrough,
+  complete: mockCompleteWalkthroughFlow,
+  restart: mockRestartWalkthrough,
+})
+// @ts-expect-error global shim
+globalThis.useWalkthroughStore = vi.fn(() => walkthroughStoreMock)

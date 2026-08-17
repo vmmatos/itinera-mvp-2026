@@ -35,6 +35,7 @@ const buildUser = (overrides: Partial<User> = {}): User =>
     passwordHash: '$2b$12$validbcrypthashXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX',
     role: 'user',
     language: 'en',
+    hasSeenWalkthrough: false,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -78,6 +79,7 @@ describe('AuthService', () => {
         name: user.name,
         role: user.role,
         language: user.language,
+        hasSeenWalkthrough: user.hasSeenWalkthrough,
       });
       expect(bcrypt.compare).toHaveBeenCalledWith('correct-password', user.passwordHash);
     });
@@ -151,6 +153,7 @@ describe('AuthService', () => {
         name: user.name,
         role: user.role,
         language: 'pt',
+        hasSeenWalkthrough: user.hasSeenWalkthrough,
       });
       expect(mockSave).toHaveBeenCalledWith(expect.objectContaining({ language: 'pt' }));
     });
@@ -166,6 +169,44 @@ describe('AuthService', () => {
 
       await expect(authService.updateLanguage('unknown-id', 'pt')).rejects.toThrow(NotFoundError);
       expect(mockSave).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('completeWalkthrough()', () => {
+    it('persists and returns hasSeenWalkthrough=true when the user exists', async () => {
+      const user = buildUser({ hasSeenWalkthrough: false });
+      mockFindOne.mockResolvedValue(user);
+      mockSave.mockResolvedValue({ ...user, hasSeenWalkthrough: true });
+
+      const result = await authService.completeWalkthrough(user.id);
+
+      expect(result).toEqual({
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        language: user.language,
+        hasSeenWalkthrough: true,
+      });
+      expect(mockSave).toHaveBeenCalledWith(expect.objectContaining({ hasSeenWalkthrough: true }));
+    });
+
+    it('throws NotFoundError when the user does not exist', async () => {
+      mockFindOne.mockResolvedValue(null);
+
+      await expect(authService.completeWalkthrough('unknown-id')).rejects.toThrow(NotFoundError);
+      expect(mockSave).not.toHaveBeenCalled();
+    });
+
+    it('is idempotent — calling it again on an already-completed user does not throw', async () => {
+      const user = buildUser({ hasSeenWalkthrough: true });
+      mockFindOne.mockResolvedValue(user);
+      mockSave.mockResolvedValue(user);
+
+      const result = await authService.completeWalkthrough(user.id);
+
+      expect(result.hasSeenWalkthrough).toBe(true);
+      expect(mockSave).toHaveBeenCalledTimes(1);
     });
   });
 

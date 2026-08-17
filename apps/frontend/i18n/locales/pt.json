@@ -8,7 +8,69 @@
   },
   "nav": {
     "debug": "Depuração",
-    "signOut": "Terminar sessão"
+    "signOut": "Terminar sessão",
+    "howItWorks": "Como funciona"
+  },
+  "walkthrough": {
+    "dashboard": {
+      "planTrip": {
+        "title": "Comece aqui",
+        "description": "Clique em \"Planear viagem\" para abrir o assistente de criação — é lá que o grupo, o resumo e a negociação acontecem."
+      }
+    },
+    "step1": {
+      "travellerCard": {
+        "title": "O seu grupo de viagem",
+        "description": "Cada viajante recebe uma persona — Cultura, Relaxamento, Ação ou Gastronomia — defendida por um agente de IA próprio durante a negociação."
+      },
+      "persona": {
+        "title": "Escolha uma persona",
+        "description": "Define qual o agente de IA que defende este viajante quando as preferências do grupo são negociadas."
+      },
+      "flexibility": {
+        "title": "Flexibilidade",
+        "description": "Quão disposto este viajante está a ceder no itinerário final — baixa, média ou alta."
+      },
+      "addTraveller": {
+        "title": "Adicione mais viajantes",
+        "description": "Adicione todos os que vão na viagem — cada um recebe a sua persona e agente."
+      }
+    },
+    "step2": {
+      "tripName": {
+        "title": "Dê um nome à viagem",
+        "description": "Um nome para identificar esta viagem — pode alterá-lo depois."
+      },
+      "region": {
+        "title": "Destino",
+        "description": "Para onde vai — uma cidade, região ou país."
+      },
+      "dates": {
+        "title": "Datas",
+        "description": "Escolha datas fixas, ou diga-nos que é flexível e quantos dias tem disponíveis."
+      },
+      "budget": {
+        "title": "Orçamento",
+        "description": "O orçamento total que os agentes vão negociar."
+      },
+      "transport": {
+        "title": "Transporte",
+        "description": "Como pretende chegar — avião, comboio, carro, ou deixar os agentes escolherem a melhor opção."
+      },
+      "submit": {
+        "title": "Iniciar negociação",
+        "description": "Quando estiver pronto, os agentes de IA tratam de negociar o itinerário automaticamente."
+      }
+    },
+    "step4": {
+      "title": "O seu itinerário proposto",
+      "description": "É isto que os agentes acordaram. Reveja dia a dia, depois relance a negociação ou continue para confirmar e exportar."
+    },
+    "buttons": {
+      "next": "Seguinte",
+      "prev": "Anterior",
+      "done": "Percebi"
+    }
   },
   "dashboard": {
     "welcome": "Bem-vindo, {name}",
