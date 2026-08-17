@@ -20,7 +20,7 @@ const tripStore = useTripPlannerStore()
 const restartWalkthrough = (): void => {
   walkthroughStore.restart()
   tripStore.clearLastInput()
-  navigateTo('/planner')
+  navigateTo('/dashboard')
 }
 </script>
 

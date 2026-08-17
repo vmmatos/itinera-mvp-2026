@@ -12,6 +12,12 @@
     "howItWorks": "How it works"
   },
   "walkthrough": {
+    "dashboard": {
+      "planTrip": {
+        "title": "Start here",
+        "description": "Click \"Plan a trip\" to open the trip-creation wizard — that's where the group, brief and negotiation happen."
+      }
+    },
     "step1": {
       "travellerCard": {
         "title": "Your travel group",

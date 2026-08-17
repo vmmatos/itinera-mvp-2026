@@ -12,6 +12,12 @@
     "howItWorks": "Como funciona"
   },
   "walkthrough": {
+    "dashboard": {
+      "planTrip": {
+        "title": "Comece aqui",
+        "description": "Clique em \"Planear viagem\" para abrir o assistente de criação — é lá que o grupo, o resumo e a negociação acontecem."
+      }
+    },
     "step1": {
       "travellerCard": {
         "title": "O seu grupo de viagem",

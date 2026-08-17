@@ -59,7 +59,7 @@ describe('AppHeader', () => {
     expect(rightGroup.classes()).toContain('flex-wrap')
   })
 
-  it('renders a "How it works" button that restarts the walkthrough and returns to the planner', async () => {
+  it('renders a "How it works" button that restarts the walkthrough and returns to the dashboard', async () => {
     const wrapper = mount(AppHeader)
     const btn = wrapper.find('[data-testid="how-it-works-btn"]')
     expect(btn.exists()).toBe(true)
@@ -67,6 +67,6 @@ describe('AppHeader', () => {
     await btn.trigger('click')
     expect(mockRestartWalkthrough).toHaveBeenCalledTimes(1)
     expect(mockClearLastInput).toHaveBeenCalledTimes(1)
-    expect(mockNavigateTo).toHaveBeenCalledWith('/planner')
+    expect(mockNavigateTo).toHaveBeenCalledWith('/dashboard')
   })
 })

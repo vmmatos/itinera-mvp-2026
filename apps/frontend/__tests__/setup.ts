@@ -1,4 +1,5 @@
 import { vi } from 'vitest'
+import { reactive } from 'vue'
 import en from '../i18n/locales/en.json'
 
 // Stub Nuxt auto-imports for all tests.
@@ -125,11 +126,14 @@ globalThis.useThemeStore = vi.fn(() => themeStoreMock)
 export const mockSkipWalkthrough = vi.fn()
 export const mockCompleteWalkthroughFlow = vi.fn()
 export const mockRestartWalkthrough = vi.fn()
-export const walkthroughStoreMock = {
+// reactive() so components that `watch(() => walkthroughStore.active, ...)`
+// (e.g. dashboard.vue, to re-drive the tour on a same-route replay) actually
+// react to a test mutating this after mount, matching real Pinia reactivity.
+export const walkthroughStoreMock = reactive({
   active: false,
   skip: mockSkipWalkthrough,
   complete: mockCompleteWalkthroughFlow,
   restart: mockRestartWalkthrough,
-}
+})
 // @ts-expect-error global shim
 globalThis.useWalkthroughStore = vi.fn(() => walkthroughStoreMock)
