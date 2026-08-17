@@ -17,7 +17,7 @@ export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
 
 export interface AuthResult {
   token: string;
-  user: { id: string; email: string; name: string; role: string; language: string };
+  user: { id: string; email: string; name: string; role: string; language: string; hasSeenWalkthrough: boolean };
 }
 
 export interface PublicUser {
@@ -26,6 +26,7 @@ export interface PublicUser {
   name: string;
   role: string;
   language: string;
+  hasSeenWalkthrough: boolean;
 }
 
 export class AuthService {
@@ -131,14 +132,46 @@ export class AuthService {
     user.language = language;
     await repo.save(user);
 
-    return { id: user.id, email: user.email, name: user.name, role: user.role, language: user.language };
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      language: user.language,
+      hasSeenWalkthrough: user.hasSeenWalkthrough,
+    };
+  }
+
+  async completeWalkthrough(userId: string): Promise<PublicUser> {
+    const repo = this.dataSource.getRepository(User);
+    const user = await repo.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundError('User not found');
+
+    user.hasSeenWalkthrough = true;
+    await repo.save(user);
+
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      language: user.language,
+      hasSeenWalkthrough: user.hasSeenWalkthrough,
+    };
   }
 
   private async buildResult(user: User): Promise<AuthResult> {
     const token = this.generateToken(user);
     return {
       token,
-      user: { id: user.id, email: user.email, name: user.name, role: user.role, language: user.language },
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        language: user.language,
+        hasSeenWalkthrough: user.hasSeenWalkthrough,
+      },
     };
   }
 }

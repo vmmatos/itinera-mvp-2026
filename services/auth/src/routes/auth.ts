@@ -39,6 +39,7 @@ export function createAuthRouter(authService: AuthService, redis: Redis): Router
   router.post('/login', controller.login);
   router.post('/register', controller.register);
   router.patch('/me', authMiddleware, controller.updateLanguage);
+  router.patch('/me/walkthrough', authMiddleware, controller.completeWalkthrough);
 
   router.get(
     '/oauth2/google',

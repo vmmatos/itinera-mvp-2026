@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { driver } from 'driver.js'
+import 'driver.js/dist/driver.css'
 import type { BudgetBreakdown, DateInput, ItineraryDay, TravellerScore } from '~/types/index'
 import type { RestrictionWarning, SpecialEvent } from '~/utils/itinerary'
 import {
@@ -24,6 +26,7 @@ interface ValidatorSummary {
 }
 
 const { t } = useI18n()
+const walkthroughStore = useWalkthroughStore()
 
 const props = defineProps<{
   tripName: string
@@ -111,7 +114,25 @@ function onKeydown(e: KeyboardEvent): void {
   if (e.key === 'ArrowLeft') select(selectedDay.value - 1)
 }
 
-onMounted(() => document.addEventListener('keydown', onKeydown))
+onMounted(() => {
+  document.addEventListener('keydown', onKeydown)
+  if (walkthroughStore.active) {
+    const d = driver({
+      allowClose: false,
+      onDestroyed: () => { void walkthroughStore.complete() },
+    })
+    d.setSteps([{
+      element: '[data-testid="itinerary-review-header"]',
+      popover: {
+        title: t('walkthrough.step4.title'),
+        description: t('walkthrough.step4.description'),
+        side: 'bottom',
+        align: 'start',
+      },
+    }])
+    d.drive()
+  }
+})
 onUnmounted(() => document.removeEventListener('keydown', onKeydown))
 
 // Clamp selection if the itinerary shrinks/changes underneath us (e.g. a

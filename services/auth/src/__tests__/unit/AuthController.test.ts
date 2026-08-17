@@ -21,7 +21,7 @@ describe('AuthController', () => {
 
   beforeEach(() => {
     jsonMock = vi.fn();
-    authService = { updateLanguage: vi.fn() };
+    authService = { updateLanguage: vi.fn(), completeWalkthrough: vi.fn() };
     controller = new AuthController(authService as AuthService);
     res = { json: jsonMock, status: vi.fn().mockReturnThis() } as unknown as Response;
     next = vi.fn() as unknown as NextFunction;
@@ -32,7 +32,7 @@ describe('AuthController', () => {
 
   describe('updateLanguage()', () => {
     it('calls authService.updateLanguage with the authenticated user id and responds with the result', async () => {
-      const updated = { id: 'user-uuid-1', email: 'a@b.com', name: 'Alice', role: 'user', language: 'pt' };
+      const updated = { id: 'user-uuid-1', email: 'a@b.com', name: 'Alice', role: 'user', language: 'pt', hasSeenWalkthrough: false };
       vi.mocked(authService.updateLanguage!).mockResolvedValue(updated);
 
       await controller.updateLanguage(buildReq({ language: 'pt' }), res, next);
@@ -61,6 +61,28 @@ describe('AuthController', () => {
       vi.mocked(authService.updateLanguage!).mockRejectedValue(new NotFoundError('User not found'));
 
       await controller.updateLanguage(buildReq({ language: 'pt' }), res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.any(NotFoundError));
+      expect(jsonMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('completeWalkthrough()', () => {
+    it('calls authService.completeWalkthrough with the authenticated user id and responds with the result', async () => {
+      const updated = { id: 'user-uuid-1', email: 'a@b.com', name: 'Alice', role: 'user', language: 'en', hasSeenWalkthrough: true };
+      vi.mocked(authService.completeWalkthrough!).mockResolvedValue(updated);
+
+      await controller.completeWalkthrough(buildReq({}), res, next);
+
+      expect(authService.completeWalkthrough).toHaveBeenCalledWith('user-uuid-1');
+      expect(jsonMock).toHaveBeenCalledWith({ success: true, data: updated });
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('forwards service errors to next', async () => {
+      vi.mocked(authService.completeWalkthrough!).mockRejectedValue(new NotFoundError('User not found'));
+
+      await controller.completeWalkthrough(buildReq({}), res, next);
 
       expect(next).toHaveBeenCalledWith(expect.any(NotFoundError));
       expect(jsonMock).not.toHaveBeenCalled();

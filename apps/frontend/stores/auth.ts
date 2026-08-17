@@ -7,6 +7,7 @@ interface AuthUser {
   name: string
   role: string
   language: string
+  hasSeenWalkthrough: boolean
 }
 
 interface AuthResult {
@@ -119,6 +120,12 @@ export const useAuthStore = defineStore('auth', () => {
     _syncLocale(data.data.language)
   }
 
+  const completeWalkthrough = async (): Promise<void> => {
+    const api = useApi()
+    const { data } = await api.patch<{ success: true; data: AuthUser }>('/api/auth/me/walkthrough', {})
+    if (user.value) user.value.hasSeenWalkthrough = data.data.hasSeenWalkthrough
+  }
+
   const _set = (result: AuthResult): void => {
     token.value = result.token
     user.value = result.user
@@ -156,5 +163,6 @@ export const useAuthStore = defineStore('auth', () => {
     logout,
     clearError,
     updateLanguage,
+    completeWalkthrough,
   }
 })

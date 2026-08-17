@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { ref, computed, watch, onUnmounted, onMounted } from 'vue'
+import { ref, computed, watch, onUnmounted, onMounted, nextTick } from 'vue'
+import { driver, type DriveStep } from 'driver.js'
+import 'driver.js/dist/driver.css'
 import { PERSONA_LABELS, PERSONA_AGENT, AGENT_COLOURS } from '~/types/index'
 import type { Persona, Flexibility, Currency, DateWindow, DateInput, CreateTripInput, TravellerInput, TravellerScore, TransportMode, TransportOption, TransportActivityData, BudgetBreakdown, ItineraryDay, ItineraryActivity, ItineraryCityTransition, LocalTransportPriorityResult } from '~/types/index'
 import { formatTransportLabel } from '~/utils/itinerary'
@@ -15,6 +17,7 @@ const emit = defineEmits<{
 // ── Auth ─────────────────────────────────────────────────────
 const { t: translate } = useI18n()
 const authStore = useAuthStore()
+const walkthroughStore = useWalkthroughStore()
 
 // ── Wizard step ───────────────────────────────────────────────
 const step = ref<1 | 2 | 3 | 4 | 5>(1)
@@ -366,6 +369,93 @@ const stopPolling = (): void => {
 }
 
 onUnmounted(() => stopPolling())
+
+// ── Product walkthrough (steps 1 & 2) ──────────────────────────
+
+let walkthroughDriver: ReturnType<typeof driver> | null = null
+
+const ensureWalkthroughDriver = (): ReturnType<typeof driver> => {
+  if (!walkthroughDriver) {
+    walkthroughDriver = driver({
+      allowClose: false,
+      showProgress: true,
+      nextBtnText: translate('walkthrough.buttons.next'),
+      prevBtnText: translate('walkthrough.buttons.prev'),
+      doneBtnText: translate('walkthrough.buttons.done'),
+      onCloseClick: () => {
+        void walkthroughStore.skip()
+        walkthroughDriver?.destroy()
+      },
+    })
+  }
+  return walkthroughDriver
+}
+
+const step1TourSteps = (): DriveStep[] => [
+  { element: '[data-testid="traveller-card"]', popover: {
+    title: translate('walkthrough.step1.travellerCard.title'),
+    description: translate('walkthrough.step1.travellerCard.description'),
+    side: 'bottom', align: 'start',
+  } },
+  { element: '.persona-card', popover: {
+    title: translate('walkthrough.step1.persona.title'),
+    description: translate('walkthrough.step1.persona.description'),
+    side: 'bottom', align: 'start',
+  } },
+  { element: '.chip', popover: {
+    title: translate('walkthrough.step1.flexibility.title'),
+    description: translate('walkthrough.step1.flexibility.description'),
+    side: 'right', align: 'start',
+  } },
+  { element: '[data-testid="add-traveller"]', popover: {
+    title: translate('walkthrough.step1.addTraveller.title'),
+    description: translate('walkthrough.step1.addTraveller.description'),
+    side: 'top', align: 'start',
+  } },
+]
+
+const step2TourSteps = (): DriveStep[] => [
+  { element: '[data-testid="trip-name"]', popover: {
+    title: translate('walkthrough.step2.tripName.title'),
+    description: translate('walkthrough.step2.tripName.description'),
+    side: 'bottom', align: 'start',
+  } },
+  { element: '[data-testid="region"]', popover: {
+    title: translate('walkthrough.step2.region.title'),
+    description: translate('walkthrough.step2.region.description'),
+    side: 'bottom', align: 'start',
+  } },
+  { element: '[data-testid="date-mode-fixed"]', popover: {
+    title: translate('walkthrough.step2.dates.title'),
+    description: translate('walkthrough.step2.dates.description'),
+    side: 'bottom', align: 'start',
+  } },
+  { element: '[data-testid="budget-slider"]', popover: {
+    title: translate('walkthrough.step2.budget.title'),
+    description: translate('walkthrough.step2.budget.description'),
+    side: 'top', align: 'start',
+  } },
+  { element: '[data-testid="transport-flight"]', popover: {
+    title: translate('walkthrough.step2.transport.title'),
+    description: translate('walkthrough.step2.transport.description'),
+    side: 'top', align: 'start',
+  } },
+  { element: '[data-testid="submit-btn"]', popover: {
+    title: translate('walkthrough.step2.submit.title'),
+    description: translate('walkthrough.step2.submit.description'),
+    side: 'top', align: 'end',
+  } },
+]
+
+watch(step, async (n) => {
+  if (!walkthroughStore.active || (n !== 1 && n !== 2)) return
+  await nextTick()
+  const d = ensureWalkthroughDriver()
+  d.setSteps(n === 1 ? step1TourSteps() : step2TourSteps())
+  d.drive()
+}, { immediate: true })
+
+onUnmounted(() => walkthroughDriver?.destroy())
 
 // ── Step 4: Itinerary review ──────────────────────────────────
 

@@ -17,7 +17,7 @@ const emit = defineEmits<{
 </script>
 
 <template>
-  <div class="rhead">
+  <div class="rhead" data-testid="itinerary-review-header">
     <div class="lhs">
       <div class="eb">{{ t('trip.itinerary.reviewHeader.eyebrow') }}</div>
       <h1>{{ props.title }} <em>{{ props.meta }}</em></h1>

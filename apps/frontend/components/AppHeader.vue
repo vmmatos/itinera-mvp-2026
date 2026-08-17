@@ -14,6 +14,14 @@ withDefaults(
 const emit = defineEmits<{ signOut: [] }>()
 
 const { t } = useI18n()
+const walkthroughStore = useWalkthroughStore()
+const tripStore = useTripPlannerStore()
+
+const restartWalkthrough = (): void => {
+  walkthroughStore.restart()
+  tripStore.clearLastInput()
+  navigateTo('/planner')
+}
 </script>
 
 <template>
@@ -22,6 +30,11 @@ const { t } = useI18n()
     <div class="app-header-right flex items-center gap-3 flex-wrap justify-end">
       <ThemeToggle />
       <LanguageSwitcher />
+      <button
+        data-testid="how-it-works-btn"
+        class="btn text-13"
+        @click="restartWalkthrough"
+      >{{ t('nav.howItWorks') }}</button>
       <slot name="links" />
       <span
         v-if="email"
