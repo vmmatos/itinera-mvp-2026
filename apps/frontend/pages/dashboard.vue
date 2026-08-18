@@ -19,6 +19,16 @@ const hasNegotiating = computed(() =>
   tripStore.trips.some((t: Trip) => t.status === 'negotiating'),
 )
 
+// Mirrors backend MAX_TRIPS_PER_USER (services/orchestrator/src/config/index.ts).
+// Temporary beta guardrail — remove alongside the backend check post-beta.
+// No cheap way to read the backend's configured value without a new
+// endpoint/field; hardcoded here and kept in sync manually.
+const FRONTEND_TRIP_LIMIT = 3
+
+const atTripLimit = computed(() =>
+  tripStore.trips.filter((t: Trip) => t.status !== 'cancelled').length >= FRONTEND_TRIP_LIMIT,
+)
+
 let pollTimer: ReturnType<typeof setInterval> | null = null
 
 const startPolling = (): void => {
@@ -113,9 +123,17 @@ const AGENTS = [
             {{ t('dashboard.welcome', { name: authStore.user?.name ?? t('dashboard.travellerFallback') }) }}
           </h2>
           <p class="text-fg-3 text-13 mt-1">{{ t('dashboard.subtitle') }}</p>
+          <p v-if="atTripLimit" class="text-fg-3 text-12 mt-1" style="color:var(--amber)">
+            {{ t('dashboard.tripLimitHint') }}
+          </p>
         </div>
-        <button class="btn btn-primary" data-testid="plan-trip-btn" @click="tripStore.clearLastInput(); navigateTo('/planner')">
-          {{ t('dashboard.planTrip') }} <span style="margin-left:4px">→</span>
+        <button
+          class="btn btn-primary"
+          data-testid="plan-trip-btn"
+          :disabled="atTripLimit"
+          @click="tripStore.clearLastInput(); navigateTo('/planner')"
+        >
+          {{ atTripLimit ? t('dashboard.tripLimitReached') : t('dashboard.planTrip') }} <span style="margin-left:4px">→</span>
         </button>
       </div>
 

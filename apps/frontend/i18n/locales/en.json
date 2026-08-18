@@ -77,6 +77,8 @@
     "travellerFallback": "Traveller",
     "subtitle": "Plan your next group trip with AI agents.",
     "planTrip": "Plan a trip",
+    "tripLimitReached": "Trip limit reached",
+    "tripLimitHint": "You've reached the trip limit during this beta. Cancel a trip to create another.",
     "yourTrips": "Your trips",
     "loadingTrips": "Loading trips…",
     "viewResults": "View results",

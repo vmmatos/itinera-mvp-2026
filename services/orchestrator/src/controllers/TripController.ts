@@ -28,7 +28,7 @@ export class TripController {
     try {
       const authedReq = req as AuthenticatedRequest;
       const input = CreateTripSchema.parse(req.body);
-      const trip = await this.tripService.createTrip(authedReq.user.sub, input);
+      const trip = await this.tripService.createTrip(authedReq.user.sub, input, authedReq.user.role);
       this.tripService.startOrchestration(trip.id);
       res.status(202).json(ok({ tripId: trip.id, status: trip.status, message: 'Trip created' }));
     } catch (err) {
