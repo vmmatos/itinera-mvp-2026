@@ -83,7 +83,9 @@ const EnvSchema = z.object({
   LOCAL_WALK_MAX_KM: z.coerce.number().default(1.5),
   // Net-new Routes API quota consumption (one call per non-placeholder
   // activity) — mock in dev to avoid burning quota while testing the feature.
-  LOCAL_TRANSIT_MOCK: z.coerce.boolean().default(false),
+  // NOT z.coerce.boolean(): that does JS `Boolean(str)`, so the literal
+  // string "false" (any non-empty string) coerces to `true`.
+  LOCAL_TRANSIT_MOCK: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
   // Meals assumed per day (lunch + dinner) when injecting the previously-
   // always-empty day.meals budget category from the blended restaurant estimate.
   MEALS_PER_DAY: z.coerce.number().default(2),
@@ -92,7 +94,8 @@ const EnvSchema = z.object({
   // disabled (same convention as SERPAPI_KEY), fails open elsewhere.
   TICKETMASTER_API_KEY: z.string().default(''),
   TICKETMASTER_BASE_URL: z.string().default('https://app.ticketmaster.com/discovery/v2'),
-  EVENTS_MOCK: z.coerce.boolean().default(false),
+  // Same z.coerce.boolean() footgun as LOCAL_TRANSIT_MOCK above — enum instead.
+  EVENTS_MOCK: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
   EVENTS_CACHE_TTL_SECONDS: z.coerce.number().default(21600),
   EVENTS_MAX_PER_CITY: z.coerce.number().default(20),
 });
