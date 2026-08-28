@@ -34,9 +34,10 @@ export const tripStoreMock = {
 
 // ── Auth store mock ────────────────────────────────────────────
 export const mockUpdateLanguage = vi.fn()
+export const mockUpdateTheme = vi.fn()
 export const mockCompleteWalkthrough = vi.fn()
 export const authStoreMock = {
-  user: { id: 'user-1', name: 'Test User', email: 'test@test.com', role: 'user', language: 'en', hasSeenWalkthrough: false },
+  user: { id: 'user-1', name: 'Test User', email: 'test@test.com', role: 'user', language: 'en', theme: 'dark', hasSeenWalkthrough: false },
   token: 'mock-token',
   isAuthenticated: true,
   tryRefresh: vi.fn().mockResolvedValue(true),
@@ -44,6 +45,7 @@ export const authStoreMock = {
   updateToken: vi.fn(),
   logout: vi.fn(),
   updateLanguage: mockUpdateLanguage,
+  updateTheme: mockUpdateTheme,
   completeWalkthrough: mockCompleteWalkthrough,
 }
 
@@ -114,9 +116,11 @@ if (!window.matchMedia) {
 
 // ── Theme store mock (overridable per test) ─────────────────────
 export const mockToggleTheme = vi.fn()
+export const mockSetThemeMode = vi.fn()
 export const themeStoreMock = {
-  mode: { value: 'dark' as 'dark' | 'light' },
+  mode: 'dark' as 'dark' | 'light',
   isLight: false,
+  setMode: mockSetThemeMode,
   toggle: mockToggleTheme,
 }
 // @ts-expect-error global shim

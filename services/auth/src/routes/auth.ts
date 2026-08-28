@@ -38,7 +38,8 @@ export function createAuthRouter(authService: AuthService, redis: Redis): Router
 
   router.post('/login', controller.login);
   router.post('/register', controller.register);
-  router.patch('/me', authMiddleware, controller.updateLanguage);
+  router.get('/me', authMiddleware, controller.getMe);
+  router.patch('/me', authMiddleware, controller.updateSettings);
   router.patch('/me/walkthrough', authMiddleware, controller.completeWalkthrough);
 
   router.get(
@@ -64,8 +65,13 @@ export function createAuthRouter(authService: AuthService, redis: Redis): Router
       const token = authService.generateToken(user);
       const refreshToken = await authService.generateRefreshToken(user.id);
       const code = randomUUID();
-      // Store { access, refresh } keyed by exchange code
-      await redis.setex(`auth:exchange:${code}`, EXCHANGE_CODE_TTL, JSON.stringify({ token, refreshToken }));
+      // Store { access, refresh, userId } keyed by exchange code — userId lets
+      // /exchange hydrate the full public user (JWT claims omit language/theme/flags).
+      await redis.setex(
+        `auth:exchange:${code}`,
+        EXCHANGE_CODE_TTL,
+        JSON.stringify({ token, refreshToken, userId: user.id }),
+      );
       res.redirect(`${config.FRONTEND_URL}/auth/callback?code=${encodeURIComponent(code)}`);
     },
   );
@@ -79,7 +85,11 @@ export function createAuthRouter(authService: AuthService, redis: Redis): Router
         res.status(401).json({ success: false, error: { code: 'INVALID_CODE', message: 'Invalid or expired exchange code' } });
         return;
       }
-      const { token, refreshToken } = JSON.parse(raw) as { token: string; refreshToken: string };
+      const { token, refreshToken, userId } = JSON.parse(raw) as {
+        token: string;
+        refreshToken: string;
+        userId: string;
+      };
       res.cookie('refresh_token', refreshToken, {
         httpOnly: true,
         secure: config.NODE_ENV === 'production',
@@ -87,7 +97,8 @@ export function createAuthRouter(authService: AuthService, redis: Redis): Router
         maxAge: 7 * 24 * 60 * 60 * 1000,
         path: '/api/auth',
       });
-      res.json({ success: true, data: { token } });
+      const user = await authService.getMe(userId);
+      res.json({ success: true, data: { token, user } });
     } catch (err) {
       next(err);
     }
@@ -114,7 +125,7 @@ export function createAuthRouter(authService: AuthService, redis: Redis): Router
         maxAge: 7 * 24 * 60 * 60 * 1000,
         path: '/api/auth',
       });
-      res.json({ success: true, data: { token: result.accessToken } });
+      res.json({ success: true, data: { token: result.accessToken, user: result.user } });
     } catch (err) {
       next(err);
     }

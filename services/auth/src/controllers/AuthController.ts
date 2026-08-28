@@ -4,7 +4,7 @@ import { ok } from '@itinera/shared';
 import { ValidationError } from '@itinera/shared';
 import type { AuthenticatedRequest } from '@itinera/shared';
 import type { AuthService } from '@/services/AuthService';
-import { SUPPORTED_LANGUAGES } from '@/services/AuthService';
+import { SUPPORTED_LANGUAGES, SUPPORTED_THEMES } from '@/services/AuthService';
 
 const LoginSchema = z.object({
   email: z.string().email(),
@@ -17,9 +17,14 @@ const RegisterSchema = z.object({
   name: z.string().min(1),
 });
 
-const UpdateLanguageSchema = z.object({
-  language: z.enum(SUPPORTED_LANGUAGES),
-});
+const UpdateSettingsSchema = z
+  .object({
+    language: z.enum(SUPPORTED_LANGUAGES).optional(),
+    theme: z.enum(SUPPORTED_THEMES).optional(),
+  })
+  .refine((v) => v.language !== undefined || v.theme !== undefined, {
+    message: 'At least one of language or theme is required',
+  });
 
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
@@ -56,15 +61,25 @@ export class AuthController {
     }
   };
 
-  updateLanguage = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    const parsed = UpdateLanguageSchema.safeParse(req.body);
+  getMe = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const userId = (req as AuthenticatedRequest).user.sub;
+      const result = await this.authService.getMe(userId);
+      res.json(ok(result));
+    } catch (err) {
+      next(err);
+    }
+  };
+
+  updateSettings = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    const parsed = UpdateSettingsSchema.safeParse(req.body);
     if (!parsed.success) {
       next(new ValidationError(parsed.error.errors[0]?.message ?? 'Invalid request'));
       return;
     }
     try {
       const userId = (req as AuthenticatedRequest).user.sub;
-      const result = await this.authService.updateLanguage(userId, parsed.data.language);
+      const result = await this.authService.updateSettings(userId, parsed.data);
       res.json(ok(result));
     } catch (err) {
       next(err);
