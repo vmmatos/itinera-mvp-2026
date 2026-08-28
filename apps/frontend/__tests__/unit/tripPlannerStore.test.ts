@@ -4,6 +4,7 @@ import { setActivePinia, createPinia } from 'pinia'
 // useApi is shimmed as a global in __tests__/setup.ts
 // We override per test to control return values
 
+import { authStoreMock, mockCompleteWalkthrough } from '../setup'
 import { useTripPlannerStore } from '~/stores/tripPlanner'
 import type { CreateTripInput } from '~/types/index'
 
@@ -64,6 +65,11 @@ describe('useTripPlannerStore', () => {
     mockPost = vi.fn()
     setApiMocks(mockGet, mockPost)
     localStorage.clear()
+    mockCompleteWalkthrough.mockClear()
+    authStoreMock.user = {
+      id: 'user-1', name: 'Test User', email: 'test@test.com', role: 'user',
+      language: 'en', theme: 'dark', hasSeenWalkthrough: false,
+    }
   })
 
   afterEach(() => {
@@ -120,6 +126,37 @@ describe('useTripPlannerStore', () => {
       expect(mockGet).toHaveBeenCalledWith('/api/v1/trips')
       expect(store.loading).toBe(false)
       expect(store.error).toBeNull()
+    })
+
+    it('retires the walkthrough after the first successful trip', async () => {
+      mockPost.mockResolvedValueOnce({ data: { success: true, data: { tripId: 'new-trip-123' } } })
+      mockGet.mockResolvedValueOnce({ data: { success: true, data: MOCK_TRIPS } })
+      authStoreMock.user.hasSeenWalkthrough = false
+
+      const store = useTripPlannerStore()
+      await store.createTrip(MOCK_INPUT)
+
+      expect(mockCompleteWalkthrough).toHaveBeenCalledTimes(1)
+    })
+
+    it('does not re-PATCH the walkthrough when the user has already seen it', async () => {
+      mockPost.mockResolvedValueOnce({ data: { success: true, data: { tripId: 'new-trip-123' } } })
+      mockGet.mockResolvedValueOnce({ data: { success: true, data: MOCK_TRIPS } })
+      authStoreMock.user.hasSeenWalkthrough = true
+
+      const store = useTripPlannerStore()
+      await store.createTrip(MOCK_INPUT)
+
+      expect(mockCompleteWalkthrough).not.toHaveBeenCalled()
+    })
+
+    it('does not fail trip creation when retiring the walkthrough throws', async () => {
+      mockPost.mockResolvedValueOnce({ data: { success: true, data: { tripId: 'new-trip-123' } } })
+      mockGet.mockResolvedValueOnce({ data: { success: true, data: MOCK_TRIPS } })
+      mockCompleteWalkthrough.mockRejectedValueOnce(new Error('auth down'))
+
+      const store = useTripPlannerStore()
+      await expect(store.createTrip(MOCK_INPUT)).resolves.toBe('new-trip-123')
     })
 
     it('sets error, re-throws, and clears loading on API failure', async () => {

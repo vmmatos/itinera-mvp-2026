@@ -4,8 +4,11 @@
 
 Standalone authentication service: email/password login+registration, Google
 OAuth2 login, JWT access-token issuance, and httpOnly-cookie refresh-token
-rotation. Also owns two small user-profile mutations (`language`,
-`has_seen_walkthrough`) since they hang off the same `User` entity. Runs on
+rotation. Also owns the small user-profile fields (`language`, `theme`,
+`has_seen_walkthrough`) since they hang off the same `User` entity, and
+serves them back via `GET /me` and inside every auth response envelope
+(`login`/`register`/`refresh`/`exchange` all return `{ token, user }`) so
+the client can re-hydrate settings after a reload or OAuth login. Runs on
 port 3010.
 
 ## How it works
@@ -15,8 +18,11 @@ port 3010.
   `/` and `routes/health.ts`), and `errorHandler` from `@itinera/shared`.
 - `routes/auth.ts` (`createAuthRouter`) exposes:
   - `POST /login`, `POST /register` — email/password, delegate to
-    `AuthController` → `AuthService`
+    `AuthController` → `AuthService`; respond `{ token, user }`
+  - `GET /me` (JWT-protected via `authMiddleware`) — current public user
+    (`id, email, name, role, language, theme, hasSeenWalkthrough`)
   - `PATCH /me` (JWT-protected via `authMiddleware`) — update `language`
+    and/or `theme` (at least one required)
   - `PATCH /me/walkthrough` (JWT-protected) — mark
     `has_seen_walkthrough = true`
   - `GET /oauth2/google`, `GET /oauth2/google/callback` — Passport Google
@@ -24,14 +30,17 @@ port 3010.
     are set, otherwise the initiation route returns `501 NOT_CONFIGURED`
   - `POST /exchange` — one-time-code exchange: the OAuth callback never
     returns tokens directly in the redirect URL; it stores
-    `{ token, refreshToken }` in Redis under `auth:exchange:<uuid>` for 60
-    seconds and redirects the browser to `${FRONTEND_URL}/auth/callback?code=...`,
-    which then calls `/exchange` to trade the one-time code for the real
-    tokens (`redis.getdel`, so the code is single-use)
-  - `POST /refresh` — rotates the refresh token using the httpOnly cookie
+    `{ token, refreshToken, userId }` in Redis under `auth:exchange:<uuid>`
+    for 60 seconds and redirects the browser to
+    `${FRONTEND_URL}/auth/callback?code=...`, which then calls `/exchange`
+    to trade the one-time code for `{ token, user }` (`redis.getdel`, so
+    the code is single-use; `userId` lets `/exchange` load the full public
+    user since JWT claims omit `language`/`theme`/`hasSeenWalkthrough`)
+  - `POST /refresh` — rotates the refresh token using the httpOnly cookie,
+    responds `{ token, user }`
   - `POST /logout` — revokes the refresh token and clears the cookie
 - `AuthController` validates request bodies with local `zod` schemas
-  (`LoginSchema`, `RegisterSchema`, `UpdateLanguageSchema`) before calling
+  (`LoginSchema`, `RegisterSchema`, `UpdateSettingsSchema`) before calling
   `AuthService`.
 - `AuthService` (`src/services/AuthService.ts`) does password hashing
   (`bcrypt`), credential checks, `generateToken`/`generateRefreshToken`

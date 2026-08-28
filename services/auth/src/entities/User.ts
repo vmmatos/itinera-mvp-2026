@@ -26,6 +26,9 @@ export class User {
   @Column({ type: 'varchar', length: 10, default: 'en' })
   language!: string;
 
+  @Column({ type: 'varchar', length: 10, default: 'dark' })
+  theme!: string;
+
   @Column({ type: 'boolean', name: 'has_seen_walkthrough', default: false })
   hasSeenWalkthrough!: boolean;
 

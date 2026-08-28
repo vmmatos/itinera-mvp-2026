@@ -15,10 +15,8 @@ const REFRESH_TOKEN_TTL = 7 * 24 * 60 * 60; // 7 days in seconds
 export const SUPPORTED_LANGUAGES = ['en', 'pt'] as const;
 export type SupportedLanguage = (typeof SUPPORTED_LANGUAGES)[number];
 
-export interface AuthResult {
-  token: string;
-  user: { id: string; email: string; name: string; role: string; language: string; hasSeenWalkthrough: boolean };
-}
+export const SUPPORTED_THEMES = ['dark', 'light'] as const;
+export type SupportedTheme = (typeof SUPPORTED_THEMES)[number];
 
 export interface PublicUser {
   id: string;
@@ -26,7 +24,18 @@ export interface PublicUser {
   name: string;
   role: string;
   language: string;
+  theme: string;
   hasSeenWalkthrough: boolean;
+}
+
+export interface AuthResult {
+  token: string;
+  user: PublicUser;
+}
+
+export interface UserSettingsPatch {
+  language?: string;
+  theme?: string;
 }
 
 export class AuthService {
@@ -100,7 +109,9 @@ export class AuthService {
     return token;
   }
 
-  async rotateRefreshToken(oldToken: string): Promise<{ accessToken: string; refreshToken: string } | null> {
+  async rotateRefreshToken(
+    oldToken: string,
+  ): Promise<{ accessToken: string; refreshToken: string; user: PublicUser } | null> {
     if (!this.redis) return null;
     const userId = await this.redis.getdel(`auth:refresh:${oldToken}`);
     if (!userId) return null;
@@ -111,7 +122,7 @@ export class AuthService {
 
     const accessToken = this.generateToken(user);
     const refreshToken = await this.generateRefreshToken(user.id);
-    return { accessToken, refreshToken };
+    return { accessToken, refreshToken, user: this.toPublicUser(user) };
   }
 
   async revokeRefreshToken(token: string): Promise<void> {
@@ -120,26 +131,36 @@ export class AuthService {
     }
   }
 
-  async updateLanguage(userId: string, language: string): Promise<PublicUser> {
-    if (!SUPPORTED_LANGUAGES.includes(language as SupportedLanguage)) {
-      throw new ValidationError(`Unsupported language: ${language}`);
+  async getMe(userId: string): Promise<PublicUser> {
+    const repo = this.dataSource.getRepository(User);
+    const user = await repo.findOne({ where: { id: userId } });
+    if (!user) throw new NotFoundError('User not found');
+    return this.toPublicUser(user);
+  }
+
+  async updateSettings(userId: string, patch: UserSettingsPatch): Promise<PublicUser> {
+    if (patch.language === undefined && patch.theme === undefined) {
+      throw new ValidationError('No settings provided');
+    }
+    if (
+      patch.language !== undefined &&
+      !SUPPORTED_LANGUAGES.includes(patch.language as SupportedLanguage)
+    ) {
+      throw new ValidationError(`Unsupported language: ${patch.language}`);
+    }
+    if (patch.theme !== undefined && !SUPPORTED_THEMES.includes(patch.theme as SupportedTheme)) {
+      throw new ValidationError(`Unsupported theme: ${patch.theme}`);
     }
 
     const repo = this.dataSource.getRepository(User);
     const user = await repo.findOne({ where: { id: userId } });
     if (!user) throw new NotFoundError('User not found');
 
-    user.language = language;
+    if (patch.language !== undefined) user.language = patch.language;
+    if (patch.theme !== undefined) user.theme = patch.theme;
     await repo.save(user);
 
-    return {
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      language: user.language,
-      hasSeenWalkthrough: user.hasSeenWalkthrough,
-    };
+    return this.toPublicUser(user);
   }
 
   async completeWalkthrough(userId: string): Promise<PublicUser> {
@@ -150,28 +171,25 @@ export class AuthService {
     user.hasSeenWalkthrough = true;
     await repo.save(user);
 
+    return this.toPublicUser(user);
+  }
+
+  private buildResult(user: User): AuthResult {
+    return {
+      token: this.generateToken(user),
+      user: this.toPublicUser(user),
+    };
+  }
+
+  private toPublicUser(user: User): PublicUser {
     return {
       id: user.id,
       email: user.email,
       name: user.name,
       role: user.role,
       language: user.language,
+      theme: user.theme,
       hasSeenWalkthrough: user.hasSeenWalkthrough,
-    };
-  }
-
-  private async buildResult(user: User): Promise<AuthResult> {
-    const token = this.generateToken(user);
-    return {
-      token,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        language: user.language,
-        hasSeenWalkthrough: user.hasSeenWalkthrough,
-      },
     };
   }
 }

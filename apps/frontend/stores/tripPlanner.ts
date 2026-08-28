@@ -54,6 +54,16 @@ export const useTripPlannerStore = defineStore('tripPlanner', () => {
     }
   }
 
+  // Once the user has actually shipped a trip they know the product — retire
+  // the walkthrough even if they never finished (or ever triggered) the
+  // coach-marks. Best-effort: a failed PATCH must never block trip creation.
+  const markWalkthroughSeen = async (): Promise<void> => {
+    try {
+      const auth = useAuthStore()
+      if (auth.user && !auth.user.hasSeenWalkthrough) await auth.completeWalkthrough()
+    } catch { /* best-effort */ }
+  }
+
   const createTrip = async (input: CreateTripInput): Promise<string> => {
     loading.value = true
     error.value = null
@@ -61,6 +71,7 @@ export const useTripPlannerStore = defineStore('tripPlanner', () => {
     try {
       const { data } = await api.post<{ success: true; data: { tripId: string } }>('/api/v1/trips', input)
       await fetchTrips()
+      await markWalkthroughSeen()
       return data.data.tripId
     } catch (err: unknown) {
       error.value = _extractMessage(err, 'Failed to create trip')

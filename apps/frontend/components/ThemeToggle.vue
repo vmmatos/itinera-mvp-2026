@@ -1,5 +1,18 @@
 <script setup lang="ts">
 const theme = useThemeStore()
+const authStore = useAuthStore()
+
+const onToggle = async (): Promise<void> => {
+  theme.toggle()
+  // Persist for logged-in users so the choice survives a reload / new device.
+  // Guests keep the localStorage-only behaviour. Best-effort — the local mode
+  // is already applied.
+  if (authStore.isAuthenticated) {
+    try {
+      await authStore.updateTheme(theme.mode)
+    } catch { /* localStorage already holds the choice */ }
+  }
+}
 </script>
 
 <template>
@@ -8,7 +21,7 @@ const theme = useThemeStore()
     class="theme-toggle"
     :aria-label="theme.isLight ? 'Switch to dark mode' : 'Switch to light mode'"
     :title="theme.isLight ? 'Switch to dark mode' : 'Switch to light mode'"
-    @click="theme.toggle()"
+    @click="onToggle"
   >
     <svg v-if="theme.isLight" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
       <circle cx="12" cy="12" r="4.5" />

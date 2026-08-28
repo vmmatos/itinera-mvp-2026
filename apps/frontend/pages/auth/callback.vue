@@ -1,23 +1,20 @@
 <script setup lang="ts">
+import { onMounted } from 'vue'
+
 definePageMeta({ layout: 'auth' })
 
 const route = useRoute()
 const authStore = useAuthStore()
 const config = useRuntimeConfig()
 
-interface JwtTokenPayload {
-  sub: string
+interface ExchangeUser {
+  id: string
   email: string
   name: string
   role: string
-  iss: string
-  exp: number
-}
-
-const decodeJwt = (token: string): JwtTokenPayload => {
-  const base64 = token.split('.')[1]?.replace(/-/g, '+').replace(/_/g, '/')
-  if (!base64) throw new Error('Invalid token format')
-  return JSON.parse(atob(base64)) as JwtTokenPayload
+  language: string
+  theme: string
+  hasSeenWalkthrough: boolean
 }
 
 onMounted(async () => {
@@ -28,21 +25,13 @@ onMounted(async () => {
   }
 
   try {
-    const resp = await $fetch<{ success: boolean; data: { token: string } }>(
+    const resp = await $fetch<{ success: boolean; data: { token: string; user: ExchangeUser } }>(
       `${config.public.apiBase}/api/auth/exchange`,
       { method: 'POST', body: { code } },
     )
-    const token = resp.data.token
-    const payload = decodeJwt(token)
-    authStore.setFromOAuth({
-      token,
-      user: {
-        id: payload.sub,
-        email: payload.email,
-        name: payload.name,
-        role: payload.role,
-      },
-    })
+    // The exchange response carries the full user (language, theme, walkthrough
+    // flag) — the access-token claims do not, so never reconstruct it from the JWT.
+    authStore.setFromOAuth({ token: resp.data.token, user: resp.data.user })
     await navigateTo('/', { replace: true })
   } catch {
     await navigateTo('/auth/login?error=oauth_failed', { replace: true })

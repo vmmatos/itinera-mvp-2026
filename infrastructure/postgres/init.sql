@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS users (
   name          VARCHAR(255) NOT NULL,
   role          VARCHAR(50)  NOT NULL DEFAULT 'user',
   language      VARCHAR(10)  NOT NULL DEFAULT 'en',
+  theme         VARCHAR(10)  NOT NULL DEFAULT 'dark',
   has_seen_walkthrough BOOLEAN NOT NULL DEFAULT false,
   created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
   updated_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()

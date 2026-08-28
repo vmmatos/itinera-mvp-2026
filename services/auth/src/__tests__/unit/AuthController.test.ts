@@ -21,7 +21,7 @@ describe('AuthController', () => {
 
   beforeEach(() => {
     jsonMock = vi.fn();
-    authService = { updateLanguage: vi.fn(), completeWalkthrough: vi.fn() };
+    authService = { getMe: vi.fn(), updateSettings: vi.fn(), completeWalkthrough: vi.fn() };
     controller = new AuthController(authService as AuthService);
     res = { json: jsonMock, status: vi.fn().mockReturnThis() } as unknown as Response;
     next = vi.fn() as unknown as NextFunction;
@@ -30,37 +30,79 @@ describe('AuthController', () => {
   const buildReq = (body: unknown, userId = 'user-uuid-1'): Request =>
     ({ body, user: { sub: userId, role: 'user' } } as unknown as Request);
 
-  describe('updateLanguage()', () => {
-    it('calls authService.updateLanguage with the authenticated user id and responds with the result', async () => {
-      const updated = { id: 'user-uuid-1', email: 'a@b.com', name: 'Alice', role: 'user', language: 'pt', hasSeenWalkthrough: false };
-      vi.mocked(authService.updateLanguage!).mockResolvedValue(updated);
+  const publicUser = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+    id: 'user-uuid-1', email: 'a@b.com', name: 'Alice', role: 'user',
+    language: 'en', theme: 'dark', hasSeenWalkthrough: false, ...overrides,
+  });
 
-      await controller.updateLanguage(buildReq({ language: 'pt' }), res, next);
+  describe('getMe()', () => {
+    it('responds with the public user for the authenticated user id', async () => {
+      const me = publicUser({ language: 'pt', theme: 'light' });
+      vi.mocked(authService.getMe!).mockResolvedValue(me as never);
 
-      expect(authService.updateLanguage).toHaveBeenCalledWith('user-uuid-1', 'pt');
+      await controller.getMe(buildReq(undefined), res, next);
+
+      expect(authService.getMe).toHaveBeenCalledWith('user-uuid-1');
+      expect(jsonMock).toHaveBeenCalledWith({ success: true, data: me });
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('forwards service errors to next', async () => {
+      vi.mocked(authService.getMe!).mockRejectedValue(new NotFoundError('User not found'));
+
+      await controller.getMe(buildReq(undefined), res, next);
+
+      expect(next).toHaveBeenCalledWith(expect.any(NotFoundError));
+      expect(jsonMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('updateSettings()', () => {
+    it('calls authService.updateSettings with the authenticated user id and the parsed patch', async () => {
+      const updated = publicUser({ language: 'pt' });
+      vi.mocked(authService.updateSettings!).mockResolvedValue(updated as never);
+
+      await controller.updateSettings(buildReq({ language: 'pt' }), res, next);
+
+      expect(authService.updateSettings).toHaveBeenCalledWith('user-uuid-1', { language: 'pt' });
       expect(jsonMock).toHaveBeenCalledWith({ success: true, data: updated });
       expect(next).not.toHaveBeenCalled();
     });
 
-    it('rejects an unsupported language without calling the service', async () => {
-      await controller.updateLanguage(buildReq({ language: 'fr' }), res, next);
+    it('passes a theme-only patch through', async () => {
+      vi.mocked(authService.updateSettings!).mockResolvedValue(publicUser({ theme: 'light' }) as never);
 
-      expect(authService.updateLanguage).not.toHaveBeenCalled();
+      await controller.updateSettings(buildReq({ theme: 'light' }), res, next);
+
+      expect(authService.updateSettings).toHaveBeenCalledWith('user-uuid-1', { theme: 'light' });
+    });
+
+    it('rejects an unsupported language without calling the service', async () => {
+      await controller.updateSettings(buildReq({ language: 'fr' }), res, next);
+
+      expect(authService.updateSettings).not.toHaveBeenCalled();
       expect(next).toHaveBeenCalledWith(expect.any(ValidationError));
       expect(jsonMock).not.toHaveBeenCalled();
     });
 
-    it('rejects a missing language field without calling the service', async () => {
-      await controller.updateLanguage(buildReq({}), res, next);
+    it('rejects an unsupported theme without calling the service', async () => {
+      await controller.updateSettings(buildReq({ theme: 'sepia' }), res, next);
 
-      expect(authService.updateLanguage).not.toHaveBeenCalled();
+      expect(authService.updateSettings).not.toHaveBeenCalled();
+      expect(next).toHaveBeenCalledWith(expect.any(ValidationError));
+    });
+
+    it('rejects an empty body without calling the service', async () => {
+      await controller.updateSettings(buildReq({}), res, next);
+
+      expect(authService.updateSettings).not.toHaveBeenCalled();
       expect(next).toHaveBeenCalledWith(expect.any(ValidationError));
     });
 
     it('forwards service errors to next', async () => {
-      vi.mocked(authService.updateLanguage!).mockRejectedValue(new NotFoundError('User not found'));
+      vi.mocked(authService.updateSettings!).mockRejectedValue(new NotFoundError('User not found'));
 
-      await controller.updateLanguage(buildReq({ language: 'pt' }), res, next);
+      await controller.updateSettings(buildReq({ language: 'pt' }), res, next);
 
       expect(next).toHaveBeenCalledWith(expect.any(NotFoundError));
       expect(jsonMock).not.toHaveBeenCalled();
@@ -69,8 +111,8 @@ describe('AuthController', () => {
 
   describe('completeWalkthrough()', () => {
     it('calls authService.completeWalkthrough with the authenticated user id and responds with the result', async () => {
-      const updated = { id: 'user-uuid-1', email: 'a@b.com', name: 'Alice', role: 'user', language: 'en', hasSeenWalkthrough: true };
-      vi.mocked(authService.completeWalkthrough!).mockResolvedValue(updated);
+      const updated = publicUser({ hasSeenWalkthrough: true });
+      vi.mocked(authService.completeWalkthrough!).mockResolvedValue(updated as never);
 
       await controller.completeWalkthrough(buildReq({}), res, next);
 

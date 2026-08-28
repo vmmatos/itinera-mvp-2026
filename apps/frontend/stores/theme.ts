@@ -22,9 +22,16 @@ export const useThemeStore = defineStore('theme', () => {
 
   const isLight = computed(() => mode.value === 'light')
 
+  // Applies a colour mode without persisting it server-side. Used by the auth
+  // store to reflect the logged-in user's stored preference on login/refresh.
+  const setMode = (m: ThemeMode): void => {
+    if (m !== 'dark' && m !== 'light') return
+    mode.value = m
+  }
+
   const toggle = (): void => {
     mode.value = mode.value === 'light' ? 'dark' : 'light'
   }
 
-  return { mode, isLight, toggle }
+  return { mode, isLight, setMode, toggle }
 })

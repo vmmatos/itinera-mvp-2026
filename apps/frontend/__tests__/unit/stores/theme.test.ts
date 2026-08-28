@@ -56,6 +56,25 @@ describe('useThemeStore', () => {
     expect(document.documentElement.getAttribute('data-theme')).toBe('light')
   })
 
+  // ── setMode (used by the auth store to apply a server-sourced pref) ──
+
+  it('setMode() applies a colour mode and persists it', async () => {
+    const store = useThemeStore()
+    store.setMode('light')
+    await nextTick()
+
+    expect(store.mode).toBe('light')
+    expect(localStorage.getItem(LS_KEY)).toBe('light')
+  })
+
+  it('setMode() ignores a value that is neither dark nor light', async () => {
+    const store = useThemeStore()
+    store.setMode('sepia' as unknown as 'dark' | 'light')
+    await nextTick()
+
+    expect(store.mode).toBe('dark')
+  })
+
   // ── persistence / edge cases ────────────────────────────────
 
   it('honors a previously persisted light choice on store init', () => {

@@ -7,6 +7,7 @@ interface AuthUser {
   name: string
   role: string
   language: string
+  theme: string
   hasSeenWalkthrough: boolean
 }
 
@@ -44,10 +45,14 @@ export const useAuthStore = defineStore('auth', () => {
   const tryRefresh = async (): Promise<boolean> => {
     try {
       const api = useApi()
-      const { data } = await api.post<{ success: true; data: AuthResult }>('/api/auth/refresh', {})
+      const { data } = await api.post<{ success: true; data: Partial<AuthResult> & { token: string } }>('/api/auth/refresh', {})
       token.value = data.data.token
-      user.value = data.data.user
-      _syncLocale(data.data.user.language)
+      // The backend returns `user` alongside the fresh token; guard so an
+      // older backend that only sends `{ token }` still yields a valid session.
+      if (data.data.user) {
+        user.value = data.data.user
+        _syncSettings(data.data.user)
+      }
       return true
     } catch {
       token.value = null
@@ -120,6 +125,14 @@ export const useAuthStore = defineStore('auth', () => {
     _syncLocale(data.data.language)
   }
 
+  // Persists the theme choice server-side. The colour mode itself is already
+  // applied locally by the theme store before this is called.
+  const updateTheme = async (theme: string): Promise<void> => {
+    const api = useApi()
+    const { data } = await api.patch<{ success: true; data: AuthUser }>('/api/auth/me', { theme })
+    if (user.value) user.value.theme = data.data.theme
+  }
+
   const completeWalkthrough = async (): Promise<void> => {
     const api = useApi()
     const { data } = await api.patch<{ success: true; data: AuthUser }>('/api/auth/me/walkthrough', {})
@@ -129,13 +142,26 @@ export const useAuthStore = defineStore('auth', () => {
   const _set = (result: AuthResult): void => {
     token.value = result.token
     user.value = result.user
-    _syncLocale(result.user.language)
+    _syncSettings(result.user)
+  }
+
+  // Applies the server-sourced per-user settings (language + theme) to the
+  // client. Called on login/register/OAuth and on every silent token refresh,
+  // so a hard reload re-hydrates them instead of falling back to defaults.
+  const _syncSettings = (u: AuthUser): void => {
+    _syncLocale(u.language ?? 'en')
+    _syncTheme(u.theme ?? 'dark')
   }
 
   // $i18n.setLocale() also persists the itn-locale detection cookie for us.
   const _syncLocale = (language: string): void => {
+    if (language !== 'en' && language !== 'pt') return
     const { $i18n } = useNuxtApp()
     void $i18n.setLocale(language)
+  }
+
+  const _syncTheme = (theme: string): void => {
+    if (theme === 'dark' || theme === 'light') useThemeStore().setMode(theme)
   }
 
   const _extractMessage = (err: unknown, fallback: string): string => {
@@ -163,6 +189,7 @@ export const useAuthStore = defineStore('auth', () => {
     logout,
     clearError,
     updateLanguage,
+    updateTheme,
     completeWalkthrough,
   }
 })
