@@ -9,6 +9,8 @@ export interface Place {
   rating: number | null;
   /** Google Places price_level (0-4). Only populated by searchRestaurants. */
   priceLevel: number | null;
+  /** Neighbourhood / short address. Only populated by searchRestaurants. */
+  vicinity?: string;
   openingHours: Record<string, string>;
   metadata: Record<string, unknown>;
 }
@@ -21,6 +23,7 @@ interface GooglePlacesTextSearchResponse {
     types?: string[];
     rating?: number;
     priceLevel?: string;
+    shortFormattedAddress?: string;
     regularOpeningHours?: {
       weekdayDescriptions?: string[];
     };
@@ -73,13 +76,15 @@ export class PlacesService extends BaseService {
   }
 
   async searchRestaurants(region: string): Promise<Place[]> {
+    if (config.PLACES_MOCK) return mockRestaurants(region);
+
     const res = await fetch(`${this.baseUrl}/places:searchText`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-Goog-Api-Key': this.apiKey,
         'X-Goog-FieldMask':
-          'places.id,places.displayName,places.location,places.types,places.rating,places.priceLevel',
+          'places.id,places.displayName,places.location,places.types,places.rating,places.priceLevel,places.shortFormattedAddress',
       },
       body: JSON.stringify({ textQuery: `restaurants in ${region}`, maxResultCount: 20 }),
     });
@@ -142,8 +147,31 @@ export class PlacesService extends BaseService {
       category: p.types?.[0] ?? defaultCategory,
       rating: p.rating ?? null,
       priceLevel: p.priceLevel ? PRICE_LEVEL_ENUM[p.priceLevel] ?? null : null,
+      ...(p.shortFormattedAddress ? { vicinity: p.shortFormattedAddress } : {}),
       openingHours,
       metadata: { types: p.types ?? [] },
     };
   }
+}
+
+/**
+ * Deterministic fixture restaurants for `PLACES_MOCK=true` dev/test — varied
+ * price levels, ratings and neighbourhoods so meal-pick ranking and rotation
+ * are exercised offline without burning Google Places quota.
+ */
+function mockRestaurants(region: string): Place[] {
+  const base: Array<Omit<Place, 'id' | 'location' | 'openingHours' | 'metadata'>> = [
+    { name: `${region} Tasca do Mercado`, category: 'restaurant', rating: 4.7, priceLevel: 1, vicinity: 'Centro' },
+    { name: `Cantina ${region}`, category: 'restaurant', rating: 4.5, priceLevel: 2, vicinity: 'Baixa' },
+    { name: `${region} Grill House`, category: 'restaurant', rating: 4.3, priceLevel: 2, vicinity: 'Ribeira' },
+    { name: `Osteria ${region}`, category: 'restaurant', rating: 4.2, priceLevel: 3, vicinity: 'Bairro Alto' },
+    { name: `${region} Street Food Corner`, category: 'restaurant', rating: 4.0, priceLevel: 0, vicinity: 'Mercado' },
+  ];
+  return base.map((r, i) => ({
+    ...r,
+    id: `mock-restaurant-${region.toLowerCase().replace(/\s+/g, '-')}-${i}`,
+    location: { lat: 0, lng: 0 },
+    openingHours: {},
+    metadata: { types: ['restaurant'], mock: true },
+  }));
 }

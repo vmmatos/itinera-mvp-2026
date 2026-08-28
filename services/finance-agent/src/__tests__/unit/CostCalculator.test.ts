@@ -142,4 +142,18 @@ describe('CostCalculator', () => {
     expect(result.byCategory.transport).toBe(26); // 2 + 24
     expect(result.grandTotal).toBe(90);
   });
+
+  it('sums several named restaurant meal entries on one day', () => {
+    const day: ItineraryDay = {
+      day: 1,
+      activities: [],
+      meals: [
+        { type: 'Lunch', name: 'Bar Cañete', estimatedCostPerPerson: 22, isEstimate: false, source: 'google_places_price_level' } as never,
+        { type: 'Dinner', name: 'Disfrutar', location: 'Eixample', rating: 4.7, estimatedCostPerPerson: 45, isEstimate: false, source: 'google_places_price_level' } as never,
+      ],
+      transport: [],
+    };
+    const result = calc.calculate([day], 'EUR', [], 2);
+    expect(result.byCategory.meals).toBe(67 * 2); // (22 + 45) per person × 2 travellers
+  });
 });

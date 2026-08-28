@@ -107,3 +107,51 @@ describe('pages/trips/[id] — weather wiring', () => {
     expect(wrapper.text()).not.toContain('suggested window')
   })
 })
+
+describe('pages/trips/[id] — meals wiring', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+  })
+
+  function proposalsWithMeals() {
+    return [
+      {
+        tripId: TRIP_ID,
+        agent: 'orchestrator',
+        round: 1,
+        content: {
+          itinerary: [
+            {
+              day: 1, date: '2026-06-01', city: 'Lisboa',
+              activities: [{ activity: 'Castle visit', time: 'morning' }],
+              meals: [
+                { type: 'Lunch', name: 'Cervejaria Ramiro', location: 'Intendente', rating: 4.6, estimatedCostPerPerson: 30 },
+                { type: 'Meals', name: 'Local restaurants', estimatedCostPerPerson: 50 },
+              ],
+            },
+          ],
+        },
+      },
+    ]
+  }
+
+  it('parses per-day meals with area and rating and passes them to TripTimeline', async () => {
+    mockApiGet
+      .mockResolvedValueOnce({ data: { data: trip(FIXED_DATE_INPUT) } })
+      .mockResolvedValueOnce({ data: { data: proposalsWithMeals() } })
+
+    const wrapper = mount(TripDetail, {
+      global: {
+        plugins: [createPinia()],
+        components: { TripTimeline: Timeline },
+        stubs: { AppHeader: true, NuxtLink: true, TripBudgetBreakdown: true, TripTimeline: true },
+      },
+    })
+    await flushPromises()
+
+    const days = wrapper.findComponent({ name: 'TripTimeline' }).props('days') as Array<{ meals?: Array<Record<string, unknown>> }>
+    expect(days[0]!.meals![0]).toMatchObject({ type: 'Lunch', name: 'Cervejaria Ramiro', location: 'Intendente', rating: 4.6 })
+    expect(days[0]!.meals![1]!.location).toBeUndefined()
+  })
+})

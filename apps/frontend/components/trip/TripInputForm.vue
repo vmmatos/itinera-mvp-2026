@@ -558,7 +558,14 @@ function buildDays(obj: unknown): ItineraryDay[] {
           }))
         : [],
       meals: Array.isArray(d['meals'])
-        ? (d['meals'] as Array<Record<string, unknown>>).map((m) => ({ type: String(m['type'] ?? 'meal'), name: String(m['name'] ?? '—') }))
+        ? (d['meals'] as Array<Record<string, unknown>>).map((m) => ({
+            type: String(m['type'] ?? 'meal'),
+            name: String(m['name'] ?? '—'),
+            ...(typeof m['location'] === 'string' && m['location'].trim()
+              ? { location: m['location'].trim() }
+              : {}),
+            ...(typeof m['rating'] === 'number' ? { rating: m['rating'] } : {}),
+          }))
         : undefined,
     }
   })
@@ -892,7 +899,12 @@ const buildExportPayload = (): Record<string, unknown> => ({
         duration: a.time,
         notes:    a.notes,
       })),
-      meals: d.meals?.map((m) => ({ type: m.type, name: m.name })),
+      meals: d.meals?.map((m) => ({
+        type: m.type,
+        name: m.name,
+        ...(m.location ? { location: m.location } : {}),
+        ...(m.rating !== undefined ? { rating: m.rating } : {}),
+      })),
       transport: d.rawTransport?.map((t) => ({
         from:           t['from'] as string,
         to:             t['to'] as string,

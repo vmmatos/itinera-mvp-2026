@@ -387,6 +387,7 @@ describe('POST /validate', () => {
     vi.mocked(mockPricingEnricher.enrich).mockResolvedValue({
       accommodationByCity: { Paris: { amount: 90, isEstimate: false, source: 'serpapi_google_hotels' } },
       restaurantPricePerMeal: { amount: 25, isEstimate: false, source: 'google_places_price_level' },
+      restaurantsByCity: {},
       activityPriceByName: {},
     });
 
@@ -402,6 +403,7 @@ describe('POST /validate', () => {
     expect(res.body.validation.content.pricing).toEqual({
       accommodationByCity: { Paris: { amount: 90, isEstimate: false, source: 'serpapi_google_hotels' } },
       restaurantPricePerMeal: { amount: 25, isEstimate: false, source: 'google_places_price_level' },
+      restaurantsByCity: {},
       activityPriceByName: {},
     });
   });
@@ -1471,6 +1473,7 @@ describe('POST /pricing-overlay', () => {
       '2026-09-01',
       '2026-09-08',
       { Lucerne: 21 },
+      expect.any(Number),
     );
   });
 
@@ -1486,7 +1489,7 @@ describe('POST /pricing-overlay', () => {
 
     expect(res.status).toBe(200);
     expect(mockPricingEnricher.enrich).toHaveBeenCalledWith(
-      'Portugal', expect.any(Array), '2026-09-01', '2026-09-04', undefined,
+      'Portugal', expect.any(Array), '2026-09-01', '2026-09-04', undefined, expect.any(Number),
     );
   });
 });

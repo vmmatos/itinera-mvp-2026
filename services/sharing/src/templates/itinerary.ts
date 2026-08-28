@@ -52,10 +52,14 @@ function renderDay(day: ItineraryDay): string {
   const mealsHtml =
     day.meals && day.meals.length > 0
       ? `<div class="meals"><h4>Meals</h4><ul>${day.meals
-          .map(
-            (m) =>
-              `<li>${escapeHtml(m.type)}: ${escapeHtml(m.name)}${m.location ? ` at ${escapeHtml(m.location)}` : ''}</li>`,
-          )
+          .map((m) => {
+            const area = m.location ? `<span class="meal-area"> · ${escapeHtml(m.location)}</span>` : ''
+            const rating =
+              typeof m.rating === 'number'
+                ? `<span class="meal-rating"> ★ ${m.rating.toFixed(1)}</span>`
+                : ''
+            return `<li><strong>${escapeHtml(m.type)}:</strong> ${escapeHtml(m.name)}${area}${rating}</li>`
+          })
           .join('')}</ul></div>`
       : ''
 
@@ -113,6 +117,8 @@ export function renderItineraryHtml(data: ItineraryData): string {
     .meals { margin-top: 12px; background: #f9fafb; padding: 10px; border-radius: 4px; }
     .meals h4 { margin: 0 0 6px; font-size: 13px; color: #444; }
     .meals ul { margin: 0; padding-left: 18px; font-size: 13px; }
+    .meal-area { color: #666; }
+    .meal-rating { color: #b45309; white-space: nowrap; }
     .weather-section { margin: 24px 0; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 4px; padding: 16px; }
     .weather-section h3 { margin: 0 0 8px; font-size: 14px; color: #1e40af; }
     .weather-summary { margin: 0 0 8px; font-size: 13px; color: #374151; }

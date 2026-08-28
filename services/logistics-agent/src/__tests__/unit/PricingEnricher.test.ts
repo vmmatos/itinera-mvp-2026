@@ -1,8 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PricingEnricher } from '@/services/PricingEnricher';
 import type { HotelPriceService } from '@/services/HotelPriceService';
-import type { PlacesService } from '@/services/PlacesService';
+import type { Place, PlacesService } from '@/services/PlacesService';
 import type { AttractionPriceRepository } from '@/services/AttractionPriceRepository';
+
+function restaurant(name: string, priceLevel: number | null, rating: number | null = null): Place {
+  return {
+    id: name, name, location: { lat: 0, lng: 0 },
+    category: 'restaurant', rating, priceLevel, openingHours: {}, metadata: {},
+  };
+}
 
 describe('PricingEnricher', () => {
   let hotels: HotelPriceService;
@@ -118,5 +125,93 @@ describe('PricingEnricher', () => {
 
     expect(hotels.getNightlyPricePerPerson).toHaveBeenCalledTimes(1);
     expect(attractionPrices.findEntryPrice).toHaveBeenCalledTimes(1);
+  });
+
+  describe('restaurantsByCity', () => {
+    beforeEach(() => {
+      vi.mocked(hotels.getNightlyPricePerPerson).mockResolvedValue({
+        pricePerNightPerPerson: 60, isEstimate: false, source: 'serpapi_google_hotels',
+      });
+      vi.mocked(attractionPrices.findEntryPrice).mockResolvedValue(null);
+    });
+
+    it('ranks and caps real restaurant picks per city and blends the fallback across all cities', async () => {
+      vi.mocked(places.searchRestaurants).mockImplementation(async (query: string) => {
+        if (query === 'Lisbon') return [restaurant('Ramiro', 2, 4.7), restaurant('Prado', 3, 4.3)];
+        if (query === 'Porto') return [restaurant('Cantina', 1, 4.5)];
+        return [];
+      });
+
+      const result = await enricher.enrich(
+        'Portugal',
+        [{ city: 'Lisbon' }, { city: 'Porto' }],
+        undefined,
+        undefined,
+      );
+
+      expect(result.restaurantsByCity['Lisbon'].map((p) => p.name)).toEqual(['Ramiro', 'Prado']);
+      expect(result.restaurantsByCity['Porto'].map((p) => p.name)).toEqual(['Cantina']);
+      // blend of levels 2, 3, 1 -> avg 2 -> €25, real
+      expect(result.restaurantPricePerMeal).toEqual({ amount: 25, isEstimate: false, source: 'google_places_price_level' });
+    });
+
+    it('leaves a city empty when its search fails, without affecting the others', async () => {
+      vi.mocked(places.searchRestaurants).mockImplementation(async (query: string) => {
+        if (query === 'Lisbon') return [restaurant('Ramiro', 2, 4.7)];
+        throw new Error('Places down for Porto');
+      });
+
+      const result = await enricher.enrich(
+        'Portugal',
+        [{ city: 'Lisbon' }, { city: 'Porto' }],
+        undefined,
+        undefined,
+      );
+
+      expect(result.restaurantsByCity['Lisbon']).toHaveLength(1);
+      expect(result.restaurantsByCity['Porto']).toEqual([]);
+    });
+
+    it('only spends a region-wide search when every city returned nothing', async () => {
+      vi.mocked(places.searchRestaurants).mockImplementation(async (query: string) => {
+        if (query === 'Portugal') return [restaurant('Region Spot', 3)];
+        return [];
+      });
+
+      const result = await enricher.enrich(
+        'Portugal',
+        [{ city: 'Lisbon' }, { city: 'Porto' }],
+        undefined,
+        undefined,
+      );
+
+      expect(places.searchRestaurants).toHaveBeenCalledWith('Portugal');
+      expect(result.restaurantsByCity).toEqual({ Lisbon: [], Porto: [] });
+      expect(result.restaurantPricePerMeal.amount).toBe(45); // level 3
+    });
+
+    it('uses only the region-wide search when the itinerary has no cities', async () => {
+      vi.mocked(places.searchRestaurants).mockResolvedValue([restaurant('Region Spot', 2)]);
+
+      const result = await enricher.enrich('Portugal', [{ activities: [{ name: 'Walk' }] }], undefined, undefined);
+
+      expect(result.restaurantsByCity).toEqual({});
+      expect(places.searchRestaurants).toHaveBeenCalledTimes(1);
+      expect(places.searchRestaurants).toHaveBeenCalledWith('Portugal');
+    });
+
+    it('searches each distinct city only once', async () => {
+      vi.mocked(places.searchRestaurants).mockResolvedValue([restaurant('Ramiro', 2, 4.7)]);
+
+      await enricher.enrich(
+        'Portugal',
+        [{ city: 'Lisbon' }, { city: 'Lisbon' }],
+        undefined,
+        undefined,
+      );
+
+      expect(places.searchRestaurants).toHaveBeenCalledTimes(1);
+      expect(places.searchRestaurants).toHaveBeenCalledWith('Lisbon');
+    });
   });
 });

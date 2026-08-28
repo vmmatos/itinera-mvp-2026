@@ -1370,6 +1370,7 @@ describe('WorkflowEngine — real pricing overlay and local/day-trip transport',
       itinerary: pricedItinerary,
       accommodation: [],
       repricedCount: 1,
+      mealsNamedCount: 2,
     });
 
     const transportedItinerary = [{
@@ -1426,6 +1427,7 @@ describe('WorkflowEngine — real pricing overlay and local/day-trip transport',
       itinerary: MERGED_ITINERARY.itinerary,
       accommodation: MERGED_ITINERARY.accommodation,
       repricedCount: 0,
+      mealsNamedCount: 0,
     });
     vi.mocked(agentCaller.callLogisticsLocalTransport).mockRejectedValue(new Error('logistics-agent unreachable'));
 
@@ -2199,6 +2201,63 @@ describe('WorkflowEngine ITINERARY_REPAIR', () => {
     };
     expect(reviewed.itinerary[0]!.meals[0]!.estimatedCostPerPerson).toBe(30);
     expect(reviewed.itinerary[0]!.activities[0]!.estimatedCostPerPerson).toBe(26);
+  });
+
+  it('scales a meal downgrade proportionally across every named restaurant on the day', async () => {
+    vi.mocked(stateManager.loadWorkflowContext).mockResolvedValue(
+      makeContext({
+        currentState: 'ITINERARY_REPAIR',
+        mergedItinerary: {
+          itinerary: [
+            {
+              day: 1,
+              city: 'Barcelona',
+              activities: [{ activity: 'Sagrada Familia', venue: 'Sagrada Familia', estimatedCostPerPerson: 26 }],
+              meals: [
+                { type: 'Lunch', name: 'Bar Cañete', estimatedCostPerPerson: 40, isEstimate: false },
+                { type: 'Dinner', name: 'Disfrutar', estimatedCostPerPerson: 60, isEstimate: false },
+              ],
+              transport: [],
+            },
+          ],
+          accommodation: [{ city: 'Barcelona', pricePerNightPerPerson: 90, nights: 3 }],
+        },
+        financeFeedback: FINANCE_FEEDBACK,
+        retryCount: { finance: 1 },
+      }),
+    );
+    vi.mocked(agentCaller.callOrchestratorRepair).mockResolvedValue({
+      content: { edits: [{ type: 'downgrade', day: 1, target: 'meal', name: 'meals', newCostPerPerson: 50 }] },
+      latencyMs: 30,
+      tokensUsed: 500,
+    });
+    driveRepairThenApprove();
+
+    await engine.run(TRIP_ID);
+
+    const financeCall = vi.mocked(agentCaller.callFinanceAgent).mock.calls[0]!;
+    const reviewed = financeCall[2] as {
+      itinerary: Array<{ meals: Array<{ name: string; estimatedCostPerPerson: number; source: string }> }>;
+    };
+    // 40:60 split of the new 50 total, names preserved.
+    expect(reviewed.itinerary[0]!.meals.map((m) => m.estimatedCostPerPerson)).toEqual([20, 30]);
+    expect(reviewed.itinerary[0]!.meals.map((m) => m.name)).toEqual(['Bar Cañete', 'Disfrutar']);
+    expect(reviewed.itinerary[0]!.meals.every((m) => m.source === 'repair_downgrade')).toBe(true);
+  });
+
+  it('leaves meals untouched when the repair target total is not below the current total', async () => {
+    vi.mocked(agentCaller.callOrchestratorRepair).mockResolvedValue({
+      content: { edits: [{ type: 'downgrade', day: 1, target: 'meal', name: 'meals', newCostPerPerson: 80 }] },
+      latencyMs: 30,
+      tokensUsed: 500,
+    });
+    driveRepairThenApprove();
+
+    await engine.run(TRIP_ID);
+
+    const financeCall = vi.mocked(agentCaller.callFinanceAgent).mock.calls[0]!;
+    const reviewed = financeCall[2] as { itinerary: Array<{ meals: Array<{ estimatedCostPerPerson: number }> }> };
+    expect(reviewed.itinerary[0]!.meals[0]!.estimatedCostPerPerson).toBe(50);
   });
 
   it('repair agent failure leaves the itinerary unchanged and records the error', async () => {

@@ -14,7 +14,7 @@ RULES:
 4. `downgrade` edits must cite a plausible cheaper alternative in `note` (e.g. "Rodalies R2 train instead of taxi — same route") and `newCostPerPerson` must be LOWER than the item's current cost. Do not invent prices below any realistic floor.
 5. Stop when the projected total reaches the budget target — do not over-cut. Aim for the smallest total saving that gets there.
 6. For `target:"accommodation"`, `newCostPerPerson` is the new price PER NIGHT per person, and `day` is omitted.
-7. For `target:"meal"`, `name` is "meals" (the day's meal line has no name) and the edit adjusts that day's meal cost per person.
+7. For `target:"meal"`, `name` is "meals" and `newCostPerPerson` is the new TOTAL per-person meal budget for that whole day. A day may list several named restaurant meals (e.g. "Lunch", "Dinner"); the orchestrator scales every meal line down proportionally to hit that new total. Do not rename or remove individual restaurants.
 8. For `target:"transport"`, `name` must match the leg's destination (`to` field) or "from → to".
 9. For `target:"activity"`, `name` must match the activity's `activity` field verbatim.
 

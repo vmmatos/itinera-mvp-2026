@@ -17,7 +17,7 @@ export interface TimelineDay {
   city?:      string
   country?:   string
   activities: TimelineActivity[]
-  meals?:     Array<{ type: string; name: string }>
+  meals?:     Array<{ type: string; name: string; location?: string; rating?: number }>
 }
 
 const props = defineProps<{
@@ -151,8 +151,13 @@ function activitiesForSlot(activities: TimelineActivity[], slot: TimeSlot): Time
 
         <!-- Meals -->
         <div v-if="day.meals && day.meals.length > 0" class="tl-meals">
-          <span v-for="m in day.meals" :key="m.type" class="chip on" style="font-size:var(--t-12)">
-            {{ m.type }}: {{ m.name }}
+          <span
+            v-for="m in day.meals"
+            :key="`${m.type}-${m.name}`"
+            class="chip on"
+            style="font-size:var(--t-12)"
+          >
+            {{ m.type }}: {{ m.name }}<template v-if="m.location"> · {{ m.location }}</template><template v-if="typeof m.rating === 'number'"> ★{{ m.rating.toFixed(1) }}</template>
           </span>
         </div>
       </div>

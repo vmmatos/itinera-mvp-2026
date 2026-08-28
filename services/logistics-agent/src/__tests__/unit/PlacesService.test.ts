@@ -4,6 +4,7 @@ vi.mock('@/config', () => ({
   config: {
     GOOGLE_PLACES_API_KEY: 'test-places-key',
     NODE_ENV: 'test',
+    PLACES_MOCK: false,
   },
 }));
 
@@ -16,6 +17,7 @@ vi.mock('@itinera/shared', async (importOriginal) => {
 });
 
 import { PlacesService } from '@/services/PlacesService';
+import { config } from '@/config';
 
 const PLACES_RESPONSE = {
   places: [
@@ -179,6 +181,40 @@ describe('PlacesService', () => {
       }));
 
       await expect(service.searchRestaurants('Lisbon')).rejects.toThrow('500');
+    });
+
+    it('maps shortFormattedAddress to vicinity', async () => {
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({
+          places: [{ id: 'r-4', displayName: { text: 'Ramiro' }, shortFormattedAddress: 'Intendente, Lisbon' }],
+        }),
+        text: () => Promise.resolve(''),
+      }));
+
+      const [place] = await service.searchRestaurants('Lisbon');
+      expect(place?.vicinity).toBe('Intendente, Lisbon');
+    });
+  });
+
+  describe('PLACES_MOCK', () => {
+    afterEach(() => {
+      config.PLACES_MOCK = false;
+    });
+
+    it('returns deterministic fixture restaurants without calling the API', async () => {
+      config.PLACES_MOCK = true;
+      const mockFetch = vi.fn();
+      vi.stubGlobal('fetch', mockFetch);
+
+      const results = await service.searchRestaurants('Porto');
+
+      expect(mockFetch).not.toHaveBeenCalled();
+      expect(results.length).toBeGreaterThan(0);
+      expect(results.every((r) => r.category === 'restaurant')).toBe(true);
+      expect(results.some((r) => typeof r.priceLevel === 'number')).toBe(true);
+      expect(results.some((r) => Boolean(r.vicinity))).toBe(true);
+      expect(results[0]?.name).toContain('Porto');
     });
   });
 });
