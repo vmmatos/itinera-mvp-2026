@@ -16,7 +16,7 @@ import type { TransportService } from '@/services/TransportService';
 import type { PricingEnricher } from '@/services/PricingEnricher';
 import type { ActivityTransportResolver, DayInput } from '@/services/ActivityTransportResolver';
 import { applyPricingOverlay } from '@/services/PricingOverlay';
-import { DEFAULT_MEAL_PRICE_EUR } from '@/services/RestaurantPricing';
+import { DEFAULT_MEAL_PRICE_EUR, DEFAULT_PICKS_PER_CITY } from '@/services/RestaurantPricing';
 import type { PricedDay, PricedAccommodation } from '@/services/PricingOverlay';
 import { buildLogisticsVerdict } from '@/services/LogisticsVerdict';
 import { toCountryCode } from '@/utils/countryCodeMapper';
@@ -1212,6 +1212,7 @@ export function createLogisticsRouter(
         fixedDateInput?.startDate,
         fixedDateInput?.endDate,
         accommodationCeilingByCity,
+        Math.max(config.MEALS_PER_DAY, DEFAULT_PICKS_PER_CITY),
       );
 
       const result = applyPricingOverlay(

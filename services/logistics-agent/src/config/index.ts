@@ -86,9 +86,13 @@ const EnvSchema = z.object({
   // NOT z.coerce.boolean(): that does JS `Boolean(str)`, so the literal
   // string "false" (any non-empty string) coerces to `true`.
   LOCAL_TRANSIT_MOCK: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
-  // Meals assumed per day (lunch + dinner) when injecting the previously-
-  // always-empty day.meals budget category from the blended restaurant estimate.
+  // Meals assumed per day (lunch + dinner) when injecting the day.meals
+  // category from real restaurant picks (or the blended estimate as fallback).
   MEALS_PER_DAY: z.coerce.number().default(2),
+  // Net-new Google Places quota consumption (one restaurant text search per
+  // trip city) — mock in dev to avoid burning quota while testing meal picks.
+  // Same z.coerce.boolean() footgun as LOCAL_TRANSIT_MOCK — enum instead.
+  PLACES_MOCK: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
   // Ticketmaster Discovery API — real-world special events (festivals,
   // concerts, sports, etc) in destination cities. Empty key = feature
   // disabled (same convention as SERPAPI_KEY), fails open elsewhere.
