@@ -306,6 +306,50 @@ describe('POST /api/v1/export/pdf', () => {
     expect(res.status).toBe(400)
   })
 
+  it('accepts meals with location and rating', async () => {
+    mockGeneratePdf.mockResolvedValue(Buffer.from([37, 80, 68, 70]))
+
+    const app = buildApp()
+    const res = await request(app)
+      .post('/api/v1/export/pdf')
+      .send({
+        tripId: validTripId,
+        itinerary: {
+          ...validItinerary,
+          days: [
+            {
+              day: 1,
+              activities: [{ name: 'Eiffel Tower' }],
+              meals: [{ type: 'Lunch', name: 'Ramiro', location: 'Intendente', rating: 4.6 }],
+            },
+          ],
+        },
+      })
+
+    expect(res.status).toBe(200)
+  })
+
+  it('rejects a meal rating outside 0-5', async () => {
+    const app = buildApp()
+    const res = await request(app)
+      .post('/api/v1/export/pdf')
+      .send({
+        tripId: validTripId,
+        itinerary: {
+          ...validItinerary,
+          days: [
+            {
+              day: 1,
+              activities: [{ name: 'Eiffel Tower' }],
+              meals: [{ type: 'Lunch', name: 'Ramiro', rating: 9 }],
+            },
+          ],
+        },
+      })
+
+    expect(res.status).toBe(400)
+  })
+
   it('returns 500 when pdfGenerator.generate throws', async () => {
     mockGeneratePdf.mockRejectedValue(new Error('Chromium crashed'))
 

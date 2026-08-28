@@ -24,6 +24,7 @@ const DaySchema = z.object({
         type: z.string(),
         name: z.string(),
         location: z.string().optional(),
+        rating: z.number().min(0).max(5).optional(),
       }),
     )
     .optional(),

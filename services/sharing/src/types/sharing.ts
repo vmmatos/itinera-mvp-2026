@@ -10,6 +10,7 @@ export interface ItineraryMeal {
   type: string
   name: string
   location?: string
+  rating?: number
 }
 
 export interface ItineraryTransport {
