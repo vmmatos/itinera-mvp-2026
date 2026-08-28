@@ -795,6 +795,7 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
         });
         await this.publishAgentEvent(context.tripId, 1, 'logistics', 'pricing-overlay', {
           repricedCount: overlaid.repricedCount,
+          mealsNamedCount: overlaid.mealsNamedCount,
         });
       } catch (pricingErr) {
         this.logger.warn('Pricing overlay failed — keeping LLM cost estimates', {
@@ -1090,24 +1091,31 @@ export class WorkflowEngine extends BaseService implements IOrchestrationEngine 
               }
             }
           } else if (edit.target === 'meal') {
+            // A day now carries several named restaurant meals; the repair edit
+            // names the new *total* per-person meal budget for the day, so
+            // scale every entry proportionally (a single fallback line is just
+            // the degenerate case).
             const meals = Array.isArray(day['meals'])
               ? [...(day['meals'] as Array<Record<string, unknown>>)]
               : [];
-            const current = meals[0] ? Number(meals[0]['estimatedCostPerPerson'] ?? meals[0]['cost'] ?? Infinity) : Infinity;
+            const per = (m: Record<string, unknown>): number =>
+              Number(m['estimatedCostPerPerson'] ?? m['cost'] ?? 0);
+            const currentTotal = meals.reduce((sum, m) => sum + per(m), 0);
             if (
-              meals[0] &&
+              meals.length > 0 &&
               edit.type === 'downgrade' &&
               typeof edit.newCostPerPerson === 'number' &&
-              edit.newCostPerPerson < current
+              currentTotal > 0 &&
+              edit.newCostPerPerson < currentTotal
             ) {
-              meals[0] = {
-                ...meals[0],
-                estimatedCostPerPerson: edit.newCostPerPerson,
+              const factor = edit.newCostPerPerson / currentTotal;
+              day['meals'] = meals.map((m) => ({
+                ...m,
+                estimatedCostPerPerson: Math.round(per(m) * factor),
                 isEstimate: true,
                 source: 'repair_downgrade',
                 ...(edit.note ? { repairNote: edit.note } : {}),
-              };
-              day['meals'] = meals;
+              }));
               ok = true;
             }
           } else if (edit.target === 'transport') {

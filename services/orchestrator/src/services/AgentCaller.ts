@@ -326,7 +326,7 @@ export class AgentCaller extends BaseService {
     dateInput: DateInput | null,
     /** Per-city EUR/person/night ceiling from the /plan envelope — steers the hotel search toward affordable properties. */
     accommodationCeilingByCity?: Record<string, number>,
-  ): Promise<{ itinerary: Array<Record<string, unknown>>; accommodation: Array<Record<string, unknown>>; repricedCount: number }> {
+  ): Promise<{ itinerary: Array<Record<string, unknown>>; accommodation: Array<Record<string, unknown>>; repricedCount: number; mealsNamedCount: number }> {
     return this.post('logistics', '/pricing-overlay', {
       tripId, itinerary, accommodation, region: region ?? 'unknown', dateInput, accommodationCeilingByCity,
     });
