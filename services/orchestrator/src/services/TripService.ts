@@ -1,4 +1,4 @@
-import { BaseService, NotFoundError, TooManyTripsError } from '@itinera/shared';
+import { BaseService, NotFoundError, TooManyTripsError, resolveGroupPreferences } from '@itinera/shared';
 import type { TripStatus, DateInput, UserRole } from '@itinera/shared';
 import { Not } from 'typeorm';
 import { AppDataSource } from '@/data-source';
@@ -122,7 +122,16 @@ export class TripService extends BaseService {
     if (destinationsInput.length === 0 && input.region) {
       const requestedNights = this.requestedNights(input);
       if (requestedNights > 0) {
-        destinationsInput = await this.destinationParser.parse(input.region, requestedNights);
+        // Group brief steers the LLM city picks when the region is just a country.
+        const group = resolveGroupPreferences(input.preferences, input.travellers ?? []);
+        destinationsInput = await this.destinationParser.parse(input.region, requestedNights, {
+          brief: {
+            groupSize: input.travellers?.length || undefined,
+            pace: group.pace,
+            mustHaves: group.mustHaves,
+            avoids: group.avoids,
+          },
+        });
         this.logger.info('Parsed destinations from region', {
           region: input.region,
           destinations: destinationsInput.map((d) => `${d.city}/${d.country}·${d.nights}n`).join(', '),
@@ -175,7 +184,9 @@ export class TripService extends BaseService {
 
   // Read-only parse so the form can echo the understood destinations (option-1 hybrid).
   async previewDestinations(region: string, nights: number): Promise<ReturnType<DestinationParser['parseHeuristic']>> {
-    return this.destinationParser.parse(region, Math.max(1, nights));
+    // No LLM on preview — a bare country comes back as a `{ city: '', country }`
+    // marker the form renders as "cities picked automatically".
+    return this.destinationParser.parse(region, Math.max(1, nights), { allowExpansion: false });
   }
 
   // Nights requested by the user: flexible window days, or fixed-date span.

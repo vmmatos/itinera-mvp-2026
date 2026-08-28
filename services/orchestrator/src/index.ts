@@ -35,7 +35,10 @@ async function start(): Promise<void> {
   const aiProvider = config.ANTHROPIC_API_KEY
     ? new AnthropicService(config.ANTHROPIC_API_KEY, config.ANTHROPIC_MODEL)
     : undefined;
-  const destinationParser = new DestinationParser(aiProvider);
+  const destinationParser = new DestinationParser(aiProvider, {
+    expansionEnabled: config.DESTINATION_EXPANSION_ENABLED,
+    expansionMock: config.DESTINATION_EXPANSION_MOCK,
+  });
   const tripService = new TripService(stateManager, engine, destinationParser);
   engine.setTripService(tripService);
 

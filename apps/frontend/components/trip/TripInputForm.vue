@@ -1236,7 +1236,12 @@ const PERSONAS = computed(() => [
                 :key="i"
                 style="font-family:var(--mono);font-size:var(--t-12);padding:3px 8px;border:var(--hair);border-radius:var(--r-1);background:var(--bg-2)"
               >
-                {{ d.city }}<template v-if="d.country">, {{ d.country }}</template> · {{ d.nights }}n
+                <template v-if="d.city">
+                  {{ d.city }}<template v-if="d.country">, {{ d.country }}</template> · {{ d.nights }}n
+                </template>
+                <template v-else>
+                  {{ d.country }} · {{ translate('trip.form.step2.citiesAutoPicked') }}
+                </template>
               </span>
             </div>
           </div>
