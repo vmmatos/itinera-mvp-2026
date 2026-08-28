@@ -204,3 +204,33 @@ describe('Timeline.vue — special events', () => {
     expect(wrapper.find('.tl-events').exists()).toBe(false)
   })
 })
+
+describe('Timeline.vue — meals', () => {
+  it('renders a chip per meal with its area and rating', () => {
+    const wrapper = mount(Timeline, {
+      props: {
+        days: [
+          {
+            day: 1, city: 'Lisboa', activities: [],
+            meals: [
+              { type: 'Lunch', name: 'Ramiro', location: 'Intendente', rating: 4.6 },
+              { type: 'Dinner', name: 'Prado' },
+            ],
+          },
+        ] as TimelineDay[],
+      },
+    })
+
+    const meals = wrapper.find('.tl-meals')
+    expect(meals.exists()).toBe(true)
+    expect(meals.text()).toContain('Lunch: Ramiro')
+    expect(meals.text()).toContain('Intendente')
+    expect(meals.text()).toContain('★4.6')
+    expect(meals.text()).toContain('Dinner: Prado')
+  })
+
+  it('renders no meals block when a day has no meals', () => {
+    const wrapper = mount(Timeline, { props: { days: [{ day: 1, city: 'Lisboa', activities: [] }] as TimelineDay[] } })
+    expect(wrapper.find('.tl-meals').exists()).toBe(false)
+  })
+})

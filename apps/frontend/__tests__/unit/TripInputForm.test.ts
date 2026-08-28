@@ -627,6 +627,60 @@ describe('TripInputForm — Step 4 (TripItineraryStep)', () => {
     expect(activity.localTransport?.selectedOption.durationMinutes).toBe(12)
   })
 
+  // Meals are injected post-merge by the logistics pricing overlay as named
+  // restaurant picks ({ type, name, location, rating }). buildDays() must keep
+  // location + rating so Step 4 / the PDF can render them.
+  const orchestratorProposalWithMeals = (meals: Record<string, unknown>[]) => ({
+    id: 'prop-orchestrator', agent: 'orchestrator', round: 3, action: 'propose',
+    content: { itinerary: [{ day: 1, city: 'Lisbon', activities: [{ name: 'Free time' }], meals }] },
+    createdAt: '2026-07-01T10:00:00Z',
+  })
+
+  it('parses named restaurant meals with their area and rating', async () => {
+    const wrapper = await mountWithProposals([
+      orchestratorProposalWithMeals([
+        { type: 'Lunch', name: 'Cervejaria Ramiro', location: 'Intendente', rating: 4.6, estimatedCostPerPerson: 30 },
+      ]),
+    ])
+
+    const meals = wrapper.findComponent({ name: 'TripItineraryStep' }).props('timelineDays')[0].meals
+    expect(meals[0]).toMatchObject({ type: 'Lunch', name: 'Cervejaria Ramiro', location: 'Intendente', rating: 4.6 })
+  })
+
+  it('leaves location and rating undefined for a bare cost-only meal line', async () => {
+    const wrapper = await mountWithProposals([
+      orchestratorProposalWithMeals([{ type: 'Meals', name: 'Local restaurants', estimatedCostPerPerson: 50 }]),
+    ])
+
+    const meals = wrapper.findComponent({ name: 'TripItineraryStep' }).props('timelineDays')[0].meals
+    expect(meals[0].location).toBeUndefined()
+    expect(meals[0].rating).toBeUndefined()
+  })
+
+  it('includes meal area and rating in the PDF export payload', async () => {
+    vi.stubGlobal('URL', {
+      createObjectURL: vi.fn(() => 'blob:mock'),
+      revokeObjectURL: vi.fn(),
+    })
+    mockApiPost.mockResolvedValueOnce({ data: new Blob(['%PDF']) })
+
+    const wrapper = await mountWithProposals([
+      orchestratorProposalWithMeals([
+        { type: 'Lunch', name: 'Ramiro', location: 'Intendente', rating: 4.6, estimatedCostPerPerson: 30 },
+      ]),
+    ])
+
+    await wrapper.findComponent({ name: 'TripItineraryStep' }).vm.$emit('export')
+    await wrapper.vm.$nextTick()
+
+    const pdfCall = mockApiPost.mock.calls.find(([url]) => url === '/api/share/api/v1/export/pdf')
+    expect(pdfCall).toBeTruthy()
+    const payload = pdfCall![1] as { itinerary: { days: Array<{ meals?: Array<Record<string, unknown>> }> } }
+    expect(payload.itinerary.days[0].meals![0]).toMatchObject({
+      type: 'Lunch', name: 'Ramiro', location: 'Intendente', rating: 4.6,
+    })
+  })
+
   it('maps dayTripTransport onto the activity for a far-venue round trip', async () => {
     const wrapper = await mountWithProposals([
       orchestratorProposal([{

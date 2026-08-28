@@ -111,6 +111,18 @@ function extractItinerary(proposals: RawProposal[]): TimelineDay[] {
       })
     }
 
+    // Parsed identically to TripInputForm.buildDays — keep the two in sync.
+    const meals = Array.isArray(d['meals'])
+      ? (d['meals'] as Array<Record<string, unknown>>).map((m) => ({
+          type: String(m['type'] ?? 'meal'),
+          name: String(m['name'] ?? '—'),
+          ...(typeof m['location'] === 'string' && m['location'].trim()
+            ? { location: m['location'].trim() }
+            : {}),
+          ...(typeof m['rating'] === 'number' ? { rating: m['rating'] } : {}),
+        }))
+      : undefined
+
     return {
       day:  typeof d['day'] === 'number' ? d['day'] : i + 1,
       date: d['date'] != null ? String(d['date']) : undefined,
@@ -120,6 +132,7 @@ function extractItinerary(proposals: RawProposal[]): TimelineDay[] {
         ? { to: String(rawTransition['to'] ?? ''), travelTime: String(rawTransition['travelTime'] ?? '') }
         : undefined,
       activities,
+      ...(meals ? { meals } : {}),
     }
   })
 }

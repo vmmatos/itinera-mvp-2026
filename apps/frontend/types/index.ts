@@ -180,7 +180,7 @@ export interface ItineraryDay {
   country?:        string
   cityTransition?: ItineraryCityTransition
   activities:      ItineraryActivity[]
-  meals?:          Array<{ type: string; name: string }>
+  meals?:          Array<{ type: string; name: string; location?: string; rating?: number }>
   // Per-day transport legs from the merged itinerary; preferred over logistics options.
   rawTransport?:   Array<Record<string, unknown>>
 }
