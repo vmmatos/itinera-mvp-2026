@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest'
 import { renderWelcome } from '@/templates/welcome'
 import { renderItineraryReady } from '@/templates/itinerary-ready'
 import { renderBookingReminder } from '@/templates/booking-reminder'
+import { renderPasswordReset } from '@/templates/password-reset'
+import { renderPasswordChanged } from '@/templates/password-changed'
 
 describe('renderWelcome', () => {
   it('subject contains "Welcome" and html has firstName', () => {
@@ -100,5 +102,52 @@ describe('renderBookingReminder', () => {
     })
     expect(result.html).toContain('https://itinera.app/checklist')
     expect(result.text).toContain('https://itinera.app/checklist')
+  })
+})
+
+describe('renderPasswordReset', () => {
+  const data = {
+    name: 'Alice',
+    resetUrl: 'https://app.test/auth/reset-password?token=abc123',
+    expiresInMinutes: 30,
+  }
+
+  it('subject mentions a password reset', () => {
+    expect(renderPasswordReset(data).subject.toLowerCase()).toContain('reset')
+  })
+
+  it('embeds the reset URL in both html and text', () => {
+    const result = renderPasswordReset(data)
+    expect(result.html).toContain(data.resetUrl)
+    expect(result.text).toContain(data.resetUrl)
+  })
+
+  it('states the expiry window', () => {
+    const result = renderPasswordReset(data)
+    expect(result.html).toContain('30 minutes')
+    expect(result.text).toContain('30 minutes')
+  })
+
+  it('HTML-escapes the name', () => {
+    const result = renderPasswordReset({ ...data, name: '<script>alert(1)</script>' })
+    expect(result.html).not.toContain('<script>')
+    expect(result.html).toContain('&lt;script&gt;')
+  })
+})
+
+describe('renderPasswordChanged', () => {
+  it('subject says the password was changed', () => {
+    expect(renderPasswordChanged({ name: 'Alice' }).subject.toLowerCase()).toContain('changed')
+  })
+
+  it('greets the user and warns about unrecognised changes', () => {
+    const result = renderPasswordChanged({ name: 'Alice' })
+    expect(result.html).toContain('Alice')
+    expect(result.text.toLowerCase()).toContain("wasn't you")
+  })
+
+  it('uses the default support URL when none is given', () => {
+    const result = renderPasswordChanged({ name: 'Alice' })
+    expect(result.html).toContain('https://itinera.app/support')
   })
 })

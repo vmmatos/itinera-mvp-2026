@@ -270,6 +270,23 @@ ensure_plugin route "orchestrator-trips-create" acl \
 
 # auth-api is intentionally excluded — login/register/oauth2 are public endpoints
 
+# Password-reset request gets a stricter public rate limit (5/min per IP) to
+# slow account-enumeration and inbox-spam attempts. This more-specific route
+# (exact path + POST) takes priority over auth-api. Still no JWT/ACL — the
+# endpoint is public by design.
+#
+# strip_path=false + request-transformer rewrites the URI: an exact-path route
+# with strip_path=true would strip the WHOLE path and hand upstream "/". This
+# mirrors the auth-health / auth-ready routes above.
+upsert_route "auth-forgot-password" "auth" \
+  "paths=[\"/api/auth/forgot-password\"]" \
+  "methods=[\"POST\"]" \
+  "strip_path=false"
+ensure_plugin route "auth-forgot-password" request-transformer \
+  '{"replace":{"uri":"/forgot-password"}}'
+ensure_plugin route "auth-forgot-password" rate-limiting \
+  '{"minute":5,"policy":"local","limit_by":"ip","fault_tolerant":true}'
+
 # ---------------------------------------------------------------------------
 # Consumers + credentials
 # ---------------------------------------------------------------------------

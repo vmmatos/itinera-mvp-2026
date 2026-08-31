@@ -38,6 +38,8 @@ export function createAuthRouter(authService: AuthService, redis: Redis): Router
 
   router.post('/login', controller.login);
   router.post('/register', controller.register);
+  router.post('/forgot-password', controller.forgotPassword);
+  router.post('/reset-password', controller.resetPassword);
   router.get('/me', authMiddleware, controller.getMe);
   router.patch('/me', authMiddleware, controller.updateSettings);
   router.patch('/me/walkthrough', authMiddleware, controller.completeWalkthrough);

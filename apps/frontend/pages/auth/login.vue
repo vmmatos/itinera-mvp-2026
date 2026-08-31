@@ -19,6 +19,8 @@ const oauthError = computed(() => {
   return null
 })
 
+const resetSuccess = computed(() => route.query['reset'] === 'success')
+
 watch(mode, () => {
   authStore.clearError()
   form.password = ''
@@ -84,6 +86,17 @@ const errorMessage = computed(() => oauthError.value ?? authStore.error)
         </button>
       </div>
 
+      <!-- Password-reset success banner -->
+      <Transition name="fade">
+        <div
+          v-if="resetSuccess && !errorMessage"
+          class="badge badge-green mb-4 w-full justify-start text-13"
+          style="padding: var(--s-2) var(--s-3)"
+        >
+          Password updated — please sign in.
+        </div>
+      </Transition>
+
       <!-- Error banner -->
       <Transition name="fade">
         <div
@@ -138,6 +151,11 @@ const errorMessage = computed(() => oauthError.value ?? authStore.error)
             maxlength="128"
           />
           <p v-if="mode === 'register'" class="text-fg-3 text-13 mt-1">Minimum 8 characters</p>
+          <div v-else class="text-right mt-1">
+            <NuxtLink to="/auth/forgot-password" class="text-13 text-fg-3 hover:text-fg-1">
+              Forgot password?
+            </NuxtLink>
+          </div>
         </div>
 
         <!-- Submit -->

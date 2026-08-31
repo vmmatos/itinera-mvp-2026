@@ -91,6 +91,49 @@ describe('useAuthStore', () => {
     })
   })
 
+  describe('requestPasswordReset()', () => {
+    it('POSTs the email to the forgot-password endpoint', async () => {
+      const store = useAuthStore()
+      mockApiPost.mockResolvedValue({ data: { success: true, data: { message: 'ok' } } })
+
+      await store.requestPasswordReset('a@b.com')
+
+      expect(mockApiPost).toHaveBeenCalledWith('/api/auth/forgot-password', { email: 'a@b.com' })
+      expect(store.error).toBeNull()
+    })
+
+    it('surfaces the backend message and rethrows on failure', async () => {
+      const store = useAuthStore()
+      mockApiPost.mockRejectedValue({ response: { data: { error: { message: 'rate limited' } } } })
+
+      await expect(store.requestPasswordReset('a@b.com')).rejects.toBeDefined()
+      expect(store.error).toBe('rate limited')
+      expect(store.loading).toBe(false)
+    })
+  })
+
+  describe('resetPassword()', () => {
+    it('POSTs the token + new password to the reset-password endpoint', async () => {
+      const store = useAuthStore()
+      mockApiPost.mockResolvedValue({ data: { success: true, data: { message: 'ok' } } })
+
+      await store.resetPassword('raw-token', 'brand-new-pass')
+
+      expect(mockApiPost).toHaveBeenCalledWith('/api/auth/reset-password', {
+        token: 'raw-token',
+        password: 'brand-new-pass',
+      })
+    })
+
+    it('surfaces an invalid-link error and rethrows on failure', async () => {
+      const store = useAuthStore()
+      mockApiPost.mockRejectedValue({ response: { data: { error: { message: 'invalid or expired' } } } })
+
+      await expect(store.resetPassword('bad', 'brand-new-pass')).rejects.toBeDefined()
+      expect(store.error).toBe('invalid or expired')
+    })
+  })
+
   describe('setFromOAuth()', () => {
     it('sets token + user (incl. theme) and syncs settings', () => {
       const store = useAuthStore()

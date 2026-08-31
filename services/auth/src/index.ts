@@ -6,8 +6,9 @@ import cookieParser from 'cookie-parser';
 import Redis from 'ioredis';
 import { requestLogger, createLogger } from '@itinera/shared';
 import { AppDataSource } from '@/data-source';
-import { config } from '@/config';
+import { config, getRabbitMQUrl } from '@/config';
 import { AuthService } from '@/services/AuthService';
+import { EmailPublisher } from '@/services/EmailPublisher';
 import { registerRoutes } from '@/routes';
 
 const logger = createLogger('auth');
@@ -27,7 +28,18 @@ async function start(): Promise<void> {
   await AppDataSource.initialize();
   logger.info('Database connected');
 
-  const authService = new AuthService(AppDataSource, redis);
+  // Best-effort — auth must keep serving logins even if RabbitMQ is down, so
+  // the connection is established off the boot critical path.
+  const emailPublisher = new EmailPublisher(getRabbitMQUrl());
+  void emailPublisher
+    .connect()
+    .catch((err: unknown) =>
+      logger.warn('EmailPublisher initial connect failed — will retry in background', {
+        error: String(err),
+      }),
+    );
+
+  const authService = new AuthService(AppDataSource, redis, emailPublisher);
   registerRoutes(app, authService, redis);
 
   const server = app.listen(config.PORT, () => {
@@ -36,6 +48,7 @@ async function start(): Promise<void> {
 
   const shutdown = async (): Promise<void> => {
     logger.info('Shutting down auth service');
+    await emailPublisher.close();
     await AppDataSource.destroy();
     redis.disconnect();
     server.close(() => {
