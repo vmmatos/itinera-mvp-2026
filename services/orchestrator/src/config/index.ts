@@ -25,6 +25,14 @@ const EnvSchema = z.object({
   // Anthropic API — used by DestinationParser LLM fallback.
   ANTHROPIC_API_KEY: z.string().optional(),
   ANTHROPIC_MODEL: z.string().default('claude-sonnet-4-20250514'),
+  // Master switch for DestinationParser's country→cities expansion (a bare
+  // "Japan" destination becomes a real Tokyo→Kyoto→Osaka route). Off = the old
+  // behaviour where the country name is used verbatim as the single "city".
+  // NOT z.coerce.boolean(): that is JS Boolean(str), so "false" → true.
+  DESTINATION_EXPANSION_ENABLED: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
+  // Return fixture cities instead of calling Anthropic, so dev without an
+  // ANTHROPIC_API_KEY still gets a real city route. Same enum pattern.
+  DESTINATION_EXPANSION_MOCK: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
   // Above Node/undici's own default socket timeout (5 min) — long merge-city
   // and repair calls (up to ~6 min observed on real trips) were hitting that
   // default and throwing a generic "TypeError: fetch failed" with no

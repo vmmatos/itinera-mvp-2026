@@ -175,6 +175,7 @@
         "destinationPlaceholder": "e.g. Cusco + Sacred Valley, Peru",
         "destinationRequired": "Destination is required",
         "understoodAs": "Understood as:",
+        "citiesAutoPicked": "cities picked automatically during planning",
         "dates": "Dates",
         "fixedDates": "Fixed dates",
         "flexibleDates": "I'm flexible",

@@ -175,6 +175,7 @@
         "destinationPlaceholder": "ex. Cusco + Vale Sagrado, Peru",
         "destinationRequired": "O destino é obrigatório",
         "understoodAs": "Entendido como:",
+        "citiesAutoPicked": "cidades escolhidas automaticamente no planeamento",
         "dates": "Datas",
         "fixedDates": "Datas fixas",
         "flexibleDates": "Sou flexível",
