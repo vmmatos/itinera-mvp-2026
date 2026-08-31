@@ -97,6 +97,38 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
+  // Kicks off the forgot-password flow. The backend always responds 200 with a
+  // generic message (no account enumeration), so success here only means the
+  // request was accepted — never that an email was actually sent.
+  const requestPasswordReset = async (email: string): Promise<void> => {
+    loading.value = true
+    error.value = null
+    try {
+      const api = useApi()
+      await api.post('/api/auth/forgot-password', { email })
+    } catch (err: unknown) {
+      error.value = _extractMessage(err, 'Something went wrong. Please try again.')
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
+  // Completes the forgot-password flow with the token from the emailed link.
+  const resetPassword = async (token: string, password: string): Promise<void> => {
+    loading.value = true
+    error.value = null
+    try {
+      const api = useApi()
+      await api.post('/api/auth/reset-password', { token, password })
+    } catch (err: unknown) {
+      error.value = _extractMessage(err, 'This reset link is invalid or has expired.')
+      throw err
+    } finally {
+      loading.value = false
+    }
+  }
+
   const loginWithGoogle = (): void => {
     const config = useRuntimeConfig()
     window.location.href = `${config.public.apiBase}/api/auth/oauth2/google`
@@ -185,6 +217,8 @@ export const useAuthStore = defineStore('auth', () => {
     setFromOAuth,
     login,
     register,
+    requestPasswordReset,
+    resetPassword,
     loginWithGoogle,
     logout,
     clearError,

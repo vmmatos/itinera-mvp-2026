@@ -4,7 +4,13 @@ import { createLogger } from '@itinera/shared'
 import { NotificationEmailPayloadSchema } from '@/types/notification'
 import type { NotificationEmailPayload } from '@/types/notification'
 import type { EmailTransport } from '@/services/EmailService'
-import { renderWelcome, renderItineraryReady, renderBookingReminder } from '@/templates'
+import {
+  renderWelcome,
+  renderItineraryReady,
+  renderBookingReminder,
+  renderPasswordReset,
+  renderPasswordChanged,
+} from '@/templates'
 import type { RenderedEmail } from '@/templates'
 import type { Config } from '@/config'
 
@@ -120,6 +126,16 @@ export class EmailConsumer {
       case 'booking-reminder':
         rendered = renderBookingReminder(
           payload.data as unknown as Parameters<typeof renderBookingReminder>[0],
+        )
+        break
+      case 'password-reset':
+        rendered = renderPasswordReset(
+          payload.data as unknown as Parameters<typeof renderPasswordReset>[0],
+        )
+        break
+      case 'password-changed':
+        rendered = renderPasswordChanged(
+          payload.data as unknown as Parameters<typeof renderPasswordChanged>[0],
         )
         break
     }

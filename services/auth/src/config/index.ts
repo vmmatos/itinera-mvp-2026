@@ -12,6 +12,11 @@ const EnvSchema = z.object({
   POSTGRES_PASSWORD: z.string().min(1),
   REDIS_HOST: z.string().default('localhost'),
   REDIS_PORT: z.coerce.number().default(6379),
+  RABBITMQ_HOST: z.string().default('localhost'),
+  RABBITMQ_PORT: z.coerce.number().default(5672),
+  RABBITMQ_DEFAULT_USER: z.string().default('itinera'),
+  RABBITMQ_DEFAULT_PASS: z.string().min(1),
+  PASSWORD_RESET_TOKEN_TTL: z.coerce.number().default(1800),
   JWT_SECRET: z.string().min(1),
   JWT_ISSUER: z.string().optional(),
   JWT_CONSUMER_KEY: z.string().default('itinera'),
@@ -30,3 +35,9 @@ if (!parsed.success) {
 }
 
 export const config = parsed.data;
+export type Config = z.infer<typeof EnvSchema>;
+
+export function getRabbitMQUrl(): string {
+  const { RABBITMQ_DEFAULT_USER, RABBITMQ_DEFAULT_PASS, RABBITMQ_HOST, RABBITMQ_PORT } = config;
+  return `amqp://${RABBITMQ_DEFAULT_USER}:${RABBITMQ_DEFAULT_PASS}@${RABBITMQ_HOST}:${RABBITMQ_PORT}`;
+}

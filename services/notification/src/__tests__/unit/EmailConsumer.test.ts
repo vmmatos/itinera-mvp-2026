@@ -64,6 +64,20 @@ const reminderMsg = {
   ),
 }
 
+const passwordResetMsg = {
+  content: Buffer.from(
+    JSON.stringify({
+      type: 'password-reset',
+      to: 'user@example.com',
+      data: {
+        name: 'Alice',
+        resetUrl: 'https://app.test/auth/reset-password?token=abc',
+        expiresInMinutes: 30,
+      },
+    }),
+  ),
+}
+
 describe('EmailConsumer', () => {
   let consumer: EmailConsumer
 
@@ -111,6 +125,17 @@ describe('EmailConsumer', () => {
     await consumer.consume('notification.email')
     await vi.waitFor(() => expect(mockChannel.ack).toHaveBeenCalledWith(reminderMsg))
     expect(mockTransport.send).toHaveBeenCalledOnce()
+  })
+
+  it('acks on valid password-reset payload and sends the email', async () => {
+    await consumer.connect()
+    mockChannel.consume.mockImplementation((_q: string, cb: (m: unknown) => void) =>
+      cb(passwordResetMsg),
+    )
+    await consumer.consume('notification.email')
+    await vi.waitFor(() => expect(mockChannel.ack).toHaveBeenCalledWith(passwordResetMsg))
+    expect(mockTransport.send).toHaveBeenCalledOnce()
+    expect(mockChannel.nack).not.toHaveBeenCalled()
   })
 
   it('nacks on invalid JSON', async () => {

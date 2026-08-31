@@ -176,6 +176,11 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       REDIS_HOST: ${REDIS_HOST:-redis}
       REDIS_PORT: ${REDIS_PORT:-6379}
+      RABBITMQ_HOST: ${RABBITMQ_HOST}
+      RABBITMQ_PORT: ${RABBITMQ_PORT}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+      PASSWORD_RESET_TOKEN_TTL: ${PASSWORD_RESET_TOKEN_TTL:-1800}
       JWT_SECRET: ${JWT_SECRET}
       JWT_ISSUER: ${JWT_ISSUER}
       JWT_CONSUMER_KEY: ${JWT_CONSUMER_KEY:-itinera}
@@ -189,6 +194,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      rabbitmq:
         condition: service_healthy
       kong:
         condition: service_healthy
