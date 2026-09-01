@@ -312,6 +312,66 @@ html, body {
   box-shadow: var(--shadow);
 }
 
+/* ── Auth shell ─────────────────────────────────────────────────
+   Structure + theming for the unauthenticated pages (login, forgot
+   / reset password, OAuth callback). Kept as component classes here
+   — not Tailwind utilities on the markup — because globals.css is
+   SSR-inlined while the Tailwind layer is injected after first paint
+   in `nuxt dev`; leaning on utilities made the login card render
+   full-width and un-centred, and (in light mode) let the light body
+   background show through. Paired with `.theme-force-dark` on the
+   same element so the tokens below resolve to their dark values. */
+.auth-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--s-6) var(--s-4);
+  background: var(--bg-0);
+}
+
+.auth-card-wrap {
+  width: 100%;
+  max-width: 400px;
+}
+
+.auth-wordmark {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.auth-tabs {
+  display: flex;
+  margin-bottom: var(--s-5);
+  border-bottom: var(--hair);
+}
+
+.auth-tab {
+  flex: 1;
+  padding-bottom: var(--s-3);
+  font-family: var(--sans);
+  font-size: var(--t-14);
+  font-weight: 500;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  color: var(--fg-3);
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+
+.auth-tab:hover {
+  color: var(--fg-1);
+}
+
+.auth-tab--active {
+  color: var(--fg-0);
+  border-bottom-color: var(--green);
+}
+
 /* Button */
 .btn {
   display: inline-flex;

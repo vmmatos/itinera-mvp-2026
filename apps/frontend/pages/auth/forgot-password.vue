@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onBeforeMount, ref } from 'vue'
 
 definePageMeta({ layout: 'auth' })
 
@@ -7,6 +7,9 @@ const authStore = useAuthStore()
 
 const email = ref('')
 const submitted = ref(false)
+
+// Clear any error left in the store singleton by a previous auth page.
+onBeforeMount(() => authStore.clearError())
 
 const handleSubmit = async (): Promise<void> => {
   authStore.clearError()
@@ -24,10 +27,10 @@ const handleSubmit = async (): Promise<void> => {
 </script>
 
 <template>
-  <div class="w-full max-w-[400px]">
+  <div class="auth-card-wrap">
 
     <!-- Wordmark -->
-    <div class="text-center mb-8" style="display:flex;flex-direction:column;align-items:center;gap:6px">
+    <div class="auth-wordmark text-center mb-8">
       <AppLogo :size="28" />
       <p class="text-fg-3 text-13">AI-powered group travel planner</p>
     </div>

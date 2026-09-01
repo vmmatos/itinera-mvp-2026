@@ -1,5 +1,5 @@
 <template>
-  <div class="theme-force-dark min-h-screen bg-bg-0 flex items-center justify-center px-4">
+  <div class="theme-force-dark auth-shell">
     <slot />
   </div>
 </template>

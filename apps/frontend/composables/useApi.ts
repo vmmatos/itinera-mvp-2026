@@ -1,8 +1,6 @@
 import axios from 'axios'
 import type { AxiosInstance, InternalAxiosRequestConfig } from 'axios'
-
-let isRefreshing = false
-let refreshQueue: Array<(token: string | null) => void> = []
+import { refreshSession } from '~/composables/useAuthRefresh'
 
 export const useApi = (): AxiosInstance => {
   const config = useRuntimeConfig()
@@ -32,40 +30,23 @@ export const useApi = (): AxiosInstance => {
       if (status === 401 && originalConfig && !originalConfig._retry) {
         originalConfig._retry = true
 
-        if (isRefreshing) {
-          return new Promise<string | null>((resolve) => {
-            refreshQueue.push(resolve)
-          }).then((newToken) => {
-            if (!newToken) return Promise.reject(err)
-            originalConfig.headers.Authorization = `Bearer ${newToken}`
-            return api(originalConfig)
-          })
+        // Shared with the startup plugin and any other concurrent 401 — one
+        // POST /api/auth/refresh, everyone awaits it (see useAuthRefresh.ts).
+        const outcome = await refreshSession()
+
+        if (outcome.ok) {
+          authStore.setSession({ token: outcome.token, user: outcome.user })
+          originalConfig.headers.Authorization = `Bearer ${outcome.token}`
+          return api(originalConfig)
         }
 
-        isRefreshing = true
-        try {
-          const resp = await axios.post<{ success: boolean; data: { token: string } }>(
-            `${config.public.apiBase}/api/auth/refresh`,
-            {},
-            { withCredentials: true },
-          )
-          const newToken = resp.data.data.token
-          authStore.updateToken(newToken)
-
-          refreshQueue.forEach((cb) => cb(newToken))
-          refreshQueue = []
-
-          originalConfig.headers.Authorization = `Bearer ${newToken}`
-          return api(originalConfig)
-        } catch {
-          refreshQueue.forEach((cb) => cb(null))
-          refreshQueue = []
+        if (outcome.reason === 'no-session') {
           authStore.clearSession()
           await navigateTo('/auth/login', { replace: true })
-          return Promise.reject(err)
-        } finally {
-          isRefreshing = false
         }
+        // transient: leave the session intact and let the caller surface its
+        // own error — a blip on one request must not log the user out.
+        return Promise.reject(err)
       }
 
       return Promise.reject(err)

@@ -1,12 +1,17 @@
 <script setup lang="ts">
-definePageMeta({ layout: 'default' })
+// `plugins/auth.client.ts` has already resolved the silent refresh by the time
+// this middleware runs, so `isAuthenticated` is correct even on a hard load with
+// a valid refresh cookie — no more bouncing a real session to /auth/login.
+definePageMeta({
+  layout: 'default',
+  middleware: () => {
+    if (import.meta.server) return
+    const authStore = useAuthStore()
+    return navigateTo(authStore.isAuthenticated ? '/dashboard' : '/auth/login', { replace: true })
+  },
+})
 
 const { t } = useI18n()
-const authStore = useAuthStore()
-
-onMounted(() => {
-  navigateTo(authStore.isAuthenticated ? '/dashboard' : '/auth/login', { replace: true })
-})
 </script>
 
 <template>
