@@ -151,10 +151,16 @@
 }
 
 /* ── Forced-dark subtree — unauthenticated pages (login/callback) stay
-   dark regardless of the visitor's persisted theme choice. Custom
-   properties resolve by nearest DOM ancestor, so redeclaring the full
-   dark set here overrides [data-theme="light"] for this subtree only,
-   without touching the persisted 'itn-theme' value. ─────────────── */
+   dark regardless of the visitor's persisted theme choice.
+
+   This must restate every token [data-theme="light"] touches, INCLUDING
+   the composed shorthands (--hair, --agent-*). A custom property with a
+   var() in its value is resolved once, on the element it's declared on:
+   --hair is computed on :root from :root's --line-2, and that finished
+   string is what inherits. Redeclaring only --line-2 here leaves --hair
+   pointing at whatever :root baked in — the light border — so --hair
+   itself has to be redeclared so it recomputes from the dark --line-2.
+   Nothing here touches the persisted 'itn-theme' value. ──────────── */
 .theme-force-dark {
   --bg-0: #0a0a0a;
   --bg-1: #111111;
@@ -170,6 +176,9 @@
   --line-1: #1f1f1f;
   --line-2: #272727;
   --line-3: #333333;
+
+  --hair:      1px solid var(--line-2);
+  --hair-soft: 1px solid var(--line-1);
 
   --green: #00ff88;
   --green-dim: #00cc6e;
@@ -189,6 +198,11 @@
   --magenta-line: rgba(211, 107, 255, 0.32);
 
   --red: #ff5d5d;
+
+  --agent-1: var(--green);
+  --agent-2: var(--amber);
+  --agent-3: var(--blue);
+  --agent-4: var(--magenta);
 
   --shadow: none;
   --shadow-lift: none;
