@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { computed, onBeforeMount, reactive, ref, watch } from 'vue'
+
 definePageMeta({ layout: 'auth' })
 
 type Mode = 'login' | 'register'
@@ -20,6 +22,10 @@ const oauthError = computed(() => {
 })
 
 const resetSuccess = computed(() => route.query['reset'] === 'success')
+
+// `authStore.error` is a store singleton that outlives the page — a prior failed
+// attempt (or a logout) would otherwise render a stale banner on the next visit.
+onBeforeMount(() => authStore.clearError())
 
 watch(mode, () => {
   authStore.clearError()
@@ -55,10 +61,10 @@ const errorMessage = computed(() => oauthError.value ?? authStore.error)
 </script>
 
 <template>
-  <div class="w-full max-w-[400px]">
+  <div class="auth-card-wrap">
 
     <!-- Wordmark -->
-    <div class="text-center mb-8" style="display:flex;flex-direction:column;align-items:center;gap:6px">
+    <div class="auth-wordmark text-center mb-8">
       <AppLogo :size="28" />
       <p class="text-fg-3 text-13">AI-powered group travel planner</p>
     </div>
@@ -67,19 +73,17 @@ const errorMessage = computed(() => oauthError.value ?? authStore.error)
     <div class="card">
 
       <!-- Mode tabs -->
-      <div class="flex mb-5" style="border-bottom: var(--hair)">
+      <div class="auth-tabs">
         <button
-          class="flex-1 pb-3 text-14 font-medium transition-colors"
-          :class="mode === 'login' ? 'text-fg-0' : 'text-fg-3 hover:text-fg-1'"
-          :style="mode === 'login' ? 'border-bottom: 2px solid var(--green); margin-bottom: -1px' : ''"
+          class="auth-tab"
+          :class="{ 'auth-tab--active': mode === 'login' }"
           @click="mode = 'login'"
         >
           Sign in
         </button>
         <button
-          class="flex-1 pb-3 text-14 font-medium transition-colors"
-          :class="mode === 'register' ? 'text-fg-0' : 'text-fg-3 hover:text-fg-1'"
-          :style="mode === 'register' ? 'border-bottom: 2px solid var(--green); margin-bottom: -1px' : ''"
+          class="auth-tab"
+          :class="{ 'auth-tab--active': mode === 'register' }"
           @click="mode = 'register'"
         >
           Register

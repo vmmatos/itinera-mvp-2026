@@ -40,7 +40,6 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="flex items-center justify-center min-h-screen">
-    <div class="text-fg-3 text-14">Signing you in...</div>
-  </div>
+  <!-- Centring comes from the auth layout's `.auth-shell`. -->
+  <p class="text-fg-3 text-14">Signing you in...</p>
 </template>

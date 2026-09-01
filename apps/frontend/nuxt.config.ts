@@ -78,6 +78,16 @@ export default defineNuxtConfig({
 
   // ── Security headers ─────────────────────────────────────────
   routeRules: {
+    // Auth-gated area: 100% user-specific, fetched client-side in onMounted,
+    // gated by an in-memory token. SSR only paints a skeleton for a request
+    // that has no token yet, then the client redirects — the "flash to
+    // dashboard then back to login" bug. Render these client-side only.
+    '/':          { ssr: false },
+    '/dashboard': { ssr: false },
+    '/planner':   { ssr: false },
+    '/trips/**':  { ssr: false },
+    '/admin':     { ssr: false },
+    '/admin/**':  { ssr: false },
     '/**': {
       headers: {
         'Content-Security-Policy': [

@@ -38,12 +38,14 @@ export const mockUpdateTheme = vi.fn()
 export const mockCompleteWalkthrough = vi.fn()
 export const authStoreMock = {
   user: { id: 'user-1', name: 'Test User', email: 'test@test.com', role: 'user', language: 'en', theme: 'dark', hasSeenWalkthrough: false },
-  token: 'mock-token',
+  token: 'mock-token' as string | null,
   isAuthenticated: true,
   tryRefresh: vi.fn().mockResolvedValue(true),
   clearSession: vi.fn(),
+  setSession: vi.fn(),
   updateToken: vi.fn(),
   logout: vi.fn(),
+  clearError: vi.fn(),
   updateLanguage: mockUpdateLanguage,
   updateTheme: mockUpdateTheme,
   completeWalkthrough: mockCompleteWalkthrough,
@@ -80,9 +82,17 @@ globalThis.isValidUUID = (v: string | null | undefined): boolean =>
 globalThis.useApi = vi.fn(() => ({ get: mockApiGet, post: mockApiPost, patch: mockApiPatch }))
 // @ts-expect-error global shim
 globalThis.useRuntimeConfig = vi.fn(() => ({ public: { apiBase: 'http://localhost' } }))
+// ── $fetch shim (ofetch) — overridable per test via mockFetch ──
+export const mockFetch = vi.fn()
+// @ts-expect-error global shim
+globalThis.$fetch = mockFetch
 export const mockNavigateTo = vi.fn()
 // @ts-expect-error global shim
 globalThis.navigateTo = mockNavigateTo
+// @ts-expect-error global shim — Nuxt macro; in tests the definition fn is the export
+globalThis.defineNuxtPlugin = vi.fn((fn: unknown) => fn)
+// @ts-expect-error global shim — Nuxt macro; the middleware fn is the export
+globalThis.defineNuxtRouteMiddleware = vi.fn((fn: unknown) => fn)
 // @ts-expect-error global shim
 globalThis.useAuthStore = vi.fn(() => authStoreMock)
 // @ts-expect-error global shim

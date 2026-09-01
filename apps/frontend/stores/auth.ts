@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { refreshSession } from '~/composables/useAuthRefresh'
 
-interface AuthUser {
+export interface AuthUser {
   id: string
   email: string
   name: string
@@ -11,7 +12,7 @@ interface AuthUser {
   hasSeenWalkthrough: boolean
 }
 
-interface AuthResult {
+export interface AuthResult {
   token: string
   user: AuthUser
 }
@@ -34,31 +35,47 @@ export const useAuthStore = defineStore('auth', () => {
   const clearSession = (): void => {
     token.value = null
     user.value = null
+    error.value = null
     _syncLocale('en')
   }
 
   /**
+   * Apply a fresh access token (and, when present, the accompanying user
+   * record) to the session. Used by the silent-refresh paths — both
+   * `tryRefresh()` and the `useApi` 401 interceptor — so a refresh that
+   * carries `user` (PR #144) re-hydrates locale/theme too, and one that
+   * only carries `{ token }` still yields a valid session.
+   */
+  const setSession = (result: Partial<AuthResult> & { token: string }): void => {
+    token.value = result.token
+    if (result.user) {
+      user.value = result.user
+      _syncSettings(result.user)
+    }
+    error.value = null
+  }
+
+  /**
    * Attempt silent token refresh using the httpOnly refresh_token cookie.
-   * Returns true if a new access token was obtained, false otherwise.
-   * Called by the route middleware on every navigation when token is absent.
+   * Returns true if the session is valid afterwards, false otherwise.
+   * Called by the startup plugin (and, defensively, callers that need a token).
+   *
+   * A transient failure (network blip, 5xx, 429, or losing a refresh-token
+   * rotation race) does NOT tear down an existing session — only a definitive
+   * 401/403 "no session" response does. See `composables/useAuthRefresh.ts`.
    */
   const tryRefresh = async (): Promise<boolean> => {
-    try {
-      const api = useApi()
-      const { data } = await api.post<{ success: true; data: Partial<AuthResult> & { token: string } }>('/api/auth/refresh', {})
-      token.value = data.data.token
-      // The backend returns `user` alongside the fresh token; guard so an
-      // older backend that only sends `{ token }` still yields a valid session.
-      if (data.data.user) {
-        user.value = data.data.user
-        _syncSettings(data.data.user)
-      }
+    const outcome = await refreshSession()
+    if (outcome.ok) {
+      setSession({ token: outcome.token, user: outcome.user })
       return true
-    } catch {
-      token.value = null
-      user.value = null
+    }
+    if (outcome.reason === 'no-session') {
+      clearSession()
       return false
     }
+    // transient — keep whatever session we already had
+    return isAuthenticated.value
   }
 
   const setFromOAuth = (result: AuthResult): void => {
@@ -213,6 +230,7 @@ export const useAuthStore = defineStore('auth', () => {
     isAdmin,
     updateToken,
     clearSession,
+    setSession,
     tryRefresh,
     setFromOAuth,
     login,

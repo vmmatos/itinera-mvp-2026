@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { mockApiPatch, mockApiPost, mockSetLocale, mockSetThemeMode } from '../../setup'
+import { mockApiPatch, mockApiPost, mockFetch, mockSetLocale, mockSetThemeMode } from '../../setup'
 import { useAuthStore } from '~/stores/auth'
+import { __resetAuthRefreshForTests } from '~/composables/useAuthRefresh'
 
 const publicUser = (overrides: Record<string, unknown> = {}) => ({
   id: 'user-1', email: 'a@b.com', name: 'Alice', role: 'user',
@@ -13,8 +14,10 @@ describe('useAuthStore', () => {
     setActivePinia(createPinia())
     mockApiPatch.mockClear()
     mockApiPost.mockClear()
+    mockFetch.mockReset()
     mockSetLocale.mockClear()
     mockSetThemeMode.mockClear()
+    __resetAuthRefreshForTests()
   })
 
   describe('completeWalkthrough()', () => {
@@ -40,11 +43,12 @@ describe('useAuthStore', () => {
   })
 
   describe('tryRefresh()', () => {
+    const refreshOk = (over: Record<string, unknown> = {}) =>
+      ({ success: true, data: { token: 'fresh-token', ...over } })
+
     it('re-hydrates the user and syncs locale + theme when the backend returns one', async () => {
       const store = useAuthStore()
-      mockApiPost.mockResolvedValue({
-        data: { success: true, data: { token: 'fresh-token', user: publicUser({ language: 'pt', theme: 'light' }) } },
-      })
+      mockFetch.mockResolvedValue(refreshOk({ user: publicUser({ language: 'pt', theme: 'light' }) }))
 
       const ok = await store.tryRefresh()
 
@@ -55,9 +59,9 @@ describe('useAuthStore', () => {
       expect(mockSetThemeMode).toHaveBeenCalledWith('light')
     })
 
-    it('still yields a valid session (no throw) when the backend only returns a token', async () => {
+    it('still yields a valid session when the backend only returns a token', async () => {
       const store = useAuthStore()
-      mockApiPost.mockResolvedValue({ data: { success: true, data: { token: 'fresh-token' } } })
+      mockFetch.mockResolvedValue(refreshOk())
 
       const ok = await store.tryRefresh()
 
@@ -65,16 +69,73 @@ describe('useAuthStore', () => {
       expect(store.token).toBe('fresh-token')
     })
 
-    it('clears the session and returns false on a network error', async () => {
+    it('keeps an existing session on a transient network error', async () => {
       const store = useAuthStore()
-      store.user = publicUser()
-      mockApiPost.mockRejectedValue(new Error('offline'))
+      store.setSession({ token: 'live-token', user: publicUser() })
+      mockFetch.mockRejectedValue(new Error('offline')) // no status → network
+
+      const ok = await store.tryRefresh()
+
+      expect(ok).toBe(true)
+      expect(store.token).toBe('live-token')
+      expect(store.user).not.toBeNull()
+    })
+
+    it('returns false without throwing when transient and there was no session', async () => {
+      const store = useAuthStore()
+      mockFetch.mockRejectedValue(new Error('offline'))
+
+      const ok = await store.tryRefresh()
+
+      expect(ok).toBe(false)
+      expect(store.token).toBeNull()
+    })
+
+    it('clears the session and returns false on a definitive 401', async () => {
+      const store = useAuthStore()
+      store.setSession({ token: 'live-token', user: publicUser() })
+      mockFetch.mockRejectedValue({ status: 401 })
 
       const ok = await store.tryRefresh()
 
       expect(ok).toBe(false)
       expect(store.token).toBeNull()
       expect(store.user).toBeNull()
+    })
+
+    it('retries once on a 5xx then succeeds', async () => {
+      const store = useAuthStore()
+      mockFetch
+        .mockRejectedValueOnce({ status: 503 })
+        .mockResolvedValueOnce(refreshOk())
+
+      const ok = await store.tryRefresh()
+
+      expect(ok).toBe(true)
+      expect(store.token).toBe('fresh-token')
+      expect(mockFetch).toHaveBeenCalledTimes(2)
+    })
+
+    it('dedupes concurrent callers onto a single refresh request', async () => {
+      const store = useAuthStore()
+      mockFetch.mockResolvedValue(refreshOk())
+
+      const [a, b] = await Promise.all([store.tryRefresh(), store.tryRefresh()])
+
+      expect(a).toBe(true)
+      expect(b).toBe(true)
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('clearSession()', () => {
+    it('also clears a stale error banner', () => {
+      const store = useAuthStore()
+      store.error = 'Invalid credentials. Please try again.'
+
+      store.clearSession()
+
+      expect(store.error).toBeNull()
     })
   })
 
