@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Lesson 0001 — Negotiation Protocols 101</title>
+<link rel="stylesheet" href="../assets/lesson.css">
+</head>
+<body>
+<div class="eyebrow">Lesson 0001 · Multi-Agent Negotiation Patterns</div>
+<h1>Negotiation Protocols 101: Announce / Bid / Award, and Where itinera Fits</h1>
+
+<p>Every negotiation protocol answers one question: <strong>who is allowed to say what, and when</strong>? Not what any agent actually proposes — that's <em>strategy</em>, and it's the agent's own business. The protocol is the fixed skeleton around it, enforced by the platform.</p>
+
+<p>The oldest, simplest one for task allocation is the <strong>Contract Net Protocol</strong> (Reid G. Smith, 1980, later a FIPA standard). Three stages:</p>
+
+<table>
+<tr><th>Stage</th><th>What happens</th></tr>
+<tr><td><strong>Announce</strong></td><td>A manager broadcasts a task, calling for proposals</td></tr>
+<tr><td><strong>Bid</strong></td><td>Contractors independently compute and submit offers</td></tr>
+<tr><td><strong>Award</strong></td><td>Manager evaluates all bids, picks one (or rejects and re-announces)</td></tr>
+</table>
+
+<div class="callout">
+<p><strong>Primary source for this lesson:</strong> <a href="https://en.wikipedia.org/wiki/Contract_Net_Protocol">Wikipedia — Contract Net Protocol</a>. Short, accurate, freely available — read it once before the quiz below. Full annotated list in <a href="../RESOURCES.md">RESOURCES.md</a>.</p>
+</div>
+
+<h2>Mapping it onto itinera</h2>
+
+<p>itinera's pipeline (from <code>CLAUDE.md</code>) is a fixed sequence of <code>WorkflowState</code>s, run by <code>WorkflowEngine</code> + <code>WorkflowStateMachine</code>:</p>
+
+<pre>LOGISTICS_PLANNING → FINANCE_ENVELOPE_CHECK → PARALLEL_TURISTIC_PLANNING
+  → MERGE_AND_SCORE → FINANCE_VALIDATE
+  → (ITINERARY_REPAIR ⇄ FINANCE_VALIDATE on budget rejects)
+  → FINAL_VALIDATION → FINISH</pre>
+
+<table>
+<tr><th>itinera state</th><th>CNP equivalent</th></tr>
+<tr><td><code>PARALLEL_TURISTIC_PLANNING</code></td><td>Announce + Bid — 4 preference agents (alice/bob/carlos/diana) each submit a proposal in parallel. No back-and-forth yet.</td></tr>
+<tr><td><code>MERGE_AND_SCORE</code></td><td>Award — orchestrator-agent acts as manager, picks/merges among the bids.</td></tr>
+<tr><td><code>FINANCE_VALIDATE</code></td><td>A second, budget-scoped bidder (finance-agent) with a <em>soft veto</em> — see glossary.</td></tr>
+<tr><td><code>ITINERARY_REPAIR</code></td><td><strong>Not classical CNP.</strong> Instead of re-announcing (throwing out the award and re-bidding from scratch), it amends the existing award with a targeted edit list. Cheaper (~8k vs ~170k tokens/cycle) and closer to a contract <em>amendment</em> than a re-negotiation.</td></tr>
+</table>
+
+<p>That last row is the interesting one — it's the part of itinera's design that classical CNP doesn't have an answer for, and it's exactly the pattern <code>#42</code> needs to generalize into a real iterative loop.</p>
+
+<h2>Check yourself</h2>
+<p class="source">Answer without scrolling back up. Click a choice — no penalty for wrong, that's the point.</p>
+
+<div class="quiz" data-answer="announce and bid">
+  <p class="q">1. <code>PARALLEL_TURISTIC_PLANNING</code> plays which CNP role(s)?</p>
+  <div class="choices">
+    <button class="choice">announce and bid</button>
+    <button class="choice">bid and award</button>
+    <button class="choice">award and repair</button>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<div class="quiz" data-answer="the manager role">
+  <p class="q">2. During <code>MERGE_AND_SCORE</code>, orchestrator-agent plays:</p>
+  <div class="choices">
+    <button class="choice">the manager role</button>
+    <button class="choice">the contractor role</button>
+    <button class="choice">the mediator role</button>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<div class="quiz" data-answer="amends the award">
+  <p class="q">3. <code>ITINERARY_REPAIR</code> differs from classical CNP because it:</p>
+  <div class="choices">
+    <button class="choice">amends the award</button>
+    <button class="choice">restarts the bidding</button>
+    <button class="choice">cancels the contract</button>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<div class="quiz" data-answer="soft veto">
+  <p class="q">4. Finance-agent's budget check (up to <code>BUDGET_TOLERANCE_PCT</code>) is a:</p>
+  <div class="choices">
+    <button class="choice">soft veto</button>
+    <button class="choice">hard veto</button>
+    <button class="choice">no veto</button>
+  </div>
+  <div class="feedback"></div>
+</div>
+
+<p class="ask-reminder">Stuck, or think a mapping above is wrong? Ask your agent — that's what it's there for. Don't let a fuzzy mapping sit unresolved into the next lesson.</p>
+
+<nav class="lesson-links">
+  <a href="../reference/negotiation-glossary.html">↳ Reference: Negotiation Glossary</a>
+  <a href="../MISSION.md">↳ Mission</a>
+</nav>
+
+<script>
+document.querySelectorAll('.quiz').forEach(function (quiz) {
+  var answer = quiz.dataset.answer;
+  var feedback = quiz.querySelector('.feedback');
+  quiz.querySelectorAll('button.choice').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var correct = btn.textContent.trim() === answer;
+      quiz.querySelectorAll('button.choice').forEach(function (b) {
+        b.disabled = true;
+        if (b.textContent.trim() === answer) b.classList.add('correct');
+        else if (b === btn) b.classList.add('wrong');
+      });
+      feedback.textContent = correct ? 'Right.' : 'Not quite — correct answer highlighted above.';
+    });
+  });
+});
+</script>
+</body>
+</html>

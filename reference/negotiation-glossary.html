@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Negotiation Glossary — itinera teach workspace</title>
+<link rel="stylesheet" href="../assets/lesson.css">
+<style>
+  body { max-width: 700px; }
+  dl { margin: 0; }
+  dt { font-weight: 600; margin-top: 1.3rem; }
+  dt .term-mono { font-family: var(--mono); font-size: 0.85em; color: var(--fg-muted); }
+  dd { margin: 0.2rem 0 0; }
+  dd .maps-to { display: block; margin-top: 0.3rem; font-size: 0.88rem; color: var(--fg-muted); }
+  dd .maps-to code { font-size: 0.95em; }
+</style>
+</head>
+<body>
+<div class="eyebrow">Reference · print this one out</div>
+<h1>Negotiation Glossary</h1>
+<p class="source">Terms used across lessons. One definition per term, adhered to everywhere — if a lesson seems to use a word differently, that's a bug, flag it.</p>
+
+<dl>
+  <dt>Negotiation protocol</dt>
+  <dd>The fixed rules for <em>who may say what, when</em> — not what any agent decides to say. A protocol is enforced by the platform; a <em>strategy</em> (what an agent proposes) is up to the agent.
+    <span class="maps-to">itinera: the protocol is <code>WorkflowStateMachine</code>'s transition table. Each preference agent's strategy is its persona prompt.</span>
+  </dd>
+
+  <dt>Round</dt>
+  <dd>One complete pass of proposal → response across the participating agents. A negotiation is a sequence of rounds until a stopping criterion fires.
+    <span class="maps-to">itinera today: mostly one round per state (no re-announcement). <code>ITINERARY_REPAIR ⇄ FINANCE_VALIDATE</code> is the one place with a real repeat-round loop, bounded by <code>WORKFLOW_MAX_RETRIES</code>.</span>
+  </dd>
+
+  <dt>Manager / Contractor <span class="term-mono">(Contract Net Protocol roles)</span></dt>
+  <dd>Manager announces a task and needs it done; contractors bid to do it; manager awards to one (or several, subcontracted).
+    <span class="maps-to">itinera: orchestrator-agent plays manager during merge/conflict-resolution; the 4 preference agents play contractor during <code>PARALLEL_TURISTIC_PLANNING</code>.</span>
+  </dd>
+
+  <dt>Announce / Bid / Award <span class="term-mono">(CNP's 3 stages)</span></dt>
+  <dd>Announce: call for proposals. Bid: contractors submit offers. Award: manager picks (and may reject all, or ask again).
+    <span class="maps-to">itinera: <code>PARALLEL_TURISTIC_PLANNING</code> = announce+bid (agents run in parallel, no back-and-forth yet); <code>MERGE_AND_SCORE</code> = award.</span>
+  </dd>
+
+  <dt>Soft veto</dt>
+  <dd>A participant can object and force reconsideration, but cannot unilaterally kill the deal — contrast with a hard veto/hard block.
+    <span class="maps-to">itinera: finance-agent's budget check. Up to <code>BUDGET_TOLERANCE_PCT</code> over budget is approved anyway; beyond that it triggers repair, not cancellation.</span>
+  </dd>
+
+  <dt>Stopping criterion</dt>
+  <dd>The rule that ends a negotiation: consensus reached, round cap hit, or a participant walks away. Choosing this rule is a design decision, not a default to copy blindly.
+    <span class="maps-to">itinera: currently a flat retry cap (<code>WORKFLOW_MAX_RETRIES</code>, default 2) + best-effort ship with <code>overBudget</code> flagged. <a href="../MISSION.md">#42</a> needs to decide whether that's still right once negotiation gets more rounds.</span>
+  </dd>
+
+  <dt>Re-announce vs. repair</dt>
+  <dd>Re-announce: throw out prior bids, run the full announce/bid/award cycle again. Repair: keep the existing award, ask for a targeted edit against it.
+    <span class="maps-to">itinera's <code>ITINERARY_REPAIR</code> is a repair, deliberately — a targeted edit list against the existing itinerary, not a full re-merge (cost: ~8k vs ~170k tokens/cycle per project memory). This is closer to a contract <em>amendment</em> than classical CNP, which doesn't have a repair concept.</span>
+  </dd>
+</dl>
+
+<p class="source" style="margin-top:2rem">Sources: <a href="https://en.wikipedia.org/wiki/Contract_Net_Protocol">Wikipedia — Contract Net Protocol</a>; itinera <code>CLAUDE.md</code> (negotiation engine section). See <a href="../RESOURCES.md">RESOURCES.md</a> for the full annotated list.</p>
+</body>
+</html>
