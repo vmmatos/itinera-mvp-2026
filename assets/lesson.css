@@ -1,0 +1,159 @@
+/* Shared stylesheet for teach-workspace lessons. Tufte-ish: serif body, generous
+   margins, minimal chrome. Reused by every lesson in ./lessons/. */
+
+:root {
+  --bg: #fdfcf9;
+  --fg: #1a1a1a;
+  --fg-muted: #5a5650;
+  --accent: #1e6e5a;
+  --rule: #d8d3c8;
+  --code-bg: #f1efe8;
+  --quiz-bg: #f6f4ee;
+  --quiz-correct: #1e6e5a;
+  --quiz-wrong: #a4322a;
+  --serif: Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, serif;
+  --mono: "SF Mono", Consolas, Menlo, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #17181a;
+    --fg: #e8e6e0;
+    --fg-muted: #a5a196;
+    --accent: #4fd8b0;
+    --rule: #3a3a38;
+    --code-bg: #232420;
+    --quiz-bg: #1f2020;
+    --quiz-correct: #4fd8b0;
+    --quiz-wrong: #e08a80;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--serif);
+  font-size: 19px;
+  line-height: 1.6;
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 3rem 1.25rem 6rem;
+}
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  margin-bottom: 0.25rem;
+}
+
+h1 {
+  font-size: 1.9rem;
+  line-height: 1.25;
+  margin: 0 0 1.5rem;
+}
+
+h2 {
+  font-size: 1.25rem;
+  margin: 2.5rem 0 0.75rem;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 0.3rem;
+}
+
+p { margin: 0 0 1rem; }
+
+a { color: var(--accent); }
+
+code, pre {
+  font-family: var(--mono);
+  font-size: 0.85em;
+}
+
+pre {
+  background: var(--code-bg);
+  padding: 0.9rem 1rem;
+  border-radius: 4px;
+  overflow-x: auto;
+}
+
+code { background: var(--code-bg); padding: 0.1em 0.3em; border-radius: 3px; }
+pre code { background: none; padding: 0; }
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  font-size: 0.92rem;
+}
+
+th, td {
+  text-align: left;
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+th { color: var(--fg-muted); font-weight: 600; }
+
+.callout {
+  border-left: 3px solid var(--accent);
+  padding: 0.1rem 1rem;
+  margin: 1.5rem 0;
+  background: var(--quiz-bg);
+}
+
+.source {
+  font-size: 0.85rem;
+  color: var(--fg-muted);
+}
+
+.quiz {
+  background: var(--quiz-bg);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 1.1rem 1.2rem;
+  margin: 1.2rem 0;
+}
+
+.quiz p.q { font-weight: 600; margin-bottom: 0.6rem; }
+
+.quiz .choices { display: flex; flex-direction: column; gap: 0.4rem; }
+
+.quiz button.choice {
+  text-align: left;
+  font-family: var(--serif);
+  font-size: 1rem;
+  background: var(--bg);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 0.5rem 0.7rem;
+  cursor: pointer;
+  color: var(--fg);
+}
+
+.quiz button.choice:hover { border-color: var(--accent); }
+
+.quiz button.choice.correct { border-color: var(--quiz-correct); color: var(--quiz-correct); font-weight: 600; }
+.quiz button.choice.wrong { border-color: var(--quiz-wrong); color: var(--quiz-wrong); }
+.quiz button.choice[disabled] { cursor: default; }
+
+.quiz .feedback { margin-top: 0.6rem; font-size: 0.9rem; min-height: 1.2em; }
+
+nav.lesson-links {
+  margin-top: 3rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--rule);
+  font-size: 0.9rem;
+  display: flex;
+  justify-content: space-between;
+}
+
+.ask-reminder {
+  margin-top: 2.5rem;
+  font-size: 0.9rem;
+  color: var(--fg-muted);
+  font-style: italic;
+}
