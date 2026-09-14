@@ -483,7 +483,7 @@ function mockOrchestratorMergeByCity(byCity: Record<string, Record<string, unkno
   vi.mocked(agentCaller.callOrchestratorMerge).mockImplementation(async (..._args) => {
     const targetCity = _args[6] as string;
     const content = byCity[targetCity];
-    return { content: JSON.parse(JSON.stringify(content ?? {})), latencyMs: 200, tokensUsed: 200 };
+    return { content: structuredClone(content ?? {}), latencyMs: 200, tokensUsed: 200 };
   });
 }
 
@@ -800,7 +800,7 @@ describe('WorkflowEngine — finance rejection retries with a real re-merge (cos
       { content: {}, latencyMs: 100, tokensUsed: 50 },
     ]);
     vi.mocked(agentCaller.callOrchestratorMerge).mockResolvedValue({
-      content: JSON.parse(JSON.stringify(MERGED_ITINERARY)) as Record<string, unknown>,
+      content: structuredClone(MERGED_ITINERARY) as Record<string, unknown>,
       latencyMs: 200,
       tokensUsed: 200,
     });
@@ -923,7 +923,7 @@ describe('WorkflowEngine — validation-score rejection retries with a real re-m
       { content: {}, latencyMs: 10, tokensUsed: 1 },
     ]);
     vi.mocked(agentCaller.callOrchestratorMerge).mockResolvedValue({
-      content: JSON.parse(JSON.stringify(CULTURE_ONLY_ITINERARY)) as Record<string, unknown>,
+      content: structuredClone(CULTURE_ONLY_ITINERARY) as Record<string, unknown>,
       latencyMs: 20,
       tokensUsed: 20,
     });
@@ -1007,7 +1007,7 @@ describe('WorkflowEngine — validation-score rejection retries with a real re-m
       { content: {}, latencyMs: 10, tokensUsed: 1 },
     ]);
     vi.mocked(agentCaller.callOrchestratorMerge).mockResolvedValue({
-      content: JSON.parse(JSON.stringify(CULTURE_ONLY_ITINERARY)) as Record<string, unknown>,
+      content: structuredClone(CULTURE_ONLY_ITINERARY) as Record<string, unknown>,
       latencyMs: 20,
       tokensUsed: 20,
     });
@@ -1095,7 +1095,7 @@ describe('WorkflowEngine — local restriction warnings (#76)', () => {
       { content: {}, latencyMs: 100, tokensUsed: 50 },
     ]);
     vi.mocked(agentCaller.callOrchestratorMerge).mockResolvedValue({
-      content: JSON.parse(JSON.stringify(MERGED_ITINERARY)) as Record<string, unknown>,
+      content: structuredClone(MERGED_ITINERARY) as Record<string, unknown>,
       latencyMs: 200,
       tokensUsed: 200,
     });
@@ -1137,7 +1137,7 @@ describe('WorkflowEngine — local restriction warnings (#76)', () => {
       { content: {}, latencyMs: 100, tokensUsed: 50 },
     ]);
     vi.mocked(agentCaller.callOrchestratorMerge).mockResolvedValue({
-      content: JSON.parse(JSON.stringify(MERGED_ITINERARY)) as Record<string, unknown>,
+      content: structuredClone(MERGED_ITINERARY) as Record<string, unknown>,
       latencyMs: 200,
       tokensUsed: 200,
     });
@@ -1173,7 +1173,7 @@ describe('WorkflowEngine — special events (Ticketmaster)', () => {
       { content: {}, latencyMs: 100, tokensUsed: 50 },
     ]);
     vi.mocked(agentCaller.callOrchestratorMerge).mockResolvedValue({
-      content: JSON.parse(JSON.stringify(MERGED_ITINERARY)) as Record<string, unknown>,
+      content: structuredClone(MERGED_ITINERARY) as Record<string, unknown>,
       latencyMs: 200,
       tokensUsed: 200,
     });
@@ -1216,7 +1216,7 @@ describe('WorkflowEngine — special events (Ticketmaster)', () => {
       { content: {}, latencyMs: 100, tokensUsed: 50 },
     ]);
     vi.mocked(agentCaller.callOrchestratorMerge).mockResolvedValue({
-      content: JSON.parse(JSON.stringify(MERGED_ITINERARY)) as Record<string, unknown>,
+      content: structuredClone(MERGED_ITINERARY) as Record<string, unknown>,
       latencyMs: 200,
       tokensUsed: 200,
     });
@@ -1253,7 +1253,7 @@ describe('WorkflowEngine — weather assessment (not-show-meteo)', () => {
       { content: {}, latencyMs: 100, tokensUsed: 50 },
     ]);
     vi.mocked(agentCaller.callOrchestratorMerge).mockResolvedValue({
-      content: JSON.parse(JSON.stringify(MERGED_ITINERARY)) as Record<string, unknown>,
+      content: structuredClone(MERGED_ITINERARY) as Record<string, unknown>,
       latencyMs: 200,
       tokensUsed: 200,
     });
@@ -1303,7 +1303,7 @@ describe('WorkflowEngine — weather assessment (not-show-meteo)', () => {
       { content: {}, latencyMs: 100, tokensUsed: 50 },
     ]);
     vi.mocked(agentCaller.callOrchestratorMerge).mockResolvedValue({
-      content: JSON.parse(JSON.stringify(MERGED_ITINERARY)) as Record<string, unknown>,
+      content: structuredClone(MERGED_ITINERARY) as Record<string, unknown>,
       latencyMs: 200,
       tokensUsed: 200,
     });
@@ -1340,7 +1340,7 @@ describe('WorkflowEngine — real pricing overlay and local/day-trip transport',
       { content: {}, latencyMs: 100, tokensUsed: 50 },
     ]);
     vi.mocked(agentCaller.callOrchestratorMerge).mockResolvedValue({
-      content: JSON.parse(JSON.stringify(MERGED_ITINERARY)) as Record<string, unknown>,
+      content: structuredClone(MERGED_ITINERARY) as Record<string, unknown>,
       latencyMs: 200,
       tokensUsed: 200,
     });
@@ -1492,7 +1492,7 @@ describe('WorkflowEngine — per-proposal decision events (derived from proposal
       { content: { slotProposals: [] }, latencyMs: 100, tokensUsed: 50 },
     ]);
     vi.mocked(agentCaller.callOrchestratorMerge).mockResolvedValue({
-      content: JSON.parse(JSON.stringify(mergedContent)) as Record<string, unknown>,
+      content: structuredClone(mergedContent) as Record<string, unknown>,
       latencyMs: 200,
       tokensUsed: 200,
     });
@@ -1645,7 +1645,7 @@ describe('WorkflowEngine — parallel per-city merge calls (Part B)', () => {
     vi.mocked(agentCaller.callOrchestratorMerge).mockImplementation(async (..._args) => {
       const targetCity = _args[6] as string;
       if (targetCity === 'Dublin') return dublinPromise;
-      return { content: JSON.parse(JSON.stringify(MADRID_CITY_MERGED)), latencyMs: 200, tokensUsed: 200 };
+      return { content: structuredClone(MADRID_CITY_MERGED), latencyMs: 200, tokensUsed: 200 };
     });
     driveHappyPath();
 
@@ -1668,7 +1668,7 @@ describe('WorkflowEngine — parallel per-city merge calls (Part B)', () => {
       ),
     ).toBe(false);
 
-    resolveDublin({ content: JSON.parse(JSON.stringify(DUBLIN_CITY_MERGED)), latencyMs: 200, tokensUsed: 200 });
+    resolveDublin({ content: structuredClone(DUBLIN_CITY_MERGED), latencyMs: 200, tokensUsed: 200 });
     await expect(runPromise).resolves.not.toThrow();
 
     expect(
@@ -1683,7 +1683,7 @@ describe('WorkflowEngine — parallel per-city merge calls (Part B)', () => {
     vi.mocked(agentCaller.callOrchestratorMerge).mockImplementation(async (..._args) => {
       const targetCity = _args[6] as string;
       if (targetCity === 'Dublin') throw new Error('orchestrator-agent unreachable for Dublin');
-      return { content: JSON.parse(JSON.stringify(MADRID_CITY_MERGED)), latencyMs: 200, tokensUsed: 200 };
+      return { content: structuredClone(MADRID_CITY_MERGED), latencyMs: 200, tokensUsed: 200 };
     });
     driveHappyPath();
 

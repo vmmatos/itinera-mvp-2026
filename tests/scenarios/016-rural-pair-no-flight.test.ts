@@ -153,7 +153,7 @@ describe('Scenario 016 — WorkflowEngine v2: rural pair keeps ground transport 
     vi.mocked(agentCaller.callFinanceEstimate).mockResolvedValue(BUDGET_PLAN_FEASIBLE);
     vi.mocked(agentCaller.callPreferenceAgentSlots).mockResolvedValue(TOURIST_SLOT_RESULTS);
     vi.mocked(agentCaller.callOrchestratorMerge).mockResolvedValue({
-      content: JSON.parse(JSON.stringify(MERGED_WITH_SLIP)) as Record<string, unknown>,
+      content: structuredClone(MERGED_WITH_SLIP) as Record<string, unknown>,
       latencyMs: 350,
       tokensUsed: 800,
     });

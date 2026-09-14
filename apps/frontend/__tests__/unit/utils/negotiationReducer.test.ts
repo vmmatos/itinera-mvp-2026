@@ -331,7 +331,7 @@ describe('negotiationReducer.reconcile — error / edge scenarios', () => {
       tripId: TRIP_ID, type: 'some.unknown.event', agent: 'orchestrator', round: 1, timestamp: 't1', content: {},
     })).not.toThrow()
     // Only lastEventAt/startedAt (timestamps) may change — structural state must not
-    const after = JSON.parse(JSON.stringify(state))
+    const after = structuredClone(state)
     const beforeParsed = JSON.parse(before)
     expect(after.stages).toEqual(beforeParsed.stages)
     expect(after.agents).toEqual(beforeParsed.agents)

@@ -176,17 +176,17 @@ describe('Scenario 018 — WorkflowEngine v2: single city, no culture/gastronomy
     vi.mocked(stateManager.saveWorkflowContext).mockImplementation(async (_, ctx) => {
       savedContexts.push(ctx as unknown as Record<string, unknown>);
     });
-    vi.mocked(agentCaller.callLogisticsPlan).mockResolvedValue(JSON.parse(JSON.stringify(SINGLE_CITY_ROUTE)) as RouteGraph);
+    vi.mocked(agentCaller.callLogisticsPlan).mockResolvedValue(structuredClone(SINGLE_CITY_ROUTE) as RouteGraph);
     vi.mocked(agentCaller.callFinanceEstimate).mockResolvedValue(SINGLE_CITY_BUDGET);
     vi.mocked(agentCaller.callPreferenceAgentSlots).mockResolvedValue(TOURIST_SLOT_RESULTS);
     vi.mocked(agentCaller.callOrchestratorMerge)
       .mockResolvedValueOnce({
-        content: JSON.parse(JSON.stringify(CULTURE_ONLY_MERGED)) as Record<string, unknown>,
+        content: structuredClone(CULTURE_ONLY_MERGED) as Record<string, unknown>,
         latencyMs: 350,
         tokensUsed: 800,
       })
       .mockResolvedValueOnce({
-        content: JSON.parse(JSON.stringify(REBALANCED_MERGED)) as Record<string, unknown>,
+        content: structuredClone(REBALANCED_MERGED) as Record<string, unknown>,
         latencyMs: 350,
         tokensUsed: 800,
       });
