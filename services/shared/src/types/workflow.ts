@@ -182,7 +182,7 @@ export interface SpecialEvent {
   matchesMustHave?: boolean;
 }
 
-export interface WeatherAffectedActivity {
+interface WeatherAffectedActivity {
   name: string;
   venue: string;
   risk: 'low' | 'medium' | 'high';

@@ -18,14 +18,6 @@ const EnvSchema = z.object({
   SENDGRID_API_KEY: z.string().optional(),
   SMTP_HOST: z.string().default('mailhog'),
   SMTP_PORT: z.coerce.number().default(1025),
-  FCM_ENABLED: z
-    .string()
-    .transform((v) => v === 'true')
-    .default('false'),
-  TWILIO_ENABLED: z
-    .string()
-    .transform((v) => v === 'true')
-    .default('false'),
   NOTIFICATION_FROM_EMAIL: z.string().email().default('noreply@itinera.dev'),
   NOTIFICATION_FROM_NAME: z.string().default('Itinera'),
 })

@@ -18,7 +18,6 @@ vi.mock('@/config', () => ({
   config: {
     ANTHROPIC_API_KEY: 'test-key',
     ANTHROPIC_MODEL: 'claude-sonnet-4-20250514',
-    AI_PROVIDER: 'anthropic',
     NODE_ENV: 'test',
     RABBITMQ_EXCHANGE: 'agent.events',
   },

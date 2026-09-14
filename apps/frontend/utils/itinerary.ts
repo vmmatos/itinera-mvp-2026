@@ -1,13 +1,13 @@
 import type { TransportOption, LocalTransportPriorityResult } from '~/types'
 
-export interface LocationFields {
+interface LocationFields {
   venue?:    string
   city?:     string
   country?:  string
   location?: string
 }
 
-export interface DayHeaderFields {
+interface DayHeaderFields {
   day:      number
   city?:    string
   country?: string
@@ -39,7 +39,7 @@ export interface SpecialEvent {
   matchesMustHave?: boolean
 }
 
-export interface CityTransitionFields {
+interface CityTransitionFields {
   to:               string
   travelTime:       string
   transportOption?: {

@@ -3,25 +3,6 @@ export interface ApiResponse<T = unknown> {
   data: T;
 }
 
-export interface ErrorResponse {
-  success: false;
-  error: {
-    code: string;
-    message: string;
-  };
-}
-
-export interface PaginatedResponse<T> {
-  success: true;
-  data: T[];
-  pagination: {
-    total: number;
-    page: number;
-    limit: number;
-    totalPages: number;
-  };
-}
-
 export interface HealthResponse {
   status: 'ok';
   service: string;
@@ -37,17 +18,4 @@ export interface ReadyResponse {
 
 export function ok<T>(data: T): ApiResponse<T> {
   return { success: true, data };
-}
-
-export function paginated<T>(
-  data: T[],
-  total: number,
-  page: number,
-  limit: number,
-): PaginatedResponse<T> {
-  return {
-    success: true,
-    data,
-    pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
-  };
 }

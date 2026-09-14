@@ -23,7 +23,7 @@ export const WORKFLOW_STAGE_ORDER: WorkflowState[] = [
 // Relabelled 1:1 to the real WorkflowEngine states rather than the design
 // mockup's original labels (Preferences/Conflict resolution/Assembly), which
 // don't correspond to any state the backend actually emits.
-export const STAGE_LABELS: Record<WorkflowState, string> = {
+const STAGE_LABELS: Record<WorkflowState, string> = {
   LOGISTICS_PLANNING: 'Logistics',
   FINANCE_ENVELOPE_CHECK: 'Finance envelope',
   PARALLEL_TURISTIC_PLANNING: 'Experiences',

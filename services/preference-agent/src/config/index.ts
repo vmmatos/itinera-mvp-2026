@@ -8,7 +8,6 @@ const EnvSchema = z.object({
 
   ANTHROPIC_API_KEY: z.string().min(1),
   ANTHROPIC_MODEL: z.string().default('claude-sonnet-4-20250514'),
-  AI_PROVIDER: z.enum(['anthropic']).default('anthropic'),
 
   POSTGRES_HOST: z.string().default('localhost'),
   POSTGRES_PORT: z.coerce.number().default(5432),

@@ -75,7 +75,7 @@ export function formatEur(amountPerPerson: number, mode: 'pp' | 'total', travell
 }
 
 // ── Segments (rail) ───────────────────────────────────────────────
-export interface TransitGapVM {
+interface TransitGapVM {
   icon: string
   label: string
 }
@@ -143,7 +143,7 @@ export function weatherConditionEmoji(condition?: string): string {
   return CONDITION_EMOJI[condition] ?? '🌡️'
 }
 
-export type HeatRisk = 'heat' | 'low' | 'unknown'
+type HeatRisk = 'heat' | 'low' | 'unknown'
 
 // `undefined` tempHigh means no live forecast matched this day (flexible
 // dates with no resolved month, or OpenWeatherMap had no data) — report
@@ -205,7 +205,7 @@ export function parseWeatherAssessment(raw: Record<string, unknown> | null): Wea
   }
 }
 
-export interface WeatherGate {
+interface WeatherGate {
   /** Trip is on fixed dates — the only mode that can ever get a live forecast. */
   eligible: boolean
   /** At least one day carries a real temperature from OpenWeatherMap. */
@@ -263,7 +263,7 @@ export function buildDayWeather(assessment: WeatherAssessment | null, dayNumber:
 }
 
 // ── Transit ───────────────────────────────────────────────────────
-export interface TransitAltVM {
+interface TransitAltVM {
   icon: string
   routeLabel: string
   departureTime?: string
@@ -272,7 +272,7 @@ export interface TransitAltVM {
   priceDeltaLabel?: string
 }
 
-export interface TransitSegmentVM {
+interface TransitSegmentVM {
   icon: string
   routeLabel: string
   provider?: string
@@ -456,7 +456,7 @@ export function dayCostMax(days: DayVM[]): number {
 }
 
 // ── Budget category rows ─────────────────────────────────────────
-export interface CategoryRowVM {
+interface CategoryRowVM {
   key: BudgetCategory
   label: string
   color: string

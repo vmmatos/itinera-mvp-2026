@@ -1,5 +1,5 @@
 export type TripStatus = 'draft' | 'negotiating' | 'confirmed' | 'completed' | 'cancelled' | 'rejected';
-export type ProposalStatus = 'pending' | 'accepted' | 'rejected' | 'superseded';
+type ProposalStatus = 'pending' | 'accepted' | 'rejected' | 'superseded';
 export type UserRole = 'user' | 'admin' | 'service';
 export type DateWindow = 'tight' | 'moderate' | 'open';
 
