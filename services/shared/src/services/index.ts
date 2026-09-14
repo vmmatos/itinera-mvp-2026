@@ -3,6 +3,7 @@ export { AnthropicService } from './AnthropicService';
 export type { CompletionResult } from './AnthropicService';
 export { RabbitMQPublisher } from './RabbitMQPublisher';
 export { RedisService } from './RedisService';
+export { createHealthRouter } from './healthRouter';
 export {
   DEFAULT_GROUP_PREFERENCES,
   DEFAULT_PREFERENCES,

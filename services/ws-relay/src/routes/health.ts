@@ -1,26 +1,11 @@
-import { Router } from 'express'
-import type { Request, Response } from 'express'
-import type { HealthResponse, ReadyResponse } from '@itinera/shared'
+import { createHealthRouter as createRouter } from '@itinera/shared'
+import type { Router } from 'express'
 import type { RabbitMQConsumer } from '@/services/RabbitMQConsumer'
 import type { SSEManager } from '@/services/SSEManager'
 
 export function createHealthRouter(consumer: RabbitMQConsumer, sseManager: SSEManager): Router {
-  const router = Router()
-
-  router.get('/health', (_req: Request, res: Response<HealthResponse>) => {
-    res.json({ status: 'ok', service: 'ws-relay', timestamp: new Date().toISOString() })
+  return createRouter('ws-relay', {
+    rabbitmq: () => consumer.isConnected(),
+    clients: () => sseManager.clientCount() >= 0,
   })
-
-  router.get('/ready', (_req: Request, res: Response<ReadyResponse>) => {
-    const rabbitmq = consumer.isConnected()
-    const ready = rabbitmq
-    res.status(ready ? 200 : 503).json({
-      status: ready ? 'ready' : 'not_ready',
-      service: 'ws-relay',
-      timestamp: new Date().toISOString(),
-      checks: { rabbitmq, clients: sseManager.clientCount() >= 0 },
-    })
-  })
-
-  return router
 }
