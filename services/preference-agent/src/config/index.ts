@@ -9,12 +9,6 @@ const EnvSchema = z.object({
   ANTHROPIC_API_KEY: z.string().min(1),
   ANTHROPIC_MODEL: z.string().default('claude-sonnet-4-20250514'),
 
-  POSTGRES_HOST: z.string().default('localhost'),
-  POSTGRES_PORT: z.coerce.number().default(5432),
-  POSTGRES_DB: z.string().default('itinera'),
-  POSTGRES_USER: z.string().default('itinera'),
-  POSTGRES_PASSWORD: z.string().min(1),
-
   REDIS_HOST: z.string().default('localhost'),
   REDIS_PORT: z.coerce.number().default(6379),
 
