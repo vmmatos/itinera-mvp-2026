@@ -1,8 +1,6 @@
-import 'reflect-metadata';
 import express from 'express';
 import helmet from 'helmet';
 import { requestLogger, errorHandler, authMiddleware, createLogger, PREFERENCE_AGENT_CONFIGS } from '@itinera/shared';
-import { AppDataSource } from '@/data-source';
 import { config } from '@/config';
 import { AnthropicService } from '@/services/AnthropicService';
 import { RabbitMQPublisher } from '@/services/RabbitMQPublisher';
@@ -20,9 +18,6 @@ app.use(requestLogger);
 app.use(express.json({ limit: '1mb' }));
 
 async function start(): Promise<void> {
-  await AppDataSource.initialize();
-  logger.info('Database connected');
-
   const aiProvider = new AnthropicService();
   const publisher = new RabbitMQPublisher();
   const redis = new RedisService();
@@ -51,7 +46,6 @@ async function start(): Promise<void> {
 
   const shutdown = async (): Promise<void> => {
     logger.info('Shutting down preference agent');
-    await AppDataSource.destroy();
     await publisher.close();
     await redis.close();
     server.close(() => {
@@ -71,9 +65,6 @@ async function startWithRetry(): Promise<void> {
       await start();
       return;
     } catch (err: unknown) {
-      if (AppDataSource.isInitialized) {
-        await AppDataSource.destroy().catch(() => {});
-      }
       logger.warn('Failed to start preference agent, retrying...', { attempt, error: String(err) });
       await new Promise<void>((res) => setTimeout(res, RETRY_DELAY_MS));
     }

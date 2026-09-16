@@ -262,11 +262,6 @@ services:
       LOG_LEVEL: ${LOG_LEVEL}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL}
-      POSTGRES_HOST: ${POSTGRES_HOST}
-      POSTGRES_PORT: ${POSTGRES_PORT}
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       REDIS_HOST: ${REDIS_HOST}
       REDIS_PORT: ${REDIS_PORT}
       RABBITMQ_HOST: ${RABBITMQ_HOST}
@@ -278,8 +273,6 @@ services:
     ports:
       - "${PREFERENCE_AGENT_PORT:-3002}:${PREFERENCE_AGENT_PORT:-3002}"
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
       rabbitmq:
@@ -306,11 +299,6 @@ services:
       LOG_LEVEL: ${LOG_LEVEL}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL}
-      POSTGRES_HOST: ${POSTGRES_HOST}
-      POSTGRES_PORT: ${POSTGRES_PORT}
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       REDIS_HOST: ${REDIS_HOST}
       REDIS_PORT: ${REDIS_PORT}
       RABBITMQ_HOST: ${RABBITMQ_HOST}
@@ -322,8 +310,6 @@ services:
     ports:
       - "${ORCHESTRATOR_AGENT_PORT:-3003}:${ORCHESTRATOR_AGENT_PORT:-3003}"
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
       rabbitmq:
@@ -505,8 +491,6 @@ services:
       SENDGRID_API_KEY: ${SENDGRID_API_KEY}
       SMTP_HOST: ${SMTP_HOST:-mailhog}
       SMTP_PORT: ${SMTP_PORT:-1025}
-      FCM_ENABLED: ${FCM_ENABLED:-false}
-      TWILIO_ENABLED: ${TWILIO_ENABLED:-false}
       NOTIFICATION_FROM_EMAIL: ${NOTIFICATION_FROM_EMAIL:-noreply@itinera.dev}
       NOTIFICATION_FROM_NAME: ${NOTIFICATION_FROM_NAME:-Itinera}
     ports:

@@ -150,11 +150,11 @@ describe('Scenario 019 — WorkflowEngine v2: over-budget trip scores on a blend
     vi.mocked(stateManager.saveWorkflowContext).mockImplementation(async (_, ctx) => {
       savedContexts.push(ctx as unknown as Record<string, unknown>);
     });
-    vi.mocked(agentCaller.callLogisticsPlan).mockResolvedValue(JSON.parse(JSON.stringify(ROUTE)) as RouteGraph);
+    vi.mocked(agentCaller.callLogisticsPlan).mockResolvedValue(structuredClone(ROUTE) as RouteGraph);
     vi.mocked(agentCaller.callFinanceEstimate).mockResolvedValue(BUDGET);
     vi.mocked(agentCaller.callPreferenceAgentSlots).mockResolvedValue(TOURIST_SLOT_RESULTS);
     vi.mocked(agentCaller.callOrchestratorMerge).mockResolvedValue({
-      content: JSON.parse(JSON.stringify(MERGED)) as Record<string, unknown>,
+      content: structuredClone(MERGED) as Record<string, unknown>,
       latencyMs: 250_000,
       tokensUsed: 40_000,
     });

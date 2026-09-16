@@ -6,8 +6,6 @@
  * human-like decision (ship best-effort, or reject an impossible trip).
  */
 
-import { z } from 'zod';
-
 /** Finance agent's stance on the current proposal. */
 export interface FinanceVerdict {
   /** True when the proposal fits within budget right now. */
@@ -88,15 +86,3 @@ export interface ProposalDecision {
   reason: string;
   estimatedCostPerPerson?: number;
 }
-
-export const ProposalDecisionSchema = z.object({
-  proposalId: z.string(),
-  agent: z.string(),
-  city: z.string(),
-  date: z.string(),
-  slot: z.enum(['morning', 'afternoon', 'evening']),
-  activity: z.string(),
-  status: z.enum(['accepted', 'merged', 'rejected']),
-  reason: z.string(),
-  estimatedCostPerPerson: z.number().min(0).optional(),
-});

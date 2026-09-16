@@ -154,11 +154,11 @@ describe('Scenario 017 — WorkflowEngine v2: car preference resolves to hybrid 
     vi.mocked(stateManager.saveWorkflowContext).mockImplementation(async (_, ctx) => {
       savedContexts.push(ctx as unknown as Record<string, unknown>);
     });
-    vi.mocked(agentCaller.callLogisticsPlan).mockResolvedValue(JSON.parse(JSON.stringify(HYBRID_ROUTE)) as RouteGraph);
+    vi.mocked(agentCaller.callLogisticsPlan).mockResolvedValue(structuredClone(HYBRID_ROUTE) as RouteGraph);
     vi.mocked(agentCaller.callFinanceEstimate).mockResolvedValue(BUDGET_PLAN_FEASIBLE);
     vi.mocked(agentCaller.callPreferenceAgentSlots).mockResolvedValue(TOURIST_SLOT_RESULTS);
     vi.mocked(agentCaller.callOrchestratorMerge).mockResolvedValue({
-      content: JSON.parse(JSON.stringify(MERGED_CONTENT)) as Record<string, unknown>,
+      content: structuredClone(MERGED_CONTENT) as Record<string, unknown>,
       latencyMs: 350,
       tokensUsed: 800,
     });
